@@ -131,6 +131,48 @@ export type Database = {
         }
         Relationships: []
       }
+      market_candles: {
+        Row: {
+          close: number
+          created_at: string
+          high: number
+          id: number
+          interval: string
+          low: number
+          open: number
+          source: string
+          symbol: string
+          ts: string
+          volume: number
+        }
+        Insert: {
+          close: number
+          created_at?: string
+          high: number
+          id?: number
+          interval: string
+          low: number
+          open: number
+          source?: string
+          symbol: string
+          ts: string
+          volume?: number
+        }
+        Update: {
+          close?: number
+          created_at?: string
+          high?: number
+          id?: number
+          interval?: string
+          low?: number
+          open?: number
+          source?: string
+          symbol?: string
+          ts?: string
+          volume?: number
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           account_id: string
@@ -339,53 +381,80 @@ export type Database = {
       signals: {
         Row: {
           confidence: number
+          contributions: Json
           created_at: string
           entry: number
+          evaluated_at: string | null
           expires_at: string | null
           id: string
+          indicators: Json
+          market_regime: string | null
+          outcome_pnl_pct: number | null
+          outcome_status: string | null
           qty: number
           reasoning: string
           resolved_at: string | null
+          risk_factors: Json
+          risk_level: string
           risk_reward: number | null
           side: string
           status: string
           stop_loss: number
           symbol: string
           take_profit: number
+          time_horizon: string
           user_id: string
         }
         Insert: {
           confidence: number
+          contributions?: Json
           created_at?: string
           entry: number
+          evaluated_at?: string | null
           expires_at?: string | null
           id?: string
+          indicators?: Json
+          market_regime?: string | null
+          outcome_pnl_pct?: number | null
+          outcome_status?: string | null
           qty: number
           reasoning: string
           resolved_at?: string | null
+          risk_factors?: Json
+          risk_level?: string
           risk_reward?: number | null
           side: string
           status?: string
           stop_loss: number
           symbol: string
           take_profit: number
+          time_horizon?: string
           user_id: string
         }
         Update: {
           confidence?: number
+          contributions?: Json
           created_at?: string
           entry?: number
+          evaluated_at?: string | null
           expires_at?: string | null
           id?: string
+          indicators?: Json
+          market_regime?: string | null
+          outcome_pnl_pct?: number | null
+          outcome_status?: string | null
           qty?: number
           reasoning?: string
           resolved_at?: string | null
+          risk_factors?: Json
+          risk_level?: string
           risk_reward?: number | null
           side?: string
           status?: string
           stop_loss?: number
           symbol?: string
           take_profit?: number
+          time_horizon?: string
           user_id?: string
         }
         Relationships: []
