@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSignalsRouteImport } from './routes/_authenticated/signals'
 import { Route as AuthenticatedPositionsRouteImport } from './routes/_authenticated/positions'
+import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAutomationRouteImport } from './routes/_authenticated/automation'
@@ -50,6 +51,11 @@ const AuthenticatedSignalsRoute = AuthenticatedSignalsRouteImport.update({
 const AuthenticatedPositionsRoute = AuthenticatedPositionsRouteImport.update({
   id: '/positions',
   path: '/positions',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
+  id: '/market',
+  path: '/market',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/market': typeof AuthenticatedMarketRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/market': typeof AuthenticatedMarketRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/_authenticated/automation': typeof AuthenticatedAutomationRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
+  '/_authenticated/market': typeof AuthenticatedMarketRoute
   '/_authenticated/positions': typeof AuthenticatedPositionsRoute
   '/_authenticated/signals': typeof AuthenticatedSignalsRoute
   '/_authenticated/accounts/new': typeof AuthenticatedAccountsNewRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/market'
     | '/positions'
     | '/signals'
     | '/accounts/new'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/market'
     | '/positions'
     | '/signals'
     | '/accounts/new'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/_authenticated/automation'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
+    | '/_authenticated/market'
     | '/_authenticated/positions'
     | '/_authenticated/signals'
     | '/_authenticated/accounts/new'
@@ -228,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/positions'
       fullPath: '/positions'
       preLoaderRoute: typeof AuthenticatedPositionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/market': {
+      id: '/_authenticated/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof AuthenticatedMarketRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/history': {
@@ -302,6 +321,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAutomationRoute: typeof AuthenticatedAutomationRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
+  AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
   AuthenticatedPositionsRoute: typeof AuthenticatedPositionsRoute
   AuthenticatedSignalsRoute: typeof AuthenticatedSignalsRoute
 }
@@ -313,6 +333,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAutomationRoute: AuthenticatedAutomationRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
+  AuthenticatedMarketRoute: AuthenticatedMarketRoute,
   AuthenticatedPositionsRoute: AuthenticatedPositionsRoute,
   AuthenticatedSignalsRoute: AuthenticatedSignalsRoute,
 }
