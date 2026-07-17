@@ -127,7 +127,7 @@ function BacktestDetail() {
   );
 }
 
-function TradeMini({ rows }: { rows: Array<{ id: string; entry_ts: string; side: string; pnl: number | string; pnl_pct: number | string; market_regime: string | null }> }) {
+function TradeMini({ rows }: { rows: Array<{ id: string; entry_ts: string; side: string; pnl: number | string | null; pnl_pct: number | string | null; market_regime: string | null }> }) {
   if (rows.length === 0) return <p className="text-xs text-muted-foreground">No trades.</p>;
   return (
     <div className="space-y-2 text-sm font-mono">
