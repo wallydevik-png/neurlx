@@ -83,6 +83,146 @@ export type Database = {
         }
         Relationships: []
       }
+      backtest_runs: {
+        Row: {
+          created_at: string
+          equity_curve: Json
+          error: string | null
+          from_ts: string
+          id: string
+          interval: string
+          kind: string
+          label: string | null
+          metrics: Json
+          params: Json
+          parent_run_id: string | null
+          status: string
+          strategy_id: string | null
+          symbol: string
+          to_ts: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          equity_curve?: Json
+          error?: string | null
+          from_ts: string
+          id?: string
+          interval: string
+          kind?: string
+          label?: string | null
+          metrics?: Json
+          params?: Json
+          parent_run_id?: string | null
+          status?: string
+          strategy_id?: string | null
+          symbol: string
+          to_ts: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          equity_curve?: Json
+          error?: string | null
+          from_ts?: string
+          id?: string
+          interval?: string
+          kind?: string
+          label?: string | null
+          metrics?: Json
+          params?: Json
+          parent_run_id?: string | null
+          status?: string
+          strategy_id?: string | null
+          symbol?: string
+          to_ts?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backtest_runs_parent_run_id_fkey"
+            columns: ["parent_run_id"]
+            isOneToOne: false
+            referencedRelation: "backtest_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "backtest_runs_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backtest_trades: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          entry_price: number
+          entry_ts: string
+          exit_price: number | null
+          exit_reason: string | null
+          exit_ts: string | null
+          id: string
+          indicators: Json | null
+          market_regime: string | null
+          pnl: number | null
+          pnl_pct: number | null
+          qty: number
+          run_id: string
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          entry_price: number
+          entry_ts: string
+          exit_price?: number | null
+          exit_reason?: string | null
+          exit_ts?: string | null
+          id?: string
+          indicators?: Json | null
+          market_regime?: string | null
+          pnl?: number | null
+          pnl_pct?: number | null
+          qty: number
+          run_id: string
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          entry_price?: number
+          entry_ts?: string
+          exit_price?: number | null
+          exit_reason?: string | null
+          exit_ts?: string | null
+          id?: string
+          indicators?: Json | null
+          market_regime?: string | null
+          pnl?: number | null
+          pnl_pct?: number | null
+          qty?: number
+          run_id?: string
+          side?: string
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backtest_trades_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "backtest_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exchange_connections: {
         Row: {
           connector_id: string
@@ -455,6 +595,42 @@ export type Database = {
           symbol?: string
           take_profit?: number
           time_horizon?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      strategies: {
+        Row: {
+          created_at: string
+          id: string
+          interval: string
+          name: string
+          notes: string | null
+          params: Json
+          symbol: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          interval?: string
+          name: string
+          notes?: string | null
+          params?: Json
+          symbol: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          interval?: string
+          name?: string
+          notes?: string | null
+          params?: Json
+          symbol?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
