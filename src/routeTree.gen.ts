@@ -16,12 +16,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedSignalsRouteImport } from './routes/_authenticated/signals'
 import { Route as AuthenticatedPositionsRouteImport } from './routes/_authenticated/positions'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
+import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAutomationRouteImport } from './routes/_authenticated/automation'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedAccuracyRouteImport } from './routes/_authenticated/accuracy'
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
+import { Route as AuthenticatedBacktestsIdRouteImport } from './routes/_authenticated/backtests.$id'
 import { Route as AuthenticatedAccountsNewRouteImport } from './routes/_authenticated/accounts.new'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -58,6 +61,11 @@ const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
   path: '/market',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedLabRoute = AuthenticatedLabRouteImport.update({
+  id: '/lab',
+  path: '/lab',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -83,11 +91,22 @@ const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAccuracyRoute = AuthenticatedAccuracyRouteImport.update({
+  id: '/accuracy',
+  path: '/accuracy',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAccountsRoute = AuthenticatedAccountsRouteImport.update({
   id: '/accounts',
   path: '/accounts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBacktestsIdRoute =
+  AuthenticatedBacktestsIdRouteImport.update({
+    id: '/backtests/$id',
+    path: '/backtests/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAccountsNewRoute =
   AuthenticatedAccountsNewRouteImport.update({
     id: '/new',
@@ -100,30 +119,36 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accounts': typeof AuthenticatedAccountsRouteWithChildren
+  '/accuracy': typeof AuthenticatedAccuracyRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
+  '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accounts': typeof AuthenticatedAccountsRouteWithChildren
+  '/accuracy': typeof AuthenticatedAccuracyRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
+  '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -132,15 +157,18 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/accounts': typeof AuthenticatedAccountsRouteWithChildren
+  '/_authenticated/accuracy': typeof AuthenticatedAccuracyRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/automation': typeof AuthenticatedAutomationRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
+  '/_authenticated/lab': typeof AuthenticatedLabRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
   '/_authenticated/positions': typeof AuthenticatedPositionsRoute
   '/_authenticated/signals': typeof AuthenticatedSignalsRoute
   '/_authenticated/accounts/new': typeof AuthenticatedAccountsNewRoute
+  '/_authenticated/backtests/$id': typeof AuthenticatedBacktestsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -149,30 +177,36 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/accounts'
+    | '/accuracy'
     | '/analytics'
     | '/approvals'
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/lab'
     | '/market'
     | '/positions'
     | '/signals'
     | '/accounts/new'
+    | '/backtests/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/sitemap.xml'
     | '/accounts'
+    | '/accuracy'
     | '/analytics'
     | '/approvals'
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/lab'
     | '/market'
     | '/positions'
     | '/signals'
     | '/accounts/new'
+    | '/backtests/$id'
   id:
     | '__root__'
     | '/'
@@ -180,15 +214,18 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/_authenticated/accounts'
+    | '/_authenticated/accuracy'
     | '/_authenticated/analytics'
     | '/_authenticated/approvals'
     | '/_authenticated/automation'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
+    | '/_authenticated/lab'
     | '/_authenticated/market'
     | '/_authenticated/positions'
     | '/_authenticated/signals'
     | '/_authenticated/accounts/new'
+    | '/_authenticated/backtests/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -249,6 +286,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMarketRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/lab': {
+      id: '/_authenticated/lab'
+      path: '/lab'
+      fullPath: '/lab'
+      preLoaderRoute: typeof AuthenticatedLabRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/history': {
       id: '/_authenticated/history'
       path: '/history'
@@ -284,11 +328,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/accuracy': {
+      id: '/_authenticated/accuracy'
+      path: '/accuracy'
+      fullPath: '/accuracy'
+      preLoaderRoute: typeof AuthenticatedAccuracyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/accounts': {
       id: '/_authenticated/accounts'
       path: '/accounts'
       fullPath: '/accounts'
       preLoaderRoute: typeof AuthenticatedAccountsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/backtests/$id': {
+      id: '/_authenticated/backtests/$id'
+      path: '/backtests/$id'
+      fullPath: '/backtests/$id'
+      preLoaderRoute: typeof AuthenticatedBacktestsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/accounts/new': {
@@ -316,26 +374,32 @@ const AuthenticatedAccountsRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRouteWithChildren
+  AuthenticatedAccuracyRoute: typeof AuthenticatedAccuracyRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedAutomationRoute: typeof AuthenticatedAutomationRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
+  AuthenticatedLabRoute: typeof AuthenticatedLabRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
   AuthenticatedPositionsRoute: typeof AuthenticatedPositionsRoute
   AuthenticatedSignalsRoute: typeof AuthenticatedSignalsRoute
+  AuthenticatedBacktestsIdRoute: typeof AuthenticatedBacktestsIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountsRoute: AuthenticatedAccountsRouteWithChildren,
+  AuthenticatedAccuracyRoute: AuthenticatedAccuracyRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedAutomationRoute: AuthenticatedAutomationRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
+  AuthenticatedLabRoute: AuthenticatedLabRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
   AuthenticatedPositionsRoute: AuthenticatedPositionsRoute,
   AuthenticatedSignalsRoute: AuthenticatedSignalsRoute,
+  AuthenticatedBacktestsIdRoute: AuthenticatedBacktestsIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

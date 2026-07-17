@@ -34,9 +34,9 @@ export const runBacktestFn = createServerFn({ method: "POST" })
       interval: data.interval,
       from_ts: new Date(result.fromTs).toISOString(),
       to_ts: new Date(result.toTs).toISOString(),
-      params: result.params,
-      metrics: result.metrics,
-      equity_curve: result.equity,
+      params: result.params as unknown as Record<string, unknown>,
+      metrics: result.metrics as unknown as Record<string, unknown>,
+      equity_curve: result.equity as unknown as Record<string, unknown>[],
     }).select().single();
     if (error) throw error;
     if (result.trades.length) {
@@ -56,7 +56,7 @@ export const runBacktestFn = createServerFn({ method: "POST" })
       user_id: context.userId, action: "backtest.run", entity: "backtest_runs",
       entity_id: run.id, payload: { symbol: data.symbol, interval: data.interval },
     });
-    return { runId: run.id, metrics: result.metrics, trades: result.trades.length };
+    return { runId: run.id, metrics: result.metrics as unknown as Record<string, unknown>, trades: result.trades.length };
   });
 
 export const runWalkForwardFn = createServerFn({ method: "POST" })
