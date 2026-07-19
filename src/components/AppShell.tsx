@@ -2,17 +2,19 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
-  Layers, SlidersHorizontal, EyeOff,
+  Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar,
 } from "lucide-react";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
 import { toast } from "sonner";
-import type { ReactNode } from "react";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/monitoring", label: "Live Monitoring", icon: Radar },
+  { to: "/readiness", label: "Readiness Score", icon: Gauge },
   { to: "/portfolio", label: "AI Decision Center", icon: Brain },
   { to: "/market", label: "Market Scanner", icon: LineChart },
   { to: "/accounts", label: "Connected Accounts", icon: Plug },
@@ -36,8 +38,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fetchDash = useServerFn(getDashboard);
   const kill = useServerFn(setKillSwitch);
   const { data } = useQuery({ queryKey: ["dashboard-mini"], queryFn: () => fetchDash(), refetchInterval: 15000 });
+  const [open, setOpen] = useState(false);
 
   const killActive = data?.settings?.kill_switch_active;
+  const current = NAV.find(n => pathname === n.to || pathname.startsWith(n.to + "/"));
+
+  // Close drawer on route change
+  useEffect(() => { setOpen(false); }, [pathname]);
+  // Lock body scroll when drawer open
+  useEffect(() => {
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
 
   async function signOut() {
     await qc.cancelQueries();
@@ -45,65 +58,127 @@ export function AppShell({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   }
-
   async function toggleKill() {
     try {
       await kill({ data: { active: !killActive } });
       toast.success(killActive ? "Kill switch deactivated" : "Kill switch ACTIVE — all automation halted");
       qc.invalidateQueries();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
   }
 
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-64 border-r border-border bg-card/40 flex flex-col">
-        <div className="p-4 border-b border-border flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center">
-            <TerminalSquare className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <div className="font-semibold text-sm">Helix</div>
-            <div className="text-[10px] font-mono text-muted-foreground">paper · v0.1</div>
+    <div className="min-h-screen flex flex-col">
+      {/* Top bar — always visible on every device */}
+      <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
+        <div className="flex items-center gap-3 px-4 sm:px-6 h-14">
+          <button
+            onClick={() => setOpen(v => !v)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            className="relative w-10 h-10 grid place-items-center rounded-md border border-border hover:bg-secondary/50 transition shrink-0"
+          >
+            <span className="sr-only">Menu</span>
+            <Menu className={`w-5 h-5 absolute transition-all duration-200 ${open ? "opacity-0 rotate-90 scale-75" : "opacity-100 rotate-0 scale-100"}`} />
+            <X className={`w-5 h-5 absolute transition-all duration-200 ${open ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-75"}`} />
+          </button>
+
+          <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center shrink-0">
+              <TerminalSquare className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0 hidden xs:block sm:block">
+              <div className="font-semibold text-sm leading-tight truncate">Helix</div>
+              <div className="text-[10px] font-mono text-muted-foreground leading-tight">paper · v0.1</div>
+            </div>
+          </Link>
+
+          {current && (
+            <div className="ml-2 pl-3 border-l border-border min-w-0 hidden sm:block">
+              <div className="text-xs font-mono uppercase text-muted-foreground leading-tight">Section</div>
+              <div className="text-sm font-medium truncate">{current.label}</div>
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <button
+              onClick={toggleKill}
+              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border ${
+                killActive
+                  ? "bg-destructive text-destructive-foreground border-destructive"
+                  : "border-destructive/40 text-destructive hover:bg-destructive/10"
+              }`}
+            >
+              <Power className="w-3.5 h-3.5" />
+              {killActive ? "Kill ON" : "Emergency stop"}
+            </button>
+            <button
+              onClick={toggleKill}
+              aria-label="Emergency stop"
+              className={`sm:hidden w-10 h-10 grid place-items-center rounded-md border ${
+                killActive
+                  ? "bg-destructive text-destructive-foreground border-destructive"
+                  : "border-destructive/40 text-destructive"
+              }`}
+            >
+              <Power className="w-4 h-4" />
+            </button>
           </div>
         </div>
-        <nav className="flex-1 p-2 space-y-0.5">
+
+        {killActive && (
+          <div className="bg-destructive/15 border-t border-destructive/40 text-destructive text-[11px] sm:text-xs px-4 sm:px-6 py-1.5 font-medium">
+            KILL SWITCH ACTIVE — all automated trading and signal generation is halted.
+          </div>
+        )}
+      </header>
+
+      {/* Drawer overlay */}
+      <div
+        onClick={() => setOpen(false)}
+        className={`fixed inset-0 z-40 bg-background/70 backdrop-blur-sm transition-opacity duration-200 ${
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        style={{ top: 56 }}
+        aria-hidden={!open}
+      />
+
+      {/* Drawer panel — slides in from the left on all sizes */}
+      <aside
+        className={`fixed z-50 left-0 bottom-0 w-72 max-w-[85vw] bg-card border-r border-border flex flex-col transition-transform duration-250 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{ top: 56 }}
+        aria-hidden={!open}
+      >
+        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {NAV.map(item => {
             const active = pathname === item.to || pathname.startsWith(item.to + "/");
             return (
-              <Link key={item.to} to={item.to}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition ${
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm transition ${
                   active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                }`}>
-                <item.icon className="w-4 h-4" />
-                {item.label}
+                }`}
+              >
+                <item.icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
               </Link>
             );
           })}
         </nav>
-        <div className="p-2 border-t border-border space-y-1">
-          <button onClick={toggleKill}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium border ${
-              killActive
-                ? "bg-destructive text-destructive-foreground border-destructive"
-                : "border-destructive/40 text-destructive hover:bg-destructive/10"
-            }`}>
-            <Power className="w-4 h-4" />
-            {killActive ? "Kill switch ON" : "Emergency stop"}
-          </button>
-          <button onClick={signOut} className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50">
+        <div className="p-2 border-t border-border">
+          <button
+            onClick={signOut}
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+          >
             <LogOut className="w-4 h-4" /> Sign out
           </button>
         </div>
       </aside>
+
       <main className="flex-1 min-w-0">
-        {killActive && (
-          <div className="bg-destructive/15 border-b border-destructive/40 text-destructive text-xs px-6 py-2 font-medium">
-            KILL SWITCH ACTIVE — all automated trading and signal generation is halted.
-          </div>
-        )}
-        <div className="p-8 max-w-7xl">{children}</div>
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">{children}</div>
       </main>
     </div>
   );
@@ -111,22 +186,22 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between mb-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 mb-6 sm:flex sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">{title}</h1>
+        {subtitle && <p className="text-xs sm:text-sm text-muted-foreground mt-1">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0 flex flex-wrap gap-2 justify-end">{action}</div>}
     </div>
   );
 }
 
 export function Metric({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "pos" | "neg" }) {
   return (
-    <div className="panel p-5">
-      <div className="text-xs font-mono text-muted-foreground">{label.toUpperCase()}</div>
-      <div className={`mt-1 text-2xl font-mono tabular ${tone === "pos" ? "text-success" : tone === "neg" ? "text-destructive" : ""}`}>{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+    <div className="panel p-4 sm:p-5 min-w-0">
+      <div className="text-[10px] sm:text-xs font-mono text-muted-foreground truncate">{label.toUpperCase()}</div>
+      <div className={`mt-1 text-lg sm:text-2xl font-mono tabular truncate ${tone === "pos" ? "text-success" : tone === "neg" ? "text-destructive" : ""}`}>{value}</div>
+      {sub && <div className="text-[11px] sm:text-xs text-muted-foreground mt-1 truncate">{sub}</div>}
     </div>
   );
 }
@@ -135,11 +210,9 @@ export function fmtUsd(n: number | string | null | undefined) {
   const v = Number(n ?? 0);
   return v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
-
 export function fmtNum(n: number | string | null | undefined, dp = 4) {
   return Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: dp });
 }
-
 export function fmtPct(n: number) {
   return (n * 100).toFixed(1) + "%";
 }
