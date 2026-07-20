@@ -57,7 +57,7 @@ export const scanConnectionPermissions = createServerFn({ method: "POST" })
     await context.supabase.from("audit_log").insert({
       user_id: context.userId, action: "connection.permission_scan",
       entity: "exchange_connections", entity_id: data.connectionId,
-      payload: scan as unknown as Record<string, unknown>,
+      payload: scan as unknown as Record<string, never>,
     });
     return scan;
   });
