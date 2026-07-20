@@ -46,8 +46,15 @@ export type Database = {
       }
       automation_settings: {
         Row: {
+          activation_confirmed_phrase_at: string | null
           allowed_assets: string[]
           kill_switch_active: boolean
+          live_consecutive_failures: number
+          live_kill_reason: string | null
+          live_kill_until: string | null
+          live_max_notional_per_order: number
+          live_rejected_today: number
+          live_trading_enabled: boolean
           max_daily_loss: number
           max_trade_size: number
           max_trades_per_day: number
@@ -58,8 +65,15 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activation_confirmed_phrase_at?: string | null
           allowed_assets?: string[]
           kill_switch_active?: boolean
+          live_consecutive_failures?: number
+          live_kill_reason?: string | null
+          live_kill_until?: string | null
+          live_max_notional_per_order?: number
+          live_rejected_today?: number
+          live_trading_enabled?: boolean
           max_daily_loss?: number
           max_trade_size?: number
           max_trades_per_day?: number
@@ -70,8 +84,15 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activation_confirmed_phrase_at?: string | null
           allowed_assets?: string[]
           kill_switch_active?: boolean
+          live_consecutive_failures?: number
+          live_kill_reason?: string | null
+          live_kill_until?: string | null
+          live_max_notional_per_order?: number
+          live_rejected_today?: number
+          live_trading_enabled?: boolean
           max_daily_loss?: number
           max_trade_size?: number
           max_trades_per_day?: number
@@ -233,11 +254,16 @@ export type Database = {
           label: string
           last_error: string | null
           last_sync_at: string | null
+          max_notional_per_order: number | null
+          permission_scan: Json | null
           read_enabled: boolean
           status: string
+          trading_activated_at: string | null
           trading_enabled: boolean
+          unnecessary_permissions: string[]
           updated_at: string
           user_id: string
+          withdrawal_detected: boolean
         }
         Insert: {
           connector_id: string
@@ -248,11 +274,16 @@ export type Database = {
           label: string
           last_error?: string | null
           last_sync_at?: string | null
+          max_notional_per_order?: number | null
+          permission_scan?: Json | null
           read_enabled?: boolean
           status?: string
+          trading_activated_at?: string | null
           trading_enabled?: boolean
+          unnecessary_permissions?: string[]
           updated_at?: string
           user_id: string
+          withdrawal_detected?: boolean
         }
         Update: {
           connector_id?: string
@@ -263,13 +294,69 @@ export type Database = {
           label?: string
           last_error?: string | null
           last_sync_at?: string | null
+          max_notional_per_order?: number | null
+          permission_scan?: Json | null
           read_enabled?: boolean
           status?: string
+          trading_activated_at?: string | null
           trading_enabled?: boolean
+          unnecessary_permissions?: string[]
           updated_at?: string
           user_id?: string
+          withdrawal_detected?: boolean
         }
         Relationships: []
+      }
+      execution_log: {
+        Row: {
+          created_at: string
+          event: string
+          id: string
+          message: string | null
+          order_id: string | null
+          payload: Json
+          position_id: string | null
+          severity: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event: string
+          id?: string
+          message?: string | null
+          order_id?: string | null
+          payload?: Json
+          position_id?: string | null
+          severity?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event?: string
+          id?: string
+          message?: string | null
+          order_id?: string | null
+          payload?: Json
+          position_id?: string | null
+          severity?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "execution_log_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "execution_log_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       market_candles: {
         Row: {
@@ -370,52 +457,76 @@ export type Database = {
         Row: {
           account_id: string
           created_at: string
+          error_message: string | null
+          execution_venue: string
+          external_order_id: string | null
           fees: number | null
           filled_at: string | null
           filled_price: number | null
           id: string
+          is_live: boolean
           limit_price: number | null
           order_type: string
+          parent_order_id: string | null
           position_id: string | null
           qty: number
+          retry_count: number
           side: string
           slippage_bps: number | null
           status: string
+          stop_price: number | null
           symbol: string
+          trailing_stop_pct: number | null
           user_id: string
         }
         Insert: {
           account_id: string
           created_at?: string
+          error_message?: string | null
+          execution_venue?: string
+          external_order_id?: string | null
           fees?: number | null
           filled_at?: string | null
           filled_price?: number | null
           id?: string
+          is_live?: boolean
           limit_price?: number | null
           order_type?: string
+          parent_order_id?: string | null
           position_id?: string | null
           qty: number
+          retry_count?: number
           side: string
           slippage_bps?: number | null
           status?: string
+          stop_price?: number | null
           symbol: string
+          trailing_stop_pct?: number | null
           user_id: string
         }
         Update: {
           account_id?: string
           created_at?: string
+          error_message?: string | null
+          execution_venue?: string
+          external_order_id?: string | null
           fees?: number | null
           filled_at?: string | null
           filled_price?: number | null
           id?: string
+          is_live?: boolean
           limit_price?: number | null
           order_type?: string
+          parent_order_id?: string | null
           position_id?: string | null
           qty?: number
+          retry_count?: number
           side?: string
           slippage_bps?: number | null
           status?: string
+          stop_price?: number | null
           symbol?: string
+          trailing_stop_pct?: number | null
           user_id?: string
         }
         Relationships: [
@@ -424,6 +535,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "paper_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_parent_order_id_fkey"
+            columns: ["parent_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
           {
@@ -481,19 +599,28 @@ export type Database = {
           account_id: string
           ai_confidence: number | null
           ai_reasoning: string | null
+          ai_regime: string | null
           avg_entry: number
+          break_even_moved: boolean
           closed_at: string | null
+          duration_seconds: number | null
           exit_price: number | null
           exit_reason: string | null
+          filled_qty: number | null
           id: string
           opened_at: string
+          original_qty: number | null
+          partial_take_profit_pct: number | null
           qty: number
           realized_pnl: number | null
           side: string
           status: string
           stop_loss: number | null
+          strategy_id: string | null
           symbol: string
           take_profit: number | null
+          trailing_activated_at: string | null
+          trailing_high_water: number | null
           trailing_stop_pct: number | null
           user_id: string
         }
@@ -501,19 +628,28 @@ export type Database = {
           account_id: string
           ai_confidence?: number | null
           ai_reasoning?: string | null
+          ai_regime?: string | null
           avg_entry: number
+          break_even_moved?: boolean
           closed_at?: string | null
+          duration_seconds?: number | null
           exit_price?: number | null
           exit_reason?: string | null
+          filled_qty?: number | null
           id?: string
           opened_at?: string
+          original_qty?: number | null
+          partial_take_profit_pct?: number | null
           qty: number
           realized_pnl?: number | null
           side: string
           status?: string
           stop_loss?: number | null
+          strategy_id?: string | null
           symbol: string
           take_profit?: number | null
+          trailing_activated_at?: string | null
+          trailing_high_water?: number | null
           trailing_stop_pct?: number | null
           user_id: string
         }
@@ -521,19 +657,28 @@ export type Database = {
           account_id?: string
           ai_confidence?: number | null
           ai_reasoning?: string | null
+          ai_regime?: string | null
           avg_entry?: number
+          break_even_moved?: boolean
           closed_at?: string | null
+          duration_seconds?: number | null
           exit_price?: number | null
           exit_reason?: string | null
+          filled_qty?: number | null
           id?: string
           opened_at?: string
+          original_qty?: number | null
+          partial_take_profit_pct?: number | null
           qty?: number
           realized_pnl?: number | null
           side?: string
           status?: string
           stop_loss?: number | null
+          strategy_id?: string | null
           symbol?: string
           take_profit?: number | null
+          trailing_activated_at?: string | null
+          trailing_high_water?: number | null
           trailing_stop_pct?: number | null
           user_id?: string
         }
@@ -785,6 +930,102 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      trade_journal: {
+        Row: {
+          ai_confidence: number | null
+          created_at: string
+          duration_seconds: number | null
+          entry_price: number | null
+          entry_reason: string | null
+          execution_quality_score: number | null
+          exit_price: number | null
+          exit_reason: string | null
+          fees_total: number | null
+          id: string
+          indicators: Json | null
+          lessons: string | null
+          market_regime: string | null
+          model_version: string | null
+          position_id: string | null
+          qty: number | null
+          realized_pnl: number | null
+          side: string
+          signal_id: string | null
+          slippage_bps_avg: number | null
+          strategy_id: string | null
+          symbol: string
+          user_id: string
+          user_modifications: number
+        }
+        Insert: {
+          ai_confidence?: number | null
+          created_at?: string
+          duration_seconds?: number | null
+          entry_price?: number | null
+          entry_reason?: string | null
+          execution_quality_score?: number | null
+          exit_price?: number | null
+          exit_reason?: string | null
+          fees_total?: number | null
+          id?: string
+          indicators?: Json | null
+          lessons?: string | null
+          market_regime?: string | null
+          model_version?: string | null
+          position_id?: string | null
+          qty?: number | null
+          realized_pnl?: number | null
+          side: string
+          signal_id?: string | null
+          slippage_bps_avg?: number | null
+          strategy_id?: string | null
+          symbol: string
+          user_id: string
+          user_modifications?: number
+        }
+        Update: {
+          ai_confidence?: number | null
+          created_at?: string
+          duration_seconds?: number | null
+          entry_price?: number | null
+          entry_reason?: string | null
+          execution_quality_score?: number | null
+          exit_price?: number | null
+          exit_reason?: string | null
+          fees_total?: number | null
+          id?: string
+          indicators?: Json | null
+          lessons?: string | null
+          market_regime?: string | null
+          model_version?: string | null
+          position_id?: string | null
+          qty?: number | null
+          realized_pnl?: number | null
+          side?: string
+          signal_id?: string | null
+          slippage_bps_avg?: number | null
+          strategy_id?: string | null
+          symbol?: string
+          user_id?: string
+          user_modifications?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_journal_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_journal_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "signals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
