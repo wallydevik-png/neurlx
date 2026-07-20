@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
-  Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar,
+  Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
 } from "lucide-react";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
 import { toast } from "sonner";
@@ -26,6 +26,8 @@ const NAV = [
   { to: "/optimizer", label: "Optimizer", icon: SlidersHorizontal },
   { to: "/shadow", label: "Shadow Mode", icon: EyeOff },
   { to: "/accuracy", label: "AI Accuracy", icon: Target },
+  { to: "/journal", label: "Trade Journal", icon: BookOpen },
+  { to: "/performance", label: "Performance", icon: TrendingUp },
   { to: "/history", label: "History", icon: History },
   { to: "/automation", label: "Automation", icon: Sliders },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
