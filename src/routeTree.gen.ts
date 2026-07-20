@@ -19,10 +19,12 @@ import { Route as AuthenticatedShadowRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedReadinessRouteImport } from './routes/_authenticated/readiness'
 import { Route as AuthenticatedPositionsRouteImport } from './routes/_authenticated/positions'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
+import { Route as AuthenticatedPerformanceRouteImport } from './routes/_authenticated/performance'
 import { Route as AuthenticatedOptimizerRouteImport } from './routes/_authenticated/optimizer'
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
+import { Route as AuthenticatedJournalRouteImport } from './routes/_authenticated/journal'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAutomationRouteImport } from './routes/_authenticated/automation'
@@ -82,6 +84,12 @@ const AuthenticatedPortfolioRoute = AuthenticatedPortfolioRouteImport.update({
   path: '/portfolio',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPerformanceRoute =
+  AuthenticatedPerformanceRouteImport.update({
+    id: '/performance',
+    path: '/performance',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOptimizerRoute = AuthenticatedOptimizerRouteImport.update({
   id: '/optimizer',
   path: '/optimizer',
@@ -100,6 +108,11 @@ const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
 const AuthenticatedLabRoute = AuthenticatedLabRouteImport.update({
   id: '/lab',
   path: '/lab',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedJournalRoute = AuthenticatedJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
@@ -161,10 +174,12 @@ export interface FileRoutesByFullPath {
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/optimizer': typeof AuthenticatedOptimizerRoute
+  '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
@@ -185,10 +200,12 @@ export interface FileRoutesByTo {
   '/automation': typeof AuthenticatedAutomationRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/optimizer': typeof AuthenticatedOptimizerRoute
+  '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
@@ -211,10 +228,12 @@ export interface FileRoutesById {
   '/_authenticated/automation': typeof AuthenticatedAutomationRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
+  '/_authenticated/journal': typeof AuthenticatedJournalRoute
   '/_authenticated/lab': typeof AuthenticatedLabRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
   '/_authenticated/optimizer': typeof AuthenticatedOptimizerRoute
+  '/_authenticated/performance': typeof AuthenticatedPerformanceRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
   '/_authenticated/positions': typeof AuthenticatedPositionsRoute
   '/_authenticated/readiness': typeof AuthenticatedReadinessRoute
@@ -237,10 +256,12 @@ export interface FileRouteTypes {
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/journal'
     | '/lab'
     | '/market'
     | '/monitoring'
     | '/optimizer'
+    | '/performance'
     | '/portfolio'
     | '/positions'
     | '/readiness'
@@ -261,10 +282,12 @@ export interface FileRouteTypes {
     | '/automation'
     | '/dashboard'
     | '/history'
+    | '/journal'
     | '/lab'
     | '/market'
     | '/monitoring'
     | '/optimizer'
+    | '/performance'
     | '/portfolio'
     | '/positions'
     | '/readiness'
@@ -286,10 +309,12 @@ export interface FileRouteTypes {
     | '/_authenticated/automation'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
+    | '/_authenticated/journal'
     | '/_authenticated/lab'
     | '/_authenticated/market'
     | '/_authenticated/monitoring'
     | '/_authenticated/optimizer'
+    | '/_authenticated/performance'
     | '/_authenticated/portfolio'
     | '/_authenticated/positions'
     | '/_authenticated/readiness'
@@ -379,6 +404,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPortfolioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/performance': {
+      id: '/_authenticated/performance'
+      path: '/performance'
+      fullPath: '/performance'
+      preLoaderRoute: typeof AuthenticatedPerformanceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/optimizer': {
       id: '/_authenticated/optimizer'
       path: '/optimizer'
@@ -405,6 +437,13 @@ declare module '@tanstack/react-router' {
       path: '/lab'
       fullPath: '/lab'
       preLoaderRoute: typeof AuthenticatedLabRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/journal': {
+      id: '/_authenticated/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof AuthenticatedJournalRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/history': {
@@ -494,10 +533,12 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAutomationRoute: typeof AuthenticatedAutomationRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
+  AuthenticatedJournalRoute: typeof AuthenticatedJournalRoute
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
   AuthenticatedOptimizerRoute: typeof AuthenticatedOptimizerRoute
+  AuthenticatedPerformanceRoute: typeof AuthenticatedPerformanceRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
   AuthenticatedPositionsRoute: typeof AuthenticatedPositionsRoute
   AuthenticatedReadinessRoute: typeof AuthenticatedReadinessRoute
@@ -515,10 +556,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAutomationRoute: AuthenticatedAutomationRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
+  AuthenticatedJournalRoute: AuthenticatedJournalRoute,
   AuthenticatedLabRoute: AuthenticatedLabRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,
   AuthenticatedOptimizerRoute: AuthenticatedOptimizerRoute,
+  AuthenticatedPerformanceRoute: AuthenticatedPerformanceRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
   AuthenticatedPositionsRoute: AuthenticatedPositionsRoute,
   AuthenticatedReadinessRoute: AuthenticatedReadinessRoute,

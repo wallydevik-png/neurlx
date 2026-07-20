@@ -68,12 +68,10 @@ function Approvals() {
 interface SignalRow {
   id: string; symbol: string; side: string; entry: number | string;
   qty: number | string; stop_loss: number | string; take_profit: number | string;
-  confidence: number | string; risk_reward: number | string;
+  confidence: number | string; risk_reward: number | string | null;
   reasoning: string | null; risk_level?: string | null; market_regime?: string | null;
   time_horizon?: string | null; expires_at?: string | null;
-  indicators?: Record<string, unknown> | null;
-  contributions?: Array<{ name: string; direction: string; weight: number }> | null;
-  risk_factors?: string[] | null;
+  indicators?: unknown; contributions?: unknown; risk_factors?: unknown;
 }
 
 function ApprovalCard({
