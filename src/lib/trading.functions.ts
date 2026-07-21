@@ -126,7 +126,7 @@ export const addConnection = createServerFn({ method: "POST" })
     }
 
     const ciphertext = Object.keys(data.credentials).length
-      ? encryptJSON(data.credentials)
+      ? await encryptJSON(data.credentials)
       : null;
     const { data: row, error } = await context.supabase.from("exchange_connections").insert({
       user_id: context.userId,
@@ -549,7 +549,7 @@ export const scanConnectionHealth = createServerFn({ method: "POST" })
     const { decryptJSON } = await import("@/lib/crypto.server");
     const { createConnector } = await import("@/lib/connectors/factory.server");
     const creds = conn.credential_ciphertext
-      ? decryptJSON<Record<string, string>>(conn.credential_ciphertext) : {};
+      ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext) : {};
     const connector = createConnector(conn.connector_id, creds, {
       supabase: context.supabase, userId: context.userId, connectionId: conn.id,
     });

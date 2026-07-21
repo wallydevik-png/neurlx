@@ -316,7 +316,7 @@ export const reconcileNow = createServerFn({ method: "POST" })
     const { createConnector } = await import("@/lib/connectors/factory.server");
     const { reconcileConnection } = await import("@/lib/execution/reconcile.server");
     const creds = conn.credential_ciphertext
-      ? (decryptJSON(conn.credential_ciphertext) as Record<string, string>)
+      ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
       : {};
     const connector = createConnector(conn.connector_id, creds, {
       supabase: context.supabase, userId: context.userId, connectionId: conn.id,

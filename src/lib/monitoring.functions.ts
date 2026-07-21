@@ -101,7 +101,7 @@ export const getLiveMonitoring = createServerFn({ method: "GET" })
       try {
         if (c.status === "connected") {
           const creds = c.credential_ciphertext
-            ? (decryptJSON(c.credential_ciphertext) as Record<string, string>)
+            ? await decryptJSON<Record<string, string>>(c.credential_ciphertext)
             : {};
           const conn = createConnector(c.connector_id, creds);
           [balances, positions] = await Promise.all([

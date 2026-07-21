@@ -48,7 +48,7 @@ export async function runConnectorTestSuite(
 
   const { decryptJSON } = await import("@/lib/crypto.server");
   const creds: Record<string, string> = conn.credential_ciphertext
-    ? decryptJSON<Record<string, string>>(conn.credential_ciphertext)
+    ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
     : {};
 
   const connector = createConnector(conn.connector_id, creds, {

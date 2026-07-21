@@ -82,7 +82,7 @@ async function routeConnector(
   const { decryptJSON } = await import("@/lib/crypto.server");
   const { createConnector } = await import("@/lib/connectors/factory.server");
   const creds = conn.credential_ciphertext
-    ? (decryptJSON(conn.credential_ciphertext) as Record<string, string>)
+    ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
     : {};
   const connector = createConnector(conn.connector_id, creds, {
     supabase, userId, connectionId: conn.id, orderId,
