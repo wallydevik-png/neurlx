@@ -3,8 +3,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppShell, PageHeader, Metric, fmtUsd, fmtPct } from "@/components/AppShell";
-import { getDashboard, scanMarketOpportunities, getAiPerformance, listSignals, getLiveEquity } from "@/lib/trading.functions";
-import { Plug, ArrowRight, TrendingUp, TrendingDown, Minus, Sparkles } from "lucide-react";
+import { getDashboard, scanMarketOpportunities, getAiPerformance, listSignals, getLiveEquity, getTradeHistory } from "@/lib/trading.functions";
+import { Plug, ArrowRight, TrendingUp, TrendingDown, Minus, Sparkles, History } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NeurlX" }, { name: "robots", content: "noindex" }] }),
@@ -17,6 +17,7 @@ function Dashboard() {
   const perfFn = useServerFn(getAiPerformance);
   const sigFn = useServerFn(listSignals);
   const liveFn = useServerFn(getLiveEquity);
+  const historyFn = useServerFn(getTradeHistory);
 
   const [mode, setMode] = useState<"demo" | "live">(() => {
     if (typeof window === "undefined") return "demo";
@@ -29,6 +30,7 @@ function Dashboard() {
   const { data: perf } = useQuery({ queryKey: ["ai-perf"], queryFn: () => perfFn(), refetchInterval: 60000 });
   const { data: signals = [] } = useQuery({ queryKey: ["signals"], queryFn: () => sigFn(), refetchInterval: 15000 });
   const { data: liveEq } = useQuery({ queryKey: ["live-equity"], queryFn: () => liveFn(), refetchInterval: 30000, enabled: mode === "live" });
+  const { data: history = [] } = useQuery({ queryKey: ["trade-history"], queryFn: () => historyFn(), refetchInterval: 20000 });
 
   if (isLoading || !data) return <AppShell><div className="text-muted-foreground">Loading…</div></AppShell>;
 
@@ -154,6 +156,50 @@ function Dashboard() {
             </ul>
           )}
         </div>
+      </div>
+
+      <div className="mt-4 panel p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold flex items-center gap-2"><History className="w-4 h-4 text-primary" /> Trade history</h2>
+          <span className="text-xs text-muted-foreground font-mono">{history.length} recent</span>
+        </div>
+        {history.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">No trades yet. Turn on Full Autopilot on a connected account to let the AI start trading for you.</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] font-mono uppercase text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 font-medium">Time</th>
+                  <th className="text-left font-medium">Symbol</th>
+                  <th className="text-left font-medium">Side</th>
+                  <th className="text-right font-medium">Qty</th>
+                  <th className="text-right font-medium">Price</th>
+                  <th className="text-left font-medium">Venue</th>
+                  <th className="text-left font-medium">Status</th>
+                  <th className="text-right font-medium">P&amp;L</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {history.slice(0, 20).map(h => {
+                  const pnl = h.position?.realized_pnl != null ? Number(h.position.realized_pnl) : null;
+                  return (
+                    <tr key={h.id} className="border-b border-border/50">
+                      <td className="py-2 text-muted-foreground">{new Date(h.created_at).toLocaleString(undefined, { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" })}</td>
+                      <td>{h.symbol}</td>
+                      <td className={h.side === "buy" ? "text-success" : "text-destructive"}>{h.side.toUpperCase()}</td>
+                      <td className="text-right">{Number(h.qty).toFixed(4)}</td>
+                      <td className="text-right">{h.filled_price != null ? fmtUsd(Number(h.filled_price)) : "—"}</td>
+                      <td className="text-muted-foreground">{h.is_live ? <span className="text-destructive">LIVE</span> : "paper"} · {h.execution_venue}</td>
+                      <td className={h.status === "filled" ? "text-success" : h.status === "rejected" || h.status === "error" ? "text-destructive" : "text-muted-foreground"}>{h.status}</td>
+                      <td className={`text-right ${pnl == null ? "text-muted-foreground" : pnl >= 0 ? "text-success" : "text-destructive"}`}>{pnl == null ? (h.position?.status === "open" ? "open" : "—") : fmtUsd(pnl)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   );

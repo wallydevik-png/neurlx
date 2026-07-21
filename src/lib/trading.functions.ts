@@ -405,6 +405,54 @@ export const disableFullAutopilot = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Quick trading-limits update. Exposed on the Accounts page so users can set
+// max trades per day, size per trade, and concurrent-position ceiling without
+// diving into the full Autonomous config page.
+export const updateTradingLimits = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    max_trades_per_day: z.number().int().min(1).max(200),
+    max_trade_size: z.number().min(10).max(1_000_000),
+    live_max_notional_per_order: z.number().min(5).max(1_000_000),
+    autonomous_max_open_positions: z.number().int().min(1).max(20),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.from("automation_settings")
+      .update({
+        max_trades_per_day: data.max_trades_per_day,
+        max_trade_size: data.max_trade_size,
+        live_max_notional_per_order: data.live_max_notional_per_order,
+        autonomous_max_open_positions: data.autonomous_max_open_positions,
+      })
+      .eq("user_id", context.userId);
+    if (error) throw error;
+    return { ok: true };
+  });
+
+// Unified trade history — orders + related position P&L, most recent first.
+// Powers the "Trade history" card on the Dashboard.
+export const getTradeHistory = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: orders } = await supabase.from("orders")
+      .select("id,symbol,side,qty,filled_price,status,fees,created_at,position_id,is_live,execution_venue")
+      .eq("user_id", userId).order("created_at", { ascending: false }).limit(50);
+    const posIds = Array.from(new Set((orders ?? []).map(o => o.position_id).filter((x): x is string => !!x)));
+    let posMap = new Map<string, { status: string; realized_pnl: number | null; closed_at: string | null }>();
+    if (posIds.length) {
+      const { data: pos } = await supabase.from("positions")
+        .select("id,status,realized_pnl,closed_at").in("id", posIds);
+      posMap = new Map((pos ?? []).map(p => [p.id, {
+        status: p.status, realized_pnl: p.realized_pnl as number | null, closed_at: p.closed_at as string | null,
+      }]));
+    }
+    return (orders ?? []).map(o => ({
+      ...o,
+      position: o.position_id ? posMap.get(o.position_id) ?? null : null,
+    }));
+  });
+
 // Generate a fresh AI signal from the market scanner. Picks the highest-
 // conviction opportunity from allowed assets, stores full explainability,
 // and (in Autonomous mode with a tradable direction) executes.

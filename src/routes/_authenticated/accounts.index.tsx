@@ -6,10 +6,11 @@ import {
   disconnectConnection, listConnections, setPermissions,
   scanConnectionHealth, runConnectorTests,
   enableFullAutopilot, disableFullAutopilot,
+  updateTradingLimits, getSettings,
 } from "@/lib/trading.functions";
 import { getBroker } from "@/lib/connectors/brokerRegistry";
 import { capabilityBadges, getCapabilities } from "@/lib/connectors/capabilities";
-import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle, TestTube2, CheckCircle2, XCircle, Sparkles } from "lucide-react";
+import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle, TestTube2, CheckCircle2, XCircle, Sparkles, Sliders } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -73,6 +74,9 @@ function Accounts() {
           </Link>
         }
       />
+
+      <TradingLimitsPanel />
+
 
       {isLoading ? (
         <div className="text-muted-foreground">Loading…</div>
@@ -352,5 +356,71 @@ function TestButton({ id }: { id: string }) {
       className="p-2 rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-50">
       <TestTube2 className={`w-4 h-4 ${busy ? "animate-pulse" : ""}`} />
     </button>
+  );
+}
+
+function TradingLimitsPanel() {
+  const getFn = useServerFn(getSettings);
+  const saveFn = useServerFn(updateTradingLimits);
+  const qc = useQueryClient();
+  const { data: s } = useQuery({ queryKey: ["settings"], queryFn: () => getFn() });
+  const [form, setForm] = useState<{ trades: string; size: string; live: string; open: string } | null>(null);
+  const current = form ?? (s ? {
+    trades: String(s.max_trades_per_day),
+    size: String(s.max_trade_size),
+    live: String(s.live_max_notional_per_order),
+    open: String(s.autonomous_max_open_positions),
+  } : null);
+  if (!current) return null;
+  async function save() {
+    try {
+      await saveFn({ data: {
+        max_trades_per_day: Number(current!.trades),
+        max_trade_size: Number(current!.size),
+        live_max_notional_per_order: Number(current!.live),
+        autonomous_max_open_positions: Number(current!.open),
+      }});
+      toast.success("Trading limits saved");
+      setForm(null);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+  }
+  const dirty = form !== null;
+  return (
+    <div className="panel p-5 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Sliders className="w-4 h-4 text-primary" />
+        <h2 className="font-semibold text-sm">Trading limits</h2>
+        <span className="text-xs text-muted-foreground">Applies to every connected account · Autopilot obeys these caps</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <LimitField label="Max trades / day" hint="Hard cap across all accounts" value={current.trades} onChange={v => setForm({ ...current, trades: v })} suffix="trades" />
+        <LimitField label="Max size / trade (paper)" hint="Notional cap for demo orders" value={current.size} onChange={v => setForm({ ...current, size: v })} suffix="USD" />
+        <LimitField label="Max size / trade (live)" hint="Notional cap for real orders" value={current.live} onChange={v => setForm({ ...current, live: v })} suffix="USD" />
+        <LimitField label="Max open positions" hint="Concurrent positions cap" value={current.open} onChange={v => setForm({ ...current, open: v })} suffix="pos" />
+      </div>
+      {dirty && (
+        <div className="mt-3 flex gap-2 justify-end">
+          <button onClick={() => setForm(null)} className="text-xs px-3 py-1.5 rounded-md border border-border">Cancel</button>
+          <button onClick={save} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium">Save limits</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LimitField({ label, hint, value, onChange, suffix }: {
+  label: string; hint: string; value: string; onChange: (v: string) => void; suffix: string;
+}) {
+  return (
+    <div>
+      <label className="block text-[10px] font-mono uppercase text-muted-foreground">{label}</label>
+      <div className="mt-1 flex items-center gap-1.5 rounded-md border border-border bg-background px-2">
+        <input type="number" min={0} step="any" value={value} onChange={e => onChange(e.target.value)}
+          className="flex-1 bg-transparent py-1.5 text-sm font-mono outline-none" />
+        <span className="text-[10px] font-mono text-muted-foreground">{suffix}</span>
+      </div>
+      <div className="text-[10px] text-muted-foreground mt-1">{hint}</div>
+    </div>
   );
 }
