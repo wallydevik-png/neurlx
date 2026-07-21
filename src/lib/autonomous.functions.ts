@@ -140,10 +140,58 @@ export async function runAutonomousCycleFor(
   }
   const live = liveConn !== null;
 
-  // 7. Pull pending signals
-  const { data: signals } = await supabase.from("signals")
+  // 7. Pull pending signals — and if none exist, have the AI committee
+  // generate fresh ones from the user's allowed_assets watchlist. This is
+  // what makes autopilot truly hands-free: the loop doesn't wait for the
+  // user to press "Generate signal" in the UI.
+  const minConfForGen = Number(settings.autonomous_min_confidence ?? 0.85);
+  let { data: signals } = await supabase.from("signals")
     .select("*").eq("user_id", userId).eq("status", "pending")
     .order("created_at", { ascending: false }).limit(20);
+
+  if ((!signals || signals.length === 0) && capacity > 0) {
+    try {
+      const { runCommittee } = await import("@/lib/trading/committee.server");
+      const { listSupportedSymbols } = await import("@/lib/marketdata/service.server");
+      const universe = (settings.allowed_assets && settings.allowed_assets.length
+        ? settings.allowed_assets
+        : listSupportedSymbols().slice(0, 8));
+      const verdicts = await runCommittee(supabase, universe);
+      // Only insert top verdicts that clear the confidence floor AND have
+      // committee agreement — this is the "conference" gate that catches
+      // false positives no single indicator scheme would flag.
+      const picks = verdicts
+        .filter(v => v.consensusDirection !== "wait"
+          && v.consensusConfidence >= minConfForGen
+          && v.agreement >= 2 / 3)
+        .slice(0, capacity);
+      const toInsert = picks.map(v => ({
+        user_id: userId,
+        symbol: v.symbol, side: v.consensusDirection as "buy" | "sell",
+        entry: v.base.entry, stop_loss: v.base.stopLoss, take_profit: v.base.takeProfit,
+        qty: v.base.qty,
+        confidence: v.consensusConfidence,
+        reasoning: `AI committee (${v.votes.filter(vt => vt.direction === v.consensusDirection).map(vt => vt.analyst).join(", ")}) — ${v.base.reasoning}`,
+        risk_reward: v.base.riskReward, status: "pending",
+        expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        time_horizon: v.base.timeHorizon, risk_level: v.base.riskLevel,
+        market_regime: v.base.regime,
+        indicators: v.base.indicators as unknown as Record<string, never>,
+        contributions: [...v.base.contributions, ...v.votes.map(vt => ({
+          indicator: `Analyst:${vt.analyst}`, signal: vt.direction === "buy" ? "bullish" : vt.direction === "sell" ? "bearish" : "neutral",
+          weight: vt.confidence, detail: vt.rationale,
+        }))] as unknown as Record<string, never>,
+        risk_factors: v.base.riskFactors as unknown as Record<string, never>,
+      }));
+      if (toInsert.length) {
+        const { data: inserted } = await supabase.from("signals")
+          .insert(toInsert).select();
+        signals = inserted ?? [];
+      }
+    } catch (e) {
+      errors.push(`committee_gen: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   scanned = signals?.length ?? 0;
 
