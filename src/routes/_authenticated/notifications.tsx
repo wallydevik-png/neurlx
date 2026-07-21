@@ -55,6 +55,9 @@ const SEV_COLORS: Record<string, string> = {
 function NotificationsPage() {
   const qc = useQueryClient();
   const fetch = useServerFn(listNotifications);
+  const markOne = useServerFn(markNotificationRead);
+  const markAll = useServerFn(markAllNotificationsRead);
+  const updatePrefs = useServerFn(updateNotificationPreferences);
   const { data } = useSuspenseQuery(notifsQO(async () => (await fetch()) as unknown as NotifData));
 
   const notifs = (data?.notifications ?? []) as Notif[];
