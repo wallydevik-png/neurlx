@@ -1,47 +1,56 @@
-# Remaining Completion Roadmap (15 slices)
 
-Shipping one deep slice per turn. Each slice is safety-critical and gets full DB + server + UI wiring.
+# Making NeurlX Actually Trade
 
-## Status
-- ✅ Slice 1 — Autonomous Trading Engine (shipped last turn: gates, cron, breakers, UI)
-- 🔨 Slice 2 — Notification & Alert Intelligence (this turn)
-- ⏳ Slice 3 — Onboarding Wizard
-- ⏳ Slice 4 — Compliance & User Protection (disclaimers, GDPR export/delete, consent)
-- ⏳ Slice 5 — Mobile Experience & PWA (manifest, service worker, mobile shell, biometrics)
-- ⏳ Slice 6 — Advanced Analytics & Reporting (benchmark vs BTC/S&P, tax export, periodic reports)
-- ⏳ Slice 7 — Market Intelligence & Professional Consensus (provider framework, consensus scoring)
-- ⏳ Slice 8 — Alternative Data Engine (orderbook, funding, OI, on-chain, calendar)
-- ⏳ Slice 9 — AI Research Lab & Strategy Evolution (ensemble voting, experiments, promotion pipeline)
-- ⏳ Slice 10 — Advanced Risk Intelligence (Monte Carlo, stress tests, risk-of-ruin, auto-reduce)
-- ⏳ Slice 11 — Institutional Reliability (health monitoring, backups, incident tracking, auto-recovery)
-- ⏳ Slice 12 — Capital & Wealth Management (compounding, HWM, reserves, scaling)
-- ⏳ Slice 13 — Multi-Asset Expansion (stocks, forex, commodities, ETFs)
-- ⏳ Slice 14 — AI Personal Trading Assistant (natural language)
-- ⏳ Slice 15 — Public Platform Expansion (optional; multi-tenant, marketplace, copy trading)
+You want three things: stop feeling like a demo, link a real broker without MetaApi, and let the AI trade automatically after linking. Here is exactly what I'll ship.
 
-Reply "next" between slices.
+## 1. Pick the right broker (direct API, no bridge)
 
-## This turn — Slice 2: Notifications
+Since MT5 requires the MetaApi bridge (and you said no), the realistic direct-API options already wired in NeurlX are:
 
-### Database
-- `notifications` (user_id, kind, severity, title, message, payload jsonb, read_at, created_at)
-- `notification_preferences` (user_id PK, channels jsonb, severity_min, quiet_hours_start/end, per-kind toggles jsonb)
+| Broker | Assets | Account type | Signup |
+|---|---|---|---|
+| **Alpaca** | US stocks + crypto | Real **paper** account (free) or funded live | alpaca.markets → generate API key/secret |
+| **Binance** | Crypto spot | Live only (funded) | binance.com → API Management |
+| **Bybit** | Crypto spot/perps | Live or Testnet | bybit.com → API |
+| **OANDA** | Forex/CFD | Demo (free) or live | oanda.com → v20 API token |
+| **Kraken / OKX** | Crypto | Live | provider dashboards |
 
-### Server
-- `src/lib/notifications.functions.ts`: `listNotifications`, `markRead`, `markAllRead`, `getPreferences`, `updatePreferences`, `unreadCount`.
-- `src/lib/notifications/emit.server.ts`: `emitNotification(supabase, userId, kind, ...)` — respects prefs + quiet hours, writes to `notifications`, and (for enabled channels) enqueues email via Lovable Emails (stub for SMS/Telegram/Discord until user provides connectors).
+**My recommendation: Alpaca** — it gives you a real broker-issued paper account (real market data, real order flow through Alpaca's matching engine, $100k paper cash) that feels identical to live, then flip the same key to a funded live account when ready. This is the fastest way to see NeurlX actually place orders today.
 
-### Emission points (wired now)
-- `submitOrder` — trade executed / rejected
-- `positionManager` — SL / TP / trailing / partial TP triggered
-- Autonomous cycle — activated, paused, breaker tripped
-- Circuit breakers — daily loss halt, consecutive-loss halt
-- Connection health — exchange failure (in monitoring)
+## 2. Per-account Demo ↔ Live switch
 
-### UI
-- Bell icon in `AppShell` with unread count.
-- `/notifications` — list + filter by severity/kind + mark read + preferences panel (channels, quiet hours, severity floor, per-kind toggles).
+- Add `account_mode` (`paper` | `live`) to `exchange_connections`, defaulting to `paper`.
+- Account card shows a **Demo / Live** toggle. Switching to Live requires: verified connection, no withdrawal permission, and a one-time confirmation.
+- Execution engine already routes to the right connector; I'll gate live orders on `account_mode === 'live'` and keep paper orders on the internal paper book.
+- Dashboard, positions, P&L, and analytics filter by the active account so the numbers you see are the numbers of the account you're using — no more mixed synthetic feel.
 
-### Safety
-- Notifications are informational; failure to emit never blocks an order.
-- Emergency severity bypasses quiet hours.
+## 3. One-click auto-trade after linking
+
+New flow on `/accounts/[id]`:
+
+1. **Test Connection** → runs balance + permission scan.
+2. **Enable Auto-Trading** button → sets `automation_settings.mode = 'autonomous'`, `kill_switch_active = false`, binds the strategy to this account, and starts the cron cycle for your user.
+3. Live status strip: "AI trading on {broker} · Demo · last signal 2m ago · next scan 58s".
+
+The autonomous cron (`/api/public/cron/autonomous`) already exists and runs the AI cycle for every user in autonomous mode. I'll wire the account link to it and add a visible "Last cycle ran … · Next in …" indicator so you can see it's alive.
+
+## 4. Kill the "simulation" feel
+
+- Replace synthetic Intel/AltData providers with a clear **"Not connected"** state + a "Connect data source" CTA on `/intel` and `/altdata` so nothing renders fake numbers.
+- Landing dashboard shows real values from your connected account (balance, positions, P&L) or an empty state — no placeholder graphs.
+- Every page gets a short **"What this does"** helper card at the top (1–2 sentences) so features stop feeling opaque.
+
+## 5. Fix the "MT5 linking isn't working"
+
+I'll add a clear banner on the MT5 form: *"MT5 requires a MetaApi.cloud bridge (free tier). Paste your MetaApi token + account ID here, not your MT5 login."* — plus a "Use Alpaca instead" shortcut. This removes the confusion without breaking users who do have MetaApi.
+
+## Technical details
+
+- **DB migration**: add `account_mode`, `is_active_account` columns to `exchange_connections`; add `user_id` unique on `is_active_account = true`.
+- **Backend**: `setAccountMode`, `setActiveAccount`, `enableAutoTradingForAccount` server functions (all `requireSupabaseAuth`). Execution engine reads active account + mode.
+- **Frontend**: rewrite `accounts.$id.activate.tsx` into a real account detail page with Test / Demo-Live toggle / Enable-AI button / live status. Add a global "Active Account" chip in the AppShell header. Add helper cards to the 8 most-used routes.
+- **Autonomous loop**: bind runs to the active account and log each cycle to `autonomous_runs` with a visible timestamp on the dashboard.
+
+## What I need from you
+
+Just confirm: **Alpaca** for the first real link (free paper account, 2-minute signup), or pick a different broker from the table above. I'll ship the whole slice in one go and you'll be able to press "Enable Auto-Trading" after pasting the API key.
