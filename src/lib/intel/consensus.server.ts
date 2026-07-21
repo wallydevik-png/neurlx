@@ -1,16 +1,15 @@
 // Consensus aggregator: weighted average of provider signals.
 // Produces a single -1..1 score, 0..1 confidence, and a directional verdict.
-import type { IntelSignal } from "./types";
-import { REGISTRY } from "./providers.server";
+import type { Consensus, IntelSignal } from "./types";
 
-export interface Consensus {
-  score: number;        // -1..1
-  confidence: number;   // 0..1
-  verdict: "Strong Sell" | "Sell" | "Neutral" | "Buy" | "Strong Buy";
-  contributors: Array<{ provider: string; weight: number; score: number; confidence: number }>;
-}
+const PROVIDER_WEIGHTS: Record<string, number> = {
+  analyst: 0.35,
+  sentiment: 0.2,
+  news: 0.25,
+  social: 0.2,
+};
 
-const weightOf = (id: string) => REGISTRY.find(p => p.id === id)?.weight ?? 0.1;
+const weightOf = (id: string) => PROVIDER_WEIGHTS[id] ?? 0.1;
 
 export function computeConsensus(signals: IntelSignal[]): Consensus {
   if (!signals.length) {

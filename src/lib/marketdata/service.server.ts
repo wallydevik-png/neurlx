@@ -2,12 +2,13 @@
 // Adding a real provider = implement MarketDataProvider and register here.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Candle, Interval, MarketDataProvider } from "./types";
-import { createSyntheticProvider, SUPPORTED_SYMBOLS } from "./synthetic.server";
+import { createSyntheticProvider } from "./synthetic.server";
+import { listSupportedSymbols as listSymbols } from "./symbols";
 
 const providers: MarketDataProvider[] = [createSyntheticProvider()];
 
 export function listSupportedSymbols(): string[] {
-  return SUPPORTED_SYMBOLS;
+  return listSymbols();
 }
 
 function providerFor(symbol: string): MarketDataProvider {

@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { getAltData, getAltOverview, type AltSignalOut } from "@/lib/altdata.functions";
-import { listSupportedSymbols } from "@/lib/marketdata/service.server";
+import { listSupportedSymbols } from "@/lib/marketdata/symbols";
 import { Layers3, BookOpen, Percent, TrendingUp, TrendingDown, Minus, Waves, CalendarDays, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/altdata")({

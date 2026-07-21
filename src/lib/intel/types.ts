@@ -17,3 +17,10 @@ export interface IntelProvider {
   supports(symbol: string): boolean;
   fetch(symbol: string): Promise<IntelSignal[]>;
 }
+
+export interface Consensus {
+  score: number;
+  confidence: number;
+  verdict: "Strong Sell" | "Sell" | "Neutral" | "Buy" | "Strong Buy";
+  contributors: Array<{ provider: string; weight: number; score: number; confidence: number }>;
+}

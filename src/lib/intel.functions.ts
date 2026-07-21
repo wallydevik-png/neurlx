@@ -4,9 +4,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { collectSignals } from "./intel/providers.server";
-import { computeConsensus, type Consensus } from "./intel/consensus.server";
-import { listSupportedSymbols } from "./marketdata/service.server";
+import type { Consensus } from "./intel/types";
+import { listSupportedSymbols } from "./marketdata/symbols";
 
 const SymbolIn = z.object({ symbol: z.string().min(1).max(32) });
 
@@ -25,6 +24,10 @@ export interface IntelResult {
 }
 
 async function refreshOne(supabase: any, symbol: string): Promise<{ signals: IntelSignalOut[]; consensus: Consensus }> {
+  const [{ collectSignals }, { computeConsensus }] = await Promise.all([
+    import("./intel/providers.server"),
+    import("./intel/consensus.server"),
+  ]);
   const signals = await collectSignals(symbol);
   const out: IntelSignalOut[] = signals.map(s => ({
     provider: s.provider, kind: String(s.kind),
@@ -50,6 +53,7 @@ export const getMarketIntel = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SymbolIn.parse(d))
   .handler(async ({ data, context }): Promise<IntelResult> => {
+    const { computeConsensus } = await import("./intel/consensus.server");
     const cutoff = new Date(Date.now() - 30 * 60_000).toISOString();
     const { data: cached } = await (context.supabase as any)
       .from("market_intel")
@@ -93,6 +97,7 @@ export interface OverviewRow { symbol: string; consensus: Consensus }
 export const getIntelOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ overview: OverviewRow[] }> => {
+    const { computeConsensus } = await import("./intel/consensus.server");
     const symbols = listSupportedSymbols();
     const cutoff = new Date(Date.now() - 30 * 60_000).toISOString();
     const { data: rows } = await (context.supabase as any)

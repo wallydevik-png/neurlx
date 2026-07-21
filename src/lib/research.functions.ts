@@ -4,8 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { emptyDSL, validateDSL, type HypothesisDSL } from "./research/dsl";
 import { FACTORS } from "./research/factors";
-import { runHypothesis } from "./research/runner.server";
-import { listSupportedSymbols } from "./marketdata/service.server";
+import { listSupportedSymbols } from "./marketdata/symbols";
 
 export interface HypothesisRow {
   id: string;
@@ -125,6 +124,7 @@ export const evaluateHypothesis = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const v = validateDSL(row.dsl);
     if (!v.ok) throw new Error(v.error);
+    const { runHypothesis } = await import("./research/runner.server");
     const run = await runHypothesis(supabase, {
       symbol: row.symbol,
       interval: row.interval as any,

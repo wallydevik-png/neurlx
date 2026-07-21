@@ -4,23 +4,7 @@
 // provider is a swap-in point for real vendors (Kaiko, Coinglass, Glassnode,
 // Trading Economics) via the AltDataProvider interface.
 
-export type AltKind = "orderbook" | "funding" | "open_interest" | "onchain" | "calendar";
-
-export interface AltSignal {
-  kind: AltKind;
-  provider: string;
-  score: number;        // -1..1 directional pressure
-  confidence: number;   // 0..1
-  payload: Record<string, any>;
-}
-
-export interface AltDataProvider {
-  id: string;
-  displayName: string;
-  kinds: AltKind[];
-  supports(symbol: string): boolean;
-  fetch(symbol: string): Promise<AltSignal[]>;
-}
+import type { AltComposite, AltDataProvider, AltSignal } from "./types";
 
 function seed(s: string) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function rng(s: number) { let x = s || 1; return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) % 1_000_000) / 1_000_000; }; }
@@ -141,12 +125,6 @@ export async function collectAltSignals(symbol: string): Promise<AltSignal[]> {
   return results.flat();
 }
 
-export interface AltComposite {
-  score: number;        // -1..1 (aggregate directional pressure, ex calendar)
-  confidence: number;   // 0..1
-  vol_risk: number;     // 0..1 (calendar-driven)
-  verdict: "Strong Sell" | "Sell" | "Neutral" | "Buy" | "Strong Buy";
-}
 export function computeAltComposite(signals: AltSignal[]): AltComposite {
   const directional = signals.filter(s => s.kind !== "calendar");
   const cal = signals.find(s => s.kind === "calendar");

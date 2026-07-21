@@ -3,8 +3,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { collectAltSignals, computeAltComposite, type AltComposite } from "./altdata/providers.server";
-import { listSupportedSymbols } from "./marketdata/service.server";
+import type { AltComposite } from "./altdata/types";
+import { listSupportedSymbols } from "./marketdata/symbols";
 
 const SymbolIn = z.object({ symbol: z.string().min(1).max(32) });
 
@@ -25,6 +25,7 @@ export const getAltData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SymbolIn.parse(d))
   .handler(async ({ data }): Promise<AltDataResult> => {
+    const { collectAltSignals, computeAltComposite } = await import("./altdata/providers.server");
     const raw = await collectAltSignals(data.symbol);
     const signals: AltSignalOut[] = raw.map(s => ({
       kind: String(s.kind), provider: s.provider,
@@ -38,6 +39,7 @@ export interface AltOverviewRow { symbol: string; composite: AltComposite }
 export const getAltOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<{ overview: AltOverviewRow[] }> => {
+    const { collectAltSignals, computeAltComposite } = await import("./altdata/providers.server");
     const symbols = listSupportedSymbols();
     const rows = await Promise.all(symbols.map(async sym => {
       const signals = await collectAltSignals(sym);
