@@ -36,6 +36,7 @@ import { Route as AuthenticatedIntelRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedComplianceRouteImport } from './routes/_authenticated/compliance'
+import { Route as AuthenticatedCapitalManagementRouteImport } from './routes/_authenticated/capital-management'
 import { Route as AuthenticatedCapitalRouteImport } from './routes/_authenticated/capital'
 import { Route as AuthenticatedAutonomousRouteImport } from './routes/_authenticated/autonomous'
 import { Route as AuthenticatedAutomationRouteImport } from './routes/_authenticated/automation'
@@ -187,6 +188,12 @@ const AuthenticatedComplianceRoute = AuthenticatedComplianceRouteImport.update({
   path: '/compliance',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCapitalManagementRoute =
+  AuthenticatedCapitalManagementRouteImport.update({
+    id: '/capital-management',
+    path: '/capital-management',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCapitalRoute = AuthenticatedCapitalRouteImport.update({
   id: '/capital',
   path: '/capital',
@@ -263,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/automation': typeof AuthenticatedAutomationRoute
   '/autonomous': typeof AuthenticatedAutonomousRoute
   '/capital': typeof AuthenticatedCapitalRoute
+  '/capital-management': typeof AuthenticatedCapitalManagementRoute
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
@@ -303,6 +311,7 @@ export interface FileRoutesByTo {
   '/automation': typeof AuthenticatedAutomationRoute
   '/autonomous': typeof AuthenticatedAutonomousRoute
   '/capital': typeof AuthenticatedCapitalRoute
+  '/capital-management': typeof AuthenticatedCapitalManagementRoute
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
@@ -345,6 +354,7 @@ export interface FileRoutesById {
   '/_authenticated/automation': typeof AuthenticatedAutomationRoute
   '/_authenticated/autonomous': typeof AuthenticatedAutonomousRoute
   '/_authenticated/capital': typeof AuthenticatedCapitalRoute
+  '/_authenticated/capital-management': typeof AuthenticatedCapitalManagementRoute
   '/_authenticated/compliance': typeof AuthenticatedComplianceRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
@@ -387,6 +397,7 @@ export interface FileRouteTypes {
     | '/automation'
     | '/autonomous'
     | '/capital'
+    | '/capital-management'
     | '/compliance'
     | '/dashboard'
     | '/history'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/automation'
     | '/autonomous'
     | '/capital'
+    | '/capital-management'
     | '/compliance'
     | '/dashboard'
     | '/history'
@@ -468,6 +480,7 @@ export interface FileRouteTypes {
     | '/_authenticated/automation'
     | '/_authenticated/autonomous'
     | '/_authenticated/capital'
+    | '/_authenticated/capital-management'
     | '/_authenticated/compliance'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
@@ -696,6 +709,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedComplianceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/capital-management': {
+      id: '/_authenticated/capital-management'
+      path: '/capital-management'
+      fullPath: '/capital-management'
+      preLoaderRoute: typeof AuthenticatedCapitalManagementRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/capital': {
       id: '/_authenticated/capital'
       path: '/capital'
@@ -807,6 +827,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAutomationRoute: typeof AuthenticatedAutomationRoute
   AuthenticatedAutonomousRoute: typeof AuthenticatedAutonomousRoute
   AuthenticatedCapitalRoute: typeof AuthenticatedCapitalRoute
+  AuthenticatedCapitalManagementRoute: typeof AuthenticatedCapitalManagementRoute
   AuthenticatedComplianceRoute: typeof AuthenticatedComplianceRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
@@ -842,6 +863,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAutomationRoute: AuthenticatedAutomationRoute,
   AuthenticatedAutonomousRoute: AuthenticatedAutonomousRoute,
   AuthenticatedCapitalRoute: AuthenticatedCapitalRoute,
+  AuthenticatedCapitalManagementRoute: AuthenticatedCapitalManagementRoute,
   AuthenticatedComplianceRoute: AuthenticatedComplianceRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,

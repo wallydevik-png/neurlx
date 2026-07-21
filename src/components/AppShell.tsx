@@ -8,7 +8,7 @@ import {
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
   Layers, Layers3, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
   Sparkles, Wallet, Bot, Bell, Rocket, ScrollText, Smartphone, Fingerprint, WifiOff,
-  Sun, Moon, Shield, HeartPulse,
+  Sun, Moon, Shield, HeartPulse, Banknote,
 } from "lucide-react";
 import { unreadNotificationCount } from "@/lib/notifications.functions";
 import { Logo } from "@/components/Logo";
@@ -25,6 +25,7 @@ const NAV = [
   { to: "/monitoring", label: "Live Monitoring", icon: Radar },
   { to: "/intelligence", label: "Live Intelligence", icon: Sparkles },
   { to: "/capital", label: "Capital Growth", icon: Wallet },
+  { to: "/capital-management", label: "Capital Management", icon: Banknote },
   { to: "/readiness", label: "Readiness Score", icon: Gauge },
   { to: "/portfolio", label: "AI Decision Center", icon: Brain },
   { to: "/risk", label: "Advanced Risk", icon: Shield },
