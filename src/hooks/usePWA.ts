@@ -15,7 +15,7 @@ export function usePWA() {
     if (typeof window === "undefined") return;
     setIsOnline(window.navigator.onLine);
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
-    setSupportsPush("PushManager" in window && "serviceWorker" in navigator);
+    setSupportsPush("PushManager" in window && "Notification" in window);
 
     const onOnline = () => setIsOnline(true);
     const onOffline = () => setIsOnline(false);
@@ -64,7 +64,9 @@ export function usePWA() {
     });
   }, []);
 
-  return { installPrompt, isInstalled, isOnline, supportsPush, install, subscribePush };
+  const canInstall = Boolean(installPrompt) && !isInstalled;
+
+  return { installPrompt, canInstall, isInstalled, isOnline, supportsPush, install, subscribePush };
 }
 
 function urlBase64ToUint8Array(base64String: string) {

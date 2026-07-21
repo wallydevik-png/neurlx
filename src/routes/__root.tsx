@@ -69,12 +69,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   const themeInit = `(function(){try{var t=localStorage.getItem('neurlx-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(t);r.style.colorScheme=t;}catch(e){document.documentElement.classList.add('dark');}})();`;
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
-      <body style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+      <body style={{ fontFamily: "Inter, system-ui, sans-serif" }} suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
@@ -94,25 +94,22 @@ function RootComponent() {
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);
   useEffect(() => {
-    // Register the network-first PWA service worker so the browser offers
-    // "Install app". The SW never caches HTML — navigations always hit the
-    // network — so it can never blank the app the way the previous cache-first
-    // worker did. Skip registration in Lovable preview / dev / iframes.
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    const host = window.location.hostname;
-    const inIframe = window.self !== window.top;
-    const isPreview =
-      host.startsWith("id-preview--") || host.startsWith("preview--") ||
-      host.endsWith(".lovableproject.com") || host === "lovableproject.com" ||
-      host.endsWith(".lovableproject-dev.com") || host === "lovableproject-dev.com";
-    const killSwitch = new URL(window.location.href).searchParams.get("sw") === "off";
-    if (!import.meta.env.PROD || inIframe || isPreview || killSwitch) {
-      navigator.serviceWorker.getRegistrations()
-        .then((regs) => Promise.all(regs.map((r) => r.unregister())))
-        .catch(() => {});
-      return;
-    }
-    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+    const clearStaleAppShell = async () => {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs
+          .filter((r) => new URL(r.active?.scriptURL ?? r.installing?.scriptURL ?? r.waiting?.scriptURL ?? "", window.location.href).pathname === "/sw.js")
+          .map((r) => r.unregister()));
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys
+            .filter((key) => /^neurlx-|(^|-)precache-v\d+-|(^|-)runtime-/.test(key))
+            .map((key) => caches.delete(key)));
+        }
+      } catch { /* best-effort stale worker cleanup */ }
+    };
+    void clearStaleAppShell();
   }, []);
 
   return (
