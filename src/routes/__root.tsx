@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  Outlet, createRootRouteWithContext, useRouter, HeadContent, Scripts, Link,
+  Outlet, createRootRouteWithContext, useRouter, useNavigate, HeadContent, Scripts, Link,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "sonner";
@@ -9,6 +9,14 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 
 function NotFoundComponent() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (window.location.pathname.replace(/\/+$/, "") === "/index") {
+      navigate({ to: "/", replace: true });
+    }
+  }, [navigate]);
+
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="panel p-8 max-w-md text-center">
