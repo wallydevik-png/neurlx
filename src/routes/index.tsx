@@ -1,20 +1,38 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Shield, Zap, LineChart, Lock, TerminalSquare, GitBranch } from "lucide-react";
+import { Shield, Zap, LineChart, Lock, TerminalSquare, GitBranch, Sun, Moon, Download } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { useTheme } from "@/hooks/useTheme";
+import { usePWA } from "@/hooks/usePWA";
 
 export const Route = createFileRoute("/")({
   component: Landing,
 });
 
 function Landing() {
+  const { theme, toggle } = useTheme();
+  const { installPrompt, isInstalled, install } = usePWA();
   return (
     <div className="min-h-screen">
       <header className="border-b border-border/60">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <Logo size="md" showTagline />
-          <Link to="/auth" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
-            Sign in
-          </Link>
+          <div className="flex items-center gap-2">
+            {installPrompt && !isInstalled && (
+              <button onClick={install} className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-primary/40 text-primary px-3 py-2 text-sm font-medium hover:bg-primary/10">
+                <Download className="w-4 h-4" /> Install app
+              </button>
+            )}
+            <button
+              onClick={toggle}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              className="w-10 h-10 grid place-items-center rounded-md border border-border hover:bg-secondary/50"
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+            <Link to="/auth" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+              Sign in
+            </Link>
+          </div>
         </div>
       </header>
 
