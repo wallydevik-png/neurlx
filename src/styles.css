@@ -87,17 +87,60 @@
   --chart-5: oklch(0.65 0.15 280);
 }
 
+.dark {
+  color-scheme: dark;
+}
+
+.light {
+  color-scheme: light;
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.18 0.02 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 250);
+  --primary: oklch(0.55 0.15 195);
+  --primary-foreground: oklch(0.99 0.005 250);
+  --secondary: oklch(0.95 0.01 250);
+  --secondary-foreground: oklch(0.22 0.02 250);
+  --muted: oklch(0.95 0.008 250);
+  --muted-foreground: oklch(0.48 0.02 250);
+  --accent: oklch(0.92 0.03 200);
+  --accent-foreground: oklch(0.22 0.02 250);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.58 0.17 145);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.18 0.02 250);
+  --border: oklch(0.9 0.008 250);
+  --input: oklch(0.94 0.008 250);
+  --ring: oklch(0.55 0.15 195);
+  --chart-1: oklch(0.55 0.15 195);
+  --chart-2: oklch(0.58 0.17 145);
+  --chart-3: oklch(0.58 0.22 25);
+  --chart-4: oklch(0.72 0.16 75);
+  --chart-5: oklch(0.55 0.15 280);
+}
+
 @layer base {
   * { border-color: var(--color-border); }
-  html { color-scheme: dark; }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-feature-settings: "cv02","cv03","cv04","cv11";
+  }
+  .dark body {
     background-image:
       radial-gradient(circle at 20% 0%, oklch(0.22 0.05 200 / 0.35), transparent 40%),
       radial-gradient(circle at 80% 100%, oklch(0.22 0.05 280 / 0.25), transparent 45%);
     background-attachment: fixed;
-    font-feature-settings: "cv02","cv03","cv04","cv11";
+  }
+  .light body {
+    background-image:
+      radial-gradient(circle at 20% 0%, oklch(0.9 0.04 200 / 0.5), transparent 40%),
+      radial-gradient(circle at 80% 100%, oklch(0.9 0.04 280 / 0.4), transparent 45%);
+    background-attachment: fixed;
   }
   .font-mono, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 }
