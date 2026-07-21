@@ -5,7 +5,7 @@ import { AppShell, PageHeader, Metric, fmtUsd, fmtPct } from "@/components/AppSh
 import { getPerformanceOverview } from "@/lib/assistedLive.functions";
 
 export const Route = createFileRoute("/_authenticated/performance")({
-  head: () => ({ meta: [{ title: "Performance — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Performance — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: PerformancePage,
 });
 

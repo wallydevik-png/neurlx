@@ -14,7 +14,7 @@ import {
 } from "@/lib/backtest.functions";
 
 export const Route = createFileRoute("/_authenticated/lab")({
-  head: () => ({ meta: [{ title: "Strategy Lab — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Strategy Lab — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Lab,
 });
 

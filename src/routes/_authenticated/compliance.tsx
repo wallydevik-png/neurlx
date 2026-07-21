@@ -11,7 +11,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/compliance")({
-  head: () => ({ meta: [{ title: "Compliance & Data — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Compliance & Data — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Compliance,
 });
 
@@ -54,7 +54,7 @@ function Compliance() {
       const blob = new Blob([res.bundleJson], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `helix-data-export-${new Date().toISOString().slice(0,10)}.json`;
+      a.href = url; a.download = `neurlx-data-export-${new Date().toISOString().slice(0,10)}.json`;
       a.click(); URL.revokeObjectURL(url);
       toast.success("Data export downloaded");
       qc.invalidateQueries({ queryKey: ["compliance"] });

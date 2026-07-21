@@ -38,6 +38,7 @@ import { Route as AuthenticatedAutonomousRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAutomationRouteImport } from './routes/_authenticated/automation'
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedAltdataRouteImport } from './routes/_authenticated/altdata'
 import { Route as AuthenticatedAccuracyRouteImport } from './routes/_authenticated/accuracy'
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedBacktestsIdRouteImport } from './routes/_authenticated/backtests.$id'
@@ -192,6 +193,11 @@ const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAltdataRoute = AuthenticatedAltdataRouteImport.update({
+  id: '/altdata',
+  path: '/altdata',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAccuracyRoute = AuthenticatedAccuracyRouteImport.update({
   id: '/accuracy',
   path: '/accuracy',
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/accuracy': typeof AuthenticatedAccuracyRoute
+  '/altdata': typeof AuthenticatedAltdataRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/automation': typeof AuthenticatedAutomationRoute
@@ -268,6 +275,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/accuracy': typeof AuthenticatedAccuracyRoute
+  '/altdata': typeof AuthenticatedAltdataRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/automation': typeof AuthenticatedAutomationRoute
@@ -306,6 +314,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/_authenticated/accuracy': typeof AuthenticatedAccuracyRoute
+  '/_authenticated/altdata': typeof AuthenticatedAltdataRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/automation': typeof AuthenticatedAutomationRoute
@@ -344,6 +353,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/accounts'
     | '/accuracy'
+    | '/altdata'
     | '/analytics'
     | '/approvals'
     | '/automation'
@@ -380,6 +390,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/accounts'
     | '/accuracy'
+    | '/altdata'
     | '/analytics'
     | '/approvals'
     | '/automation'
@@ -417,6 +428,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/accounts'
     | '/_authenticated/accuracy'
+    | '/_authenticated/altdata'
     | '/_authenticated/analytics'
     | '/_authenticated/approvals'
     | '/_authenticated/automation'
@@ -661,6 +673,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/altdata': {
+      id: '/_authenticated/altdata'
+      path: '/altdata'
+      fullPath: '/altdata'
+      preLoaderRoute: typeof AuthenticatedAltdataRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/accuracy': {
       id: '/_authenticated/accuracy'
       path: '/accuracy'
@@ -724,6 +743,7 @@ const AuthenticatedAccountsRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRouteWithChildren
   AuthenticatedAccuracyRoute: typeof AuthenticatedAccuracyRoute
+  AuthenticatedAltdataRoute: typeof AuthenticatedAltdataRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedAutomationRoute: typeof AuthenticatedAutomationRoute
@@ -755,6 +775,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountsRoute: AuthenticatedAccountsRouteWithChildren,
   AuthenticatedAccuracyRoute: AuthenticatedAccuracyRoute,
+  AuthenticatedAltdataRoute: AuthenticatedAltdataRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedAutomationRoute: AuthenticatedAutomationRoute,

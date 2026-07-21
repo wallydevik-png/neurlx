@@ -13,7 +13,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/mobile")({
-  head: () => ({ meta: [{ title: "Mobile & Security — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Mobile & Security — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Mobile,
 });
 
@@ -77,7 +77,7 @@ function Mobile() {
                 {isInstalled ? <Download className="h-4 w-4 text-success" /> : <Info className="h-4 w-4 text-muted-foreground" />}
                 <div className="text-sm">
                   <div className="font-medium">{isInstalled ? "Installed on device" : "Installable web app"}</div>
-                  <div className="text-xs text-muted-foreground">{isInstalled ? "Helix is running as a standalone app" : "Add Helix to your home screen for quick access"}</div>
+                  <div className="text-xs text-muted-foreground">{isInstalled ? "NeurlX is running as a standalone app" : "Add NeurlX to your home screen for quick access"}</div>
                 </div>
               </div>
               <button

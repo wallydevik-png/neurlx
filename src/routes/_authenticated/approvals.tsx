@@ -9,7 +9,7 @@ import { Check, X, Sliders, Zap } from "lucide-react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/approvals")({
-  head: () => ({ meta: [{ title: "Approvals — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Approvals — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Approvals,
 });
 

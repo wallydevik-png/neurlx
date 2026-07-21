@@ -8,7 +8,7 @@ import { Sparkles, TrendingUp, TrendingDown, ChevronDown, ChevronUp, AlertTriang
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/signals")({
-  head: () => ({ meta: [{ title: "AI Signals — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "AI Signals — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Signals,
 });
 

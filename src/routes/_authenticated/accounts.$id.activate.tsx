@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/accounts/$id/activate")({
-  head: () => ({ meta: [{ title: "Activate Live Trading — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Activate Live Trading — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Activate,
 });
 

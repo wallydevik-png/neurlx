@@ -11,7 +11,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated/intel")({
   head: () => ({
     meta: [
-      { title: "Market Intelligence — Helix" },
+      { title: "Market Intelligence — NeurlX" },
       { name: "description", content: "Professional consensus, sentiment, news flow, and social momentum aggregated into a single verdict per symbol." },
     ],
   }),

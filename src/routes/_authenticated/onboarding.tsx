@@ -8,7 +8,7 @@ import { CheckCircle2, Circle, ArrowRight, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
-  head: () => ({ meta: [{ title: "Get Started — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Get Started — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Onboarding,
 });
 
@@ -30,12 +30,12 @@ function Onboarding() {
   const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    try { setDismissed(JSON.parse(localStorage.getItem("helix.onboarding.dismissed") || "{}")); } catch {}
+    try { setDismissed(JSON.parse(localStorage.getItem("neurlx.onboarding.dismissed") || "{}")); } catch {}
   }, []);
   function dismiss(id: string) {
     const next = { ...dismissed, [id]: true };
     setDismissed(next);
-    localStorage.setItem("helix.onboarding.dismissed", JSON.stringify(next));
+    localStorage.setItem("neurlx.onboarding.dismissed", JSON.stringify(next));
   }
 
   const hasPaper = !!dash?.account;

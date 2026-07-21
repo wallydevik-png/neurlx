@@ -6,7 +6,7 @@ import { getReadinessScore, getShadowAnalytics } from "@/lib/monitoring.function
 import { Gauge, ShieldAlert, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/readiness")({
-  head: () => ({ meta: [{ title: "AI Readiness — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "AI Readiness — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Readiness,
 });
 

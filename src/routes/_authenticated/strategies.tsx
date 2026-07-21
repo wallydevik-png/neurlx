@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Activity, AlertTriangle, CheckCircle2, PauseCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/strategies")({
-  head: () => ({ meta: [{ title: "Strategies — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Strategies — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: StrategiesPage,
 });
 

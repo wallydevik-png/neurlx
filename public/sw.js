@@ -1,4 +1,4 @@
-const CACHE_NAME = "helix-v1";
+const CACHE_NAME = "neurlx-v1";
 const STATIC_ASSETS = [
   "/",
   "/dashboard",
@@ -46,11 +46,11 @@ self.addEventListener("push", (event) => {
   if (!event.data) return;
   const payload = event.data.json();
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Helix", {
+    self.registration.showNotification(payload.title || "NeurlX", {
       body: payload.body || "",
       icon: "/favicon.ico",
       badge: "/favicon.ico",
-      tag: payload.tag || "helix",
+      tag: payload.tag || "neurlx",
       requireInteraction: payload.priority === "high",
       data: payload.data || {},
     }),

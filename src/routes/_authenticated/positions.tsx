@@ -12,7 +12,7 @@ import { useState } from "react";
 import { Shield, TrendingDown, Plus, X as CloseIcon, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/positions")({
-  head: () => ({ meta: [{ title: "Positions — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Positions — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Positions,
 });
 

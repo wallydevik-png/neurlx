@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shield, Zap, LineChart, Lock, TerminalSquare, GitBranch } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -10,13 +11,7 @@ function Landing() {
     <div className="min-h-screen">
       <header className="border-b border-border/60">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center">
-              <TerminalSquare className="w-4 h-4 text-primary" />
-            </div>
-            <span className="font-semibold tracking-tight">Helix</span>
-            <span className="text-xs text-muted-foreground font-mono ml-2">v0.1 · paper</span>
-          </div>
+          <Logo size="md" showTagline />
           <Link to="/auth" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
             Sign in
           </Link>
@@ -86,7 +81,7 @@ function Landing() {
 
       <footer className="border-t border-border/60 mt-24">
         <div className="mx-auto max-w-6xl px-6 py-6 text-xs text-muted-foreground flex justify-between">
-          <span>© {new Date().getFullYear()} Helix</span>
+          <span>© {new Date().getFullYear()} NeurlX</span>
           <span className="font-mono">paper-trading · v0.1</span>
         </div>
       </footer>

@@ -6,11 +6,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
-  Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
+  Layers, Layers3, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
   Sparkles, Wallet, Bot, Bell, Rocket, ScrollText, Smartphone, Fingerprint, WifiOff,
   Sun, Moon,
 } from "lucide-react";
 import { unreadNotificationCount } from "@/lib/notifications.functions";
+import { Logo } from "@/components/Logo";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
 import { listCredentials } from "@/lib/webauthn.functions";
 import { usePWA, vibrate } from "@/hooks/usePWA";
@@ -28,6 +29,7 @@ const NAV = [
   { to: "/portfolio", label: "AI Decision Center", icon: Brain },
   { to: "/market", label: "Market Scanner", icon: LineChart },
   { to: "/intel", label: "Market Intelligence", icon: Radar },
+  { to: "/altdata", label: "Alternative Data", icon: Layers3 },
   { to: "/accounts", label: "Connected Accounts", icon: Plug },
   { to: "/signals", label: "AI Signals", icon: Signal },
   { to: "/approvals", label: "Approvals", icon: CheckSquare },
@@ -112,13 +114,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <X className={`w-5 h-5 absolute transition-all duration-200 ${open ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-75"}`} />
           </button>
 
-          <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center shrink-0">
-              <TerminalSquare className="w-4 h-4 text-primary" />
-            </div>
-            <div className="min-w-0 hidden xs:block sm:block">
-              <div className="font-semibold text-sm leading-tight truncate">Helix</div>
-              <div className="text-[10px] font-mono text-muted-foreground leading-tight">paper · v0.1</div>
+          <Link to="/dashboard" className="min-w-0">
+            <Logo size="md" />
+            <div className="text-[10px] font-mono text-muted-foreground leading-tight pl-10 hidden sm:block -mt-1">
+              Neural precision, executed.
             </div>
           </Link>
 

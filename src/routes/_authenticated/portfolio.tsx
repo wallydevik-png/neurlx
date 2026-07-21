@@ -6,7 +6,7 @@ import { getPortfolioRecommendation } from "@/lib/portfolio.functions";
 import { Brain, TrendingUp, TrendingDown, Minus, AlertTriangle, ShieldAlert } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/portfolio")({
-  head: () => ({ meta: [{ title: "AI Decision Center — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "AI Decision Center — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Portfolio,
 });
 

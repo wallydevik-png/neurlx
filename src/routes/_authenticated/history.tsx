@@ -5,7 +5,7 @@ import { AppShell, PageHeader, fmtUsd, fmtNum } from "@/components/AppShell";
 import { getAuditLog, listOrders, listPositions } from "@/lib/trading.functions";
 
 export const Route = createFileRoute("/_authenticated/history")({
-  head: () => ({ meta: [{ title: "History — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "History — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: History,
 });
 

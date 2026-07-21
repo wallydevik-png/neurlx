@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/shadow")({
-  head: () => ({ meta: [{ title: "Shadow Mode — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Shadow Mode — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Shadow,
 });
 

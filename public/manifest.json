@@ -1,6 +1,6 @@
 {
-  "name": "Helix AI Trading",
-  "short_name": "Helix",
+  "name": "NeurlX AI Trading",
+  "short_name": "NeurlX",
   "description": "Secure AI trading terminal with paper trading, shadow mode, and assisted live execution.",
   "start_url": "/dashboard",
   "display": "standalone",
@@ -9,8 +9,7 @@
   "orientation": "portrait",
   "scope": "/",
   "icons": [
-    { "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" },
-    { "src": "/favicon.ico", "sizes": "192x192", "type": "image/x-icon", "purpose": "any maskable" },
-    { "src": "/favicon.ico", "sizes": "512x512", "type": "image/x-icon", "purpose": "any maskable" }
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
