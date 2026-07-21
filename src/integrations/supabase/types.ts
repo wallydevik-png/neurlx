@@ -907,6 +907,8 @@ export type Database = {
           last_error: string | null
           last_reconcile_at: string | null
           last_sync_at: string | null
+          last_test_at: string | null
+          last_test_report: Json | null
           latency_ms: number | null
           max_notional_per_order: number | null
           oauth_expires_at: string | null
@@ -938,6 +940,8 @@ export type Database = {
           last_error?: string | null
           last_reconcile_at?: string | null
           last_sync_at?: string | null
+          last_test_at?: string | null
+          last_test_report?: Json | null
           latency_ms?: number | null
           max_notional_per_order?: number | null
           oauth_expires_at?: string | null
@@ -969,6 +973,8 @@ export type Database = {
           last_error?: string | null
           last_reconcile_at?: string | null
           last_sync_at?: string | null
+          last_test_at?: string | null
+          last_test_report?: Json | null
           latency_ms?: number | null
           max_notional_per_order?: number | null
           oauth_expires_at?: string | null

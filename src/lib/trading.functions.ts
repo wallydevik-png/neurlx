@@ -609,3 +609,20 @@ export const scanConnectionHealth = createServerFn({ method: "POST" })
 
     return { ok, latencyMs: latency, permissions, message };
   });
+
+// Runs the full connector test suite for a single connection and stores the
+// resulting report. Read-only against the venue — never places live orders.
+export const runConnectorTests = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { runConnectorTestSuite } = await import("@/lib/connectors/testSuite.server");
+    return await runConnectorTestSuite(context.supabase, context.userId, data.id);
+  });
+
+// Client-safe accessor for the capability registry — used by wizard + badges.
+export const listConnectorCapabilities = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const { allCapabilities } = await import("@/lib/connectors/capabilities");
+    return allCapabilities();
+  });

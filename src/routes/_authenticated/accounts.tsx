@@ -2,9 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell, PageHeader } from "@/components/AppShell";
-import { disconnectConnection, listConnections, setPermissions, scanConnectionHealth } from "@/lib/trading.functions";
+import {
+  disconnectConnection, listConnections, setPermissions,
+  scanConnectionHealth, runConnectorTests,
+} from "@/lib/trading.functions";
 import { getBroker } from "@/lib/connectors/brokerRegistry";
-import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle } from "lucide-react";
+import { capabilityBadges, getCapabilities } from "@/lib/connectors/capabilities";
+import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle, TestTube2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -69,12 +73,18 @@ function Accounts() {
         <div className="space-y-3">
           {conns.map(c => {
             const desc = getBroker(c.connector_id);
+            const caps = getCapabilities(c.connector_id);
+            const badges = capabilityBadges(c.connector_id);
             const errs = Array.isArray(c.error_history) ? c.error_history : [];
             const livePerms = (c.permissions_snapshot as { live?: Record<string, boolean> } | null)?.live;
+            const report = c.last_test_report as {
+              overallOk: boolean; passed: number; failed: number; skipped: number;
+              steps: Array<{ step: string; ok: boolean; ms: number; detail?: string }>;
+            } | null;
             return (
               <div key={c.id} className="panel p-5">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold">{c.label}</h3>
                       <span className="text-[10px] font-mono uppercase text-muted-foreground border border-border rounded px-1.5 py-0.5">
@@ -94,6 +104,23 @@ function Accounts() {
                         : c.health === "danger" ? "bg-destructive/15 text-destructive"
                         : "bg-muted text-muted-foreground"
                       }`}>{c.health}</span>
+                      {caps && !caps.implemented && (
+                        <span className="text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border border-warning/40 text-warning">
+                          framework-ready
+                        </span>
+                      )}
+                    </div>
+                    {caps && (
+                      <div className="mt-2 text-xs text-muted-foreground">{caps.summary}</div>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {badges.map(b => (
+                        <span key={b.label} className={`text-[9px] font-mono uppercase rounded px-1.5 py-0.5 border ${
+                          b.tone === "on" ? "border-success/40 text-success"
+                          : b.tone === "off" ? "border-border text-muted-foreground opacity-60"
+                          : "border-primary/40 text-primary"
+                        }`}>{b.label}</span>
+                      ))}
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground font-mono">
                       Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "never"}
@@ -120,8 +147,9 @@ function Accounts() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <ScanButton id={c.id} />
+                    <TestButton id={c.id} />
                     <Link to="/accounts/$id/activate" params={{ id: c.id }}
                       className="text-xs px-3 py-1.5 rounded-md border border-primary/40 text-primary hover:bg-primary/10 font-medium whitespace-nowrap">
                       Manage live trading
@@ -132,6 +160,33 @@ function Accounts() {
                     </button>
                   </div>
                 </div>
+
+                {report && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`font-mono uppercase rounded px-1.5 py-0.5 ${
+                        report.overallOk ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+                      }`}>
+                        Test suite {report.overallOk ? "PASSED" : "FAILED"}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {report.passed} passed · {report.failed} failed · {report.skipped} skipped
+                      </span>
+                    </div>
+                    <div className="mt-2 grid sm:grid-cols-2 gap-1">
+                      {report.steps.map(s => (
+                        <div key={s.step} className="flex items-start gap-1.5 text-[11px]">
+                          {s.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-success mt-0.5" />
+                                : <XCircle className="w-3.5 h-3.5 text-destructive mt-0.5" />}
+                          <div className="min-w-0">
+                            <div className="font-mono text-muted-foreground">{s.step} · {s.ms}ms</div>
+                            {s.detail && <div className="text-muted-foreground/70 truncate">{s.detail}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 grid md:grid-cols-2 gap-3 pt-4 border-t border-border">
                   <PermRow
@@ -205,6 +260,31 @@ function ScanButton({ id }: { id: string }) {
       title="Run health & permission scan"
       className="p-2 rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-50">
       <Activity className={`w-4 h-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
+
+function TestButton({ id }: { id: string }) {
+  const testFn = useServerFn(runConnectorTests);
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await testFn({ data: { id } });
+      toast[r.overallOk ? "success" : "error"](
+        `Test suite ${r.overallOk ? "passed" : "failed"} · ${r.passed}/${r.passed + r.failed} checks`,
+      );
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Test suite failed");
+    } finally { setBusy(false); }
+  }
+  return (
+    <button onClick={run} disabled={busy}
+      title="Run the connector test suite (auth, market data, sync, permissions)"
+      className="p-2 rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-50">
+      <TestTube2 className={`w-4 h-4 ${busy ? "animate-pulse" : ""}`} />
     </button>
   );
 }
