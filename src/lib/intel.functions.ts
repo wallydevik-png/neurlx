@@ -15,7 +15,7 @@ export interface IntelSignalOut {
   kind: string;
   score: number;
   confidence: number;
-  payload: Record<string, unknown>;
+  payload: Record<string, any>;
 }
 export interface IntelResult {
   symbol: string;
@@ -29,7 +29,7 @@ async function refreshOne(supabase: any, symbol: string): Promise<{ signals: Int
   const out: IntelSignalOut[] = signals.map(s => ({
     provider: s.provider, kind: String(s.kind),
     score: s.score, confidence: s.confidence,
-    payload: (s.payload ?? {}) as Record<string, unknown>,
+    payload: (s.payload ?? {}) as Record<string, any>,
   }));
   const rows = out.map(s => ({
     symbol, provider: s.provider, kind: s.kind,
@@ -66,7 +66,7 @@ export const getMarketIntel = createServerFn({ method: "GET" })
       dedup.push({
         provider: r.provider, kind: r.kind,
         score: Number(r.score), confidence: Number(r.confidence),
-        payload: (r.payload ?? {}) as Record<string, unknown>,
+        payload: (r.payload ?? {}) as Record<string, any>,
       });
     }
     if (dedup.length === 0) {
