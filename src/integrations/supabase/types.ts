@@ -1057,6 +1057,54 @@ export type Database = {
         }
         Relationships: []
       }
+      research_hypotheses: {
+        Row: {
+          created_at: string
+          description: string | null
+          dsl: Json
+          id: string
+          interval: string
+          last_metrics: Json | null
+          last_run_at: string | null
+          name: string
+          status: string
+          symbol: string
+          tags: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          dsl: Json
+          id?: string
+          interval?: string
+          last_metrics?: Json | null
+          last_run_at?: string | null
+          name: string
+          status?: string
+          symbol: string
+          tags?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          dsl?: Json
+          id?: string
+          interval?: string
+          last_metrics?: Json | null
+          last_run_at?: string | null
+          name?: string
+          status?: string
+          symbol?: string
+          tags?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       shadow_trades: {
         Row: {
           close_price: number | null
