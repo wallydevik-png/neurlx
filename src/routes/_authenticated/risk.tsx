@@ -6,6 +6,7 @@ import { AppShell, PageHeader, Metric, fmtUsd, fmtPct } from "@/components/AppSh
 import {
   getRiskDashboard, getAdvancedRiskSettings, saveAdvancedRiskSettings, suggestPositionSize,
 } from "@/lib/risk.functions";
+import type { PortfolioRiskReport } from "@/lib/risk/portfolioRisk.server";
 import { Shield, AlertTriangle, Calculator, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
