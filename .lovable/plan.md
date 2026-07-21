@@ -1,70 +1,81 @@
+# Roadmap: 5 vertical slices
 
-# Foundation + Paper Trading — v1
+You've asked for ~5 major slices in one turn. Each is 6–15 files of dense, safety-critical code. Shipping all at once means every piece is scaffolded shallowly — the opposite of what a real-money execution engine should be. I'll sequence them and ship one deep, verified slice per turn.
 
-A secure, modular foundation. Everything is paper (simulated) — no real exchange calls. Architecture is designed so real connectors drop in later without refactors.
+## Turn order
 
-## Stack decisions
-- **Backend**: Lovable Cloud (auth + Postgres + RLS + edge). No passwords stored — Cloud handles auth.
-- **Encryption**: API credentials encrypted with AES-256-GCM using a server-only `CREDENTIAL_ENC_KEY` (auto-generated). Only ciphertext in DB.
-- **Server logic**: `createServerFn` for all trading actions (place order, approve trade, kill switch). RLS on every table.
-- **AI signals**: stubbed generator now (deterministic mock producing signals with confidence + reasoning) so the approval/execution loop is end-to-end real. Real model can plug in later.
+1. **Production Execution Engine** (this turn) — real Binance order placement, assisted-mode only. Autonomous stays disabled.
+2. **Autonomous Trading Engine** — scheduler, queue, trailing management, regime-aware pausing, instant pause/resume.
+3. **Market Intelligence & Professional Consensus Engine** — provider framework, consensus scoring, reliability scoring, dashboard.
+4. **Alternative Data Engine** — market structure, derivatives, on-chain, events; feature-contribution UI.
+5. **AI Research Lab + Advanced Risk Intelligence** — combined: strategy discovery, ensemble voting, Monte Carlo, stress tests, dynamic risk adjustment, promotion pipeline.
 
-## Design system
-Dark, precise "trading terminal" aesthetic: near-black background, cyan/green primary, red destructive, monospace for numbers, subtle grid lines. Semantic tokens in `styles.css`. No purple.
+## This turn — Production Execution Engine
 
-## Routes
-```
-/                              Landing (public) — CTA to sign in
-/auth                          Lovable-managed sign in / sign up
-/_authenticated/dashboard      Portfolio overview, P&L, key metrics
-/_authenticated/accounts       Connected Accounts (add / verify / disconnect / permissions)
-/_authenticated/accounts/new   Add exchange wizard (choose connector → OAuth or API key form)
-/_authenticated/signals        AI signals feed (Manual mode)
-/_authenticated/approvals      Pending trade approvals (Assisted mode)
-/_authenticated/positions      Open positions + monitor (entry, current, P&L, SL/TP, reasoning)
-/_authenticated/history        Trade history + journal
-/_authenticated/automation     Mode + risk settings + emergency kill switch
-/_authenticated/analytics      Win rate, drawdown, Sharpe-lite, equity curve
-```
+Keep the current architecture. Only the connector and pre/post-trade layers change.
 
-## Database (all RLS-gated to `auth.uid()`)
-- `profiles` (auto-created on signup)
-- `exchange_connections` — user_id, connector_id, label, status, permissions (read/trade), credential_ciphertext, last_sync_at, health
-- `paper_accounts` — user_id, connection_id, base_currency, cash_balance, equity
-- `positions` — account_id, symbol, side, qty, avg_entry, stop_loss, take_profit, trailing_stop_pct, opened_at, ai_reasoning
-- `orders` — account_id, symbol, side, qty, type, status, filled_price, fees, slippage_bps, created_at, filled_at
-- `signals` — user_id, symbol, side, entry, sl, tp, confidence, reasoning, expires_at, status(pending/approved/rejected/executed)
-- `automation_settings` — user_id, mode (manual/assisted/autonomous), max_trade_size, max_daily_loss, max_trades_per_day, min_confidence, risk_level, allowed_assets[], kill_switch_active
-- `audit_log` — user_id, action, entity, payload, ip, ua, created_at (append-only)
+### Real Binance execution
+- Extend `src/lib/connectors/binance.server.ts` with a signed `placeOrder` supporting MARKET, LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT via `POST /api/v3/order`.
+- Idempotent `newClientOrderId` derived from `${orderRow.id}` (uuid → base36, ≤36 chars).
+- `cancelOrder` via `DELETE /api/v3/order`, order lookup via `GET /api/v3/order`.
+- Every request/response captured to a new `api_request_log` table (method, path, status, latency_ms, sanitized body, error).
 
-## Connector architecture
-`src/lib/connectors/` — TypeScript interface `TradingConnector` with methods: `getBalance`, `getMarketData`, `placeOrder`, `cancelOrder`, `getPositions`, `getHistory`, `verifyCredentials`. Registry maps `connector_id → factory(credentials)`. Ship one implementation: `PaperConnector` (simulates fills with fee + slippage against a synthetic price feed). Adding Binance/Coinbase later = new file + registry entry.
+### Pre-trade validation (new `preTradeCheck.server.ts`)
+Runs before `submitOrder` for any `is_live` order:
+- Connection health: `GET /api/v3/ping` + `/api/v3/time` clock skew < 5s.
+- API permissions: `GET /sapi/v1/account/apiRestrictions` — require `enableSpotAndMarginTrading`, reject if `enableWithdrawals`.
+- Available balance vs order notional.
+- Existing `evaluateRisk()` gate (unchanged — never bypassed).
+- SL & TP required (existing rule, enforced here too).
+- Symbol filters from `exchangeInfo` (LOT_SIZE, MIN_NOTIONAL, PRICE_FILTER) — round qty/price to valid steps.
 
-## Trading engine (`src/lib/trading/`)
-- `signalGenerator.server.ts` — produces mock AI signals (symbol, side, confidence 0–1, reasoning text, SL/TP, R:R)
-- `riskGate.server.ts` — pre-trade checks: confidence ≥ min, size ≤ max, daily loss not breached, trades/day ok, SL present, kill switch off, asset allowed. Returns `{allowed, reason}`.
-- `executor.server.ts` — server fn `executeTrade`: risk gate → connector.placeOrder → insert position + order + audit_log
-- Modes routed in `executor`: manual = never auto-execute; assisted = create pending signal for approval; autonomous = run risk gate then execute
-- Emergency kill switch: sets `kill_switch_active=true`, cancels open orders, blocks new executions
+### Post-trade reconciliation (new `reconcile.server.ts`)
+- After `placeOrder`, poll `GET /api/v3/order` until `status ∈ {FILLED, PARTIALLY_FILLED, CANCELED, EXPIRED, REJECTED}` (max 10s, backoff).
+- Persist `external_order_id`, average fill price, cumulative fees (from `/myTrades`), status.
+- Sync `positions` row from actual exchange fills, not requested qty.
+- Nightly + on-demand reconcile pass that fetches open orders & balances and repairs local drift.
 
-## Security
-- Credential encryption helper `src/lib/crypto.server.ts` using Node `crypto` AES-256-GCM
-- `CREDENTIAL_ENC_KEY` auto-generated via `generate_secret`
-- Read-only default: `permissions.trading = false` on every new connection; user must explicitly toggle
-- All mutating server fns use `requireSupabaseAuth` + append to `audit_log`
-- Risk disclaimer modal blocks entering Autonomous mode until acknowledged (stored on `profiles`)
+### Failure handling
+- Retry only on 5xx / network / `-1003` rate-limit with exponential backoff (already scaffolded — extend classification).
+- Never retry on 4xx business errors (insufficient balance, filter failure).
+- Duplicate detection: on `-2010` "duplicate clientOrderId" → treat as success, fetch existing order.
+- Partial fill: existing schema already supports; reconciler updates `qty` + `status`.
+- Existing circuit breaker (3 failures → daily halt) stays.
 
-## Out of scope for this slice (per your answers)
-Real exchange APIs, KYC/AML, native mobile app, marketplace/copy trading, SMS/Telegram, backtesting engine, tax export. Architecture leaves clean seams for all of them.
+### Live monitoring
+- New `execution_health` view (or server fn) computing over last 24h: avg API latency, execution latency, slippage bps p50/p95, fill rate, error count, last successful ping.
+- Extend `/monitoring` page with an "Execution Health" panel.
 
-## Build order (this turn)
-1. Enable Cloud, generate `CREDENTIAL_ENC_KEY`
-2. Migration: all tables + RLS + grants + `has_role`-style helpers where needed
-3. Design system in `styles.css`
-4. Connector interface + `PaperConnector` + registry
-5. Crypto, risk gate, executor, signal generator (server-only)
-6. Server fns: connections CRUD, automation settings, kill switch, approve/reject signal, execute trade, dashboards read
-7. Routes + UI (auth gate via managed `_authenticated` layout, sign-in affordance in header)
-8. Sitemap + robots, real head metadata
+### Routing switch
+- `routeConnector()` in `engine.server.ts` currently hard-forces paper. Change: when `req.live === true` AND connection.trading_enabled AND circuit breaker closed AND connection is Binance → return real Binance connector. All other cases still route to paper.
+- `approvals.tsx`: when approving on a live-enabled connection, submit with `live: true`. Autonomous mode remains locked (existing `automation_settings.mode` UI already prevents selecting autonomous — verify).
 
-Ready to build on approval.
+### Audit
+- Reuse `execution_log` for lifecycle events (already in place).
+- New `api_request_log` table for raw API traffic (redacted headers, no secrets).
+- Every validation decision (pass/fail + reason) logged to `execution_log` with severity.
+
+### Migration
+- New table `api_request_log` (user_id, connection_id, method, path, status, latency_ms, request_body_redacted jsonb, response_snippet text, error text, created_at) + RLS + GRANTs.
+- Add columns to `exchange_connections`: `last_reconcile_at`, `clock_skew_ms`, `permission_scan jsonb` (already exists — verify).
+
+### Files (this turn)
+- MIGRATION: `api_request_log` table.
+- EDIT `src/lib/connectors/binance.server.ts` — add signed POST/DELETE/GET order, exchangeInfo cache, apiRestrictions, request logger.
+- EDIT `src/lib/connectors/factory.server.ts` — no change (already wires binance).
+- NEW `src/lib/execution/preTradeCheck.server.ts`.
+- NEW `src/lib/execution/reconcile.server.ts`.
+- EDIT `src/lib/execution/engine.server.ts` — real routing, pre-check call, reconcile call, better error classification.
+- EDIT `src/routes/_authenticated/monitoring.tsx` — execution health panel.
+- EDIT `src/routes/_authenticated/approvals.tsx` — pass `live: true` when connection allows.
+- EDIT `src/lib/monitoring.functions.ts` — expose execution health server fn.
+
+### Safety invariants preserved
+- `evaluateRisk()` runs on every path — real or paper.
+- `checkCircuitBreaker()` runs before any order.
+- Autonomous mode selection remains disabled in UI.
+- SL + TP required.
+- Withdraw-enabled keys refused at activation and re-checked pre-trade.
+- Read-only mode remains default; explicit user activation with typed phrase still required (already built).
+
+Reply "go" to ship turn 1, or push back on the sequencing.
