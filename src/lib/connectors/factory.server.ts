@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CredentialPayload, TradingConnector } from "./types";
 import { createPaperConnector } from "./paper.server";
 import { createBinanceConnector } from "./binance.server";
+import { createGenericConnector } from "./generic.server";
+import { getBroker } from "./brokerRegistry";
 
 export interface ConnectorContext {
   supabase?: SupabaseClient;
@@ -12,6 +14,9 @@ export interface ConnectorContext {
   orderId?: string | null;
 }
 
+// Provider-agnostic dispatch. Each broker declared in brokerRegistry.ts is
+// addressable here; new brokers only need a new module + registry entry, no
+// changes to execution/portfolio/risk/mission-control.
 export function createConnector(
   connectorId: string,
   credentials: CredentialPayload,
@@ -22,7 +27,12 @@ export function createConnector(
       return createPaperConnector();
     case "binance":
       return createBinanceConnector(credentials, ctx);
-    default:
-      throw new Error(`Connector "${connectorId}" is not yet available.`);
+    default: {
+      if (!getBroker(connectorId)) {
+        throw new Error(`Connector "${connectorId}" is not registered.`);
+      }
+      // Registered but not yet first-class — safe stub keeps the uniform interface.
+      return createGenericConnector(connectorId);
+    }
   }
 }
