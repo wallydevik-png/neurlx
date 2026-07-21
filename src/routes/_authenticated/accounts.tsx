@@ -68,25 +68,60 @@ function Accounts() {
       ) : (
         <div className="space-y-3">
           {conns.map(c => {
-            const desc = getConnectorDescriptor(c.connector_id);
+            const desc = getBroker(c.connector_id);
+            const errs = Array.isArray(c.error_history) ? c.error_history : [];
+            const livePerms = (c.permissions_snapshot as { live?: Record<string, boolean> } | null)?.live;
             return (
               <div key={c.id} className="panel p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold">{c.label}</h3>
                       <span className="text-[10px] font-mono uppercase text-muted-foreground border border-border rounded px-1.5 py-0.5">
                         {desc?.displayName ?? c.connector_id}
                       </span>
+                      {c.auth_method && (
+                        <span className="text-[10px] font-mono uppercase text-primary border border-primary/40 rounded px-1.5 py-0.5">
+                          {c.auth_method.replace("_", " ")}
+                        </span>
+                      )}
                       <span className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 ${
                         c.status === "connected" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
                       }`}>{c.status}</span>
+                      <span className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 ${
+                        c.health === "healthy" ? "bg-success/15 text-success"
+                        : c.health === "warning" ? "bg-warning/15 text-warning"
+                        : c.health === "danger" ? "bg-destructive/15 text-destructive"
+                        : "bg-muted text-muted-foreground"
+                      }`}>{c.health}</span>
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground font-mono">
-                      Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "never"} · Health: {c.health}
+                      Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "never"}
+                      {typeof c.latency_ms === "number" && <> · Latency: {c.latency_ms}ms</>}
+                      {c.broker_server && <> · Server: {c.broker_server}</>}
+                      {c.account_number && <> · Acct: {c.account_number}</>}
                     </div>
+                    {livePerms && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Object.entries(livePerms).map(([k, v]) => (
+                          <span key={k} className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border ${
+                            v ? (k === "withdrawals" ? "text-destructive border-destructive/40" : "text-success border-success/40")
+                              : "text-muted-foreground border-border"
+                          }`}>
+                            {k}: {v ? "on" : "off"}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {errs.length > 0 && (
+                      <div className="mt-2 flex items-start gap-1.5 text-xs text-warning">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <span>Last error: {(errs[0] as { message?: string })?.message ?? "unknown"}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
+                    <ScanButton id={c.id} />
                     <Link to="/accounts/$id/activate" params={{ id: c.id }}
                       className="text-xs px-3 py-1.5 rounded-md border border-primary/40 text-primary hover:bg-primary/10 font-medium whitespace-nowrap">
                       Manage live trading
