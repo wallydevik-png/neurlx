@@ -169,16 +169,18 @@ export const getEnvironmentComparison = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const [journalR, shadowR, backtestR] = await Promise.all([
       context.supabase.from("trade_journal").select("realized_pnl,slippage_bps_avg,ai_confidence").eq("user_id", context.userId).limit(1000),
-      context.supabase.from("shadow_trades").select("pnl,expected_pnl,slippage_bps").eq("user_id", context.userId).limit(1000),
-      context.supabase.from("backtest_runs").select("total_return_pct,sharpe_ratio,max_drawdown_pct,win_rate,total_trades").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(20),
+      context.supabase.from("shadow_trades").select("pnl,confidence,status").eq("user_id", context.userId).limit(1000),
+      context.supabase.from("backtest_runs").select("metrics,created_at").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(20),
     ]);
 
     const journal = (journalR.data ?? []) as Row[];
     const shadow = (shadowR.data ?? []) as Row[];
-    const backtests = (backtestR.data ?? []) as Row[];
+    const backtests = ((backtestR.data ?? []) as Row[])
+      .map(r => (r.metrics ?? {}) as Row);
 
     const liveWins = journal.filter(r => num(r.realized_pnl) > 0).length;
-    const shadowWins = shadow.filter(r => num(r.pnl) > 0).length;
+    const closedShadow = shadow.filter(r => r.status === "closed");
+    const shadowWins = closedShadow.filter(r => num(r.pnl) > 0).length;
 
     const live = {
       trades: journal.length,
@@ -187,24 +189,21 @@ export const getEnvironmentComparison = createServerFn({ method: "GET" })
       avg_slippage_bps: mean(journal.map(r => num(r.slippage_bps_avg))),
     };
     const shadowM = {
-      trades: shadow.length,
-      pnl: shadow.reduce((s, r) => s + num(r.pnl), 0),
-      win_rate: shadow.length ? shadowWins / shadow.length : 0,
-      avg_slippage_bps: mean(shadow.map(r => num(r.slippage_bps))),
-      expected_vs_actual_delta: mean(shadow.map(r => num(r.pnl) - num(r.expected_pnl))),
+      trades: closedShadow.length,
+      pnl: closedShadow.reduce((s, r) => s + num(r.pnl), 0),
+      win_rate: closedShadow.length ? shadowWins / closedShadow.length : 0,
+      avg_confidence: mean(closedShadow.map(r => num(r.confidence))),
     };
     const backtestAvg = {
       runs: backtests.length,
-      avg_return_pct: mean(backtests.map(r => num(r.total_return_pct))),
-      avg_sharpe: mean(backtests.map(r => num(r.sharpe_ratio))),
-      avg_max_dd_pct: mean(backtests.map(r => num(r.max_drawdown_pct))),
+      avg_return_pct: mean(backtests.map(r => num(r.total_return_pct ?? r.return_pct))),
+      avg_sharpe: mean(backtests.map(r => num(r.sharpe_ratio ?? r.sharpe))),
+      avg_max_dd_pct: mean(backtests.map(r => num(r.max_drawdown_pct ?? r.max_dd))),
       avg_win_rate: mean(backtests.map(r => num(r.win_rate))),
     };
 
-    // Overfitting signal: backtest win rate >> live win rate
     const overfitGap = backtestAvg.avg_win_rate - live.win_rate;
     const degradation = shadowM.pnl > 0 && live.pnl < 0 ? "live_underperforms_shadow" : "none";
-    const slippageDelta = live.avg_slippage_bps - shadowM.avg_slippage_bps;
 
     return {
       live, shadow: shadowM, backtest: backtestAvg,
@@ -212,7 +211,6 @@ export const getEnvironmentComparison = createServerFn({ method: "GET" })
         overfitting_suspected: overfitGap > 0.2 && backtests.length >= 3 && journal.length >= 20,
         overfit_gap: overfitGap,
         degradation,
-        slippage_delta_bps: slippageDelta,
       },
     };
   });
