@@ -216,7 +216,7 @@ function RiskPage() {
                 <Row k="Asset Vol (daily)" v={`${sizeMut.data.result.volDailyPct.toFixed(2)}%`} />
                 <Row k="Kelly Edge" v={`${(sizeMut.data.result.kellyEdge*100).toFixed(0)}%`} />
                 <div className="text-[11px] text-muted-foreground mt-2 space-y-0.5">
-                  {sizeMut.data.result.reasoning.map((r, i) => <div key={i}>• {r}</div>)}
+                  {(sizeMut.data.result.reasoning as string[]).map((r: string, i: number) => <div key={i}>• {r}</div>)}
                 </div>
               </div>
             )}
