@@ -89,6 +89,11 @@ function RootComponent() {
     });
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => { /* silent fail */ });
+    }
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
