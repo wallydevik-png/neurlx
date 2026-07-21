@@ -417,6 +417,102 @@ export type Database = {
           },
         ]
       }
+      capital_allocations: {
+        Row: {
+          bucket: string
+          created_at: string
+          id: string
+          notes: string | null
+          target_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          target_pct: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          target_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      capital_ledger: {
+        Row: {
+          amount_usd: number
+          created_at: string
+          entry_type: string
+          id: string
+          note: string | null
+          occurred_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_usd: number
+          created_at?: string
+          entry_type: string
+          id?: string
+          note?: string | null
+          occurred_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_usd?: number
+          created_at?: string
+          entry_type?: string
+          id?: string
+          note?: string | null
+          occurred_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      capital_policy: {
+        Row: {
+          cash_reserve_pct: number
+          compounding_mode: string
+          created_at: string
+          fixed_base_usd: number
+          profit_withdraw_pct: number
+          scale_down_drawdown_pct: number
+          scale_up_threshold_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cash_reserve_pct?: number
+          compounding_mode?: string
+          created_at?: string
+          fixed_base_usd?: number
+          profit_withdraw_pct?: number
+          scale_down_drawdown_pct?: number
+          scale_up_threshold_pct?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cash_reserve_pct?: number
+          compounding_mode?: string
+          created_at?: string
+          fixed_base_usd?: number
+          profit_withdraw_pct?: number
+          scale_down_drawdown_pct?: number
+          scale_up_threshold_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       capital_snapshots: {
         Row: {
           cash_balance: number
