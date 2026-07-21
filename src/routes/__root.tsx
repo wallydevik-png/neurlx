@@ -67,9 +67,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const themeInit = `(function(){try{var t=localStorage.getItem('helix-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(t);r.style.colorScheme=t;}catch(e){document.documentElement.classList.add('dark');}})();`;
   return (
-    <html lang="en">
-      <head><HeadContent /></head>
+    <html lang="en" className="dark">
+      <head>
+        <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
         {children}
         <Scripts />
