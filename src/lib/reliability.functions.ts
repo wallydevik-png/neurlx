@@ -43,7 +43,7 @@ export const recordHeartbeat = createServerFn({ method: "POST" })
       component: data.component,
       status: data.status,
       latency_ms: data.latency_ms ?? null,
-      detail: data.detail ?? {},
+      detail: (data.detail ?? {}) as never,
     });
     return { ok: true };
   });
