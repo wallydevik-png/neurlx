@@ -8,7 +8,7 @@ import {
 import { Sparkles, Activity, Target, GitCompare } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/intelligence")({
-  head: () => ({ meta: [{ title: "Live Intelligence — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Live Intelligence — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: IntelPage,
 });
 

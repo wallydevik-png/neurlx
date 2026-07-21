@@ -7,7 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/optimizer")({
-  head: () => ({ meta: [{ title: "Strategy Optimizer — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Strategy Optimizer — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Optimizer,
 });
 

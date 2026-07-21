@@ -43,9 +43,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Helix — AI Paper Trading Platform" },
+      { title: "NeurlX — AI Paper Trading Platform" },
       { name: "description", content: "Secure paper-trading terminal with modular exchange connectors, AI signals, and multi-layer risk controls. Practice before you go live." },
-      { property: "og:title", content: "Helix — AI Paper Trading Platform" },
+      { property: "og:title", content: "NeurlX — AI Paper Trading Platform" },
       { property: "og:description", content: "Modular connectors, AI signals, risk-gated execution, kill switch, and full audit trail — all on a simulated exchange." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -67,7 +67,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  const themeInit = `(function(){try{var t=localStorage.getItem('helix-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(t);r.style.colorScheme=t;}catch(e){document.documentElement.classList.add('dark');}})();`;
+  const themeInit = `(function(){try{var t=localStorage.getItem('neurlx-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}var r=document.documentElement;r.classList.remove('light','dark');r.classList.add(t);r.style.colorScheme=t;}catch(e){document.documentElement.classList.add('dark');}})();`;
   return (
     <html lang="en" className="dark">
       <head>

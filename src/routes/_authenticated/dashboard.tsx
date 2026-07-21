@@ -6,7 +6,7 @@ import { getDashboard, scanMarketOpportunities, getAiPerformance, listSignals } 
 import { Plug, ArrowRight, TrendingUp, TrendingDown, Minus, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Dashboard,
 });
 

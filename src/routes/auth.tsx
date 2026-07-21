@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { TerminalSquare } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({ meta: [{ title: "Sign in — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Sign in — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: AuthPage,
 });
 
@@ -46,7 +46,7 @@ function AuthPage() {
           <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center">
             <TerminalSquare className="w-4 h-4 text-primary" />
           </div>
-          <span className="font-semibold">Helix</span>
+          <span className="font-semibold">NeurlX</span>
         </div>
         <h1 className="text-xl font-semibold">{mode === "signin" ? "Sign in" : "Create account"}</h1>
         <p className="text-sm text-muted-foreground mt-1">

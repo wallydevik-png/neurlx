@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/automation")({
-  head: () => ({ meta: [{ title: "Automation — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Automation — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Automation,
 });
 

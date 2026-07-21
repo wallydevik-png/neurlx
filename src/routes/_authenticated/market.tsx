@@ -7,7 +7,7 @@ import { TrendingUp, TrendingDown, Minus, RefreshCw, Sparkles } from "lucide-rea
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/market")({
-  head: () => ({ meta: [{ title: "Market Scanner — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Market Scanner — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Market,
 });
 

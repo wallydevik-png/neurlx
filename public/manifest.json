@@ -1,6 +1,6 @@
 {
-  "name": "Helix AI Trading",
-  "short_name": "Helix",
+  "name": "NeurlX AI Trading",
+  "short_name": "NeurlX",
   "description": "Secure AI trading terminal with paper trading, shadow mode, and assisted live execution.",
   "start_url": "/dashboard",
   "display": "standalone",

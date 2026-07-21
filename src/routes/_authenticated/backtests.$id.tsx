@@ -6,7 +6,7 @@ import { getBacktest } from "@/lib/backtest.functions";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/backtests/$id")({
-  head: () => ({ meta: [{ title: "Backtest — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Backtest — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: BacktestDetail,
 });
 

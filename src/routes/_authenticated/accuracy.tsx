@@ -5,7 +5,7 @@ import { AppShell, PageHeader, Metric, fmtPct } from "@/components/AppShell";
 import { getSignalAccuracy } from "@/lib/backtest.functions";
 
 export const Route = createFileRoute("/_authenticated/accuracy")({
-  head: () => ({ meta: [{ title: "AI Accuracy — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "AI Accuracy — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Accuracy,
 });
 

@@ -8,7 +8,7 @@ import { Wallet, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/capital")({
-  head: () => ({ meta: [{ title: "Capital Growth — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Capital Growth — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: CapitalPage,
 });
 

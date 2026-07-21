@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Radar, Plug, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/monitoring")({
-  head: () => ({ meta: [{ title: "Live Monitoring — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Live Monitoring — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Monitoring,
 });
 

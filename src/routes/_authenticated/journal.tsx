@@ -7,7 +7,7 @@ import { BookOpen, ScrollText } from "lucide-react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/journal")({
-  head: () => ({ meta: [{ title: "Trade Journal — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Trade Journal — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: JournalPage,
 });
 

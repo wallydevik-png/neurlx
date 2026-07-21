@@ -117,7 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <TerminalSquare className="w-4 h-4 text-primary" />
             </div>
             <div className="min-w-0 hidden xs:block sm:block">
-              <div className="font-semibold text-sm leading-tight truncate">Helix</div>
+              <div className="font-semibold text-sm leading-tight truncate">NeurlX</div>
               <div className="text-[10px] font-mono text-muted-foreground leading-tight">paper · v0.1</div>
             </div>
           </Link>

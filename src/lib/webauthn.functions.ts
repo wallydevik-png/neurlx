@@ -8,7 +8,7 @@ import {
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 
-const RP_NAME = "Helix Trading";
+const RP_NAME = "NeurlX Trading";
 const ORIGIN = typeof process !== "undefined" && process.env.VITE_SITE_URL
   ? process.env.VITE_SITE_URL
   : "http://localhost:8080";

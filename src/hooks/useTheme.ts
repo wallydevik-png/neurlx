@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 
 export type Theme = "light" | "dark";
-const KEY = "helix-theme";
+const KEY = "neurlx-theme";
 
 function apply(theme: Theme) {
   const root = document.documentElement;

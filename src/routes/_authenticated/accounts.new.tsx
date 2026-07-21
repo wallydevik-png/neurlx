@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Lock, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/accounts/new")({
-  head: () => ({ meta: [{ title: "Add Platform — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Add Platform — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: NewAccount,
 });
 

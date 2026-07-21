@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
-  head: () => ({ meta: [{ title: "Analytics — Helix" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Analytics — NeurlX" }, { name: "robots", content: "noindex" }] }),
   component: Analytics,
 });
 
