@@ -87,7 +87,6 @@ function MissionControl() {
   return (
     <AppShell>
       <PageHeader
-        icon={Gauge}
         title="Mission Control"
         subtitle="Production readiness audit & deployment governance. Evaluation-only — never bypasses risk controls."
       />
