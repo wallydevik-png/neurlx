@@ -27,6 +27,7 @@ const NAV = [
   { to: "/readiness", label: "Readiness Score", icon: Gauge },
   { to: "/portfolio", label: "AI Decision Center", icon: Brain },
   { to: "/market", label: "Market Scanner", icon: LineChart },
+  { to: "/intel", label: "Market Intelligence", icon: Radar },
   { to: "/accounts", label: "Connected Accounts", icon: Plug },
   { to: "/signals", label: "AI Signals", icon: Signal },
   { to: "/approvals", label: "Approvals", icon: CheckSquare },
