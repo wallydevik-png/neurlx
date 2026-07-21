@@ -101,6 +101,11 @@ const AddConnectionSchema = z.object({
   label: z.string().min(1).max(80),
   credentials: z.record(z.string()).default({}),
   tradingEnabled: z.boolean().default(false),
+  // Universal Broker Hub extensions — all optional so paper/legacy flows keep working.
+  brokerCategory: z.enum(["crypto", "forex_cfd", "stocks_multi"]).optional(),
+  authMethod: z.enum(["oauth", "api_key", "metatrader", "sdk", "paper"]).optional(),
+  brokerServer: z.string().max(120).optional(),
+  accountNumber: z.string().max(80).optional(),
 });
 
 export const addConnection = createServerFn({ method: "POST" })
@@ -108,6 +113,18 @@ export const addConnection = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => AddConnectionSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { encryptJSON } = await import("@/lib/crypto.server");
+    const { getBroker } = await import("@/lib/connectors/brokerRegistry");
+    const broker = getBroker(data.connectorId);
+    if (!broker) throw new Error(`Broker "${data.connectorId}" is not registered.`);
+
+    // Hard security rule — reject any credential payload that even hints at
+    // withdrawal permissions. Live permission scanning happens in
+    // scanConnectionPermissions once the connector is first-class.
+    const credKeys = Object.keys(data.credentials).map(k => k.toLowerCase());
+    if (credKeys.some(k => k.includes("withdraw"))) {
+      throw new Error("NeurlX never accepts credentials with withdrawal permissions. Regenerate the API key without withdrawal rights.");
+    }
+
     const ciphertext = Object.keys(data.credentials).length
       ? encryptJSON(data.credentials)
       : null;
@@ -116,17 +133,32 @@ export const addConnection = createServerFn({ method: "POST" })
       connector_id: data.connectorId,
       label: data.label,
       status: "connected",
-      health: "healthy",
+      health: broker.implemented ? "healthy" : "pending",
       read_enabled: true,
       trading_enabled: data.tradingEnabled && data.connectorId === "paper",
       credential_ciphertext: ciphertext,
       last_sync_at: new Date().toISOString(),
+      broker_category: data.brokerCategory ?? broker.category,
+      auth_method: data.authMethod ?? broker.authMethod,
+      broker_server: data.brokerServer ?? null,
+      account_number: data.accountNumber ?? null,
+      permissions_snapshot: {
+        declared: {
+          reading: true,
+          trading: data.tradingEnabled && data.connectorId === "paper",
+          withdrawals: false,
+        },
+      },
     }).select().single();
     if (error) throw error;
     await context.supabase.from("audit_log").insert({
       user_id: context.userId, action: "connection.add",
       entity: "exchange_connections", entity_id: row.id,
-      payload: { connectorId: data.connectorId, label: data.label },
+      payload: {
+        connectorId: data.connectorId, label: data.label,
+        authMethod: data.authMethod ?? broker.authMethod,
+        brokerCategory: data.brokerCategory ?? broker.category,
+      },
     });
     return row;
   });
@@ -497,4 +529,83 @@ export const getAuditLog = createServerFn({ method: "GET" })
     const { data } = await context.supabase.from("audit_log").select("*")
       .eq("user_id", context.userId).order("created_at", { ascending: false }).limit(100);
     return data ?? [];
+  });
+
+// ---------- Universal Broker Hub: health & permission scanning ----------
+// Runs the connector's checkHealth/getApiPermissions if the connector
+// exposes them, records latency + a redacted permission snapshot, and
+// appends any error to the connection's error_history. This is the single
+// endpoint the Connection Health Dashboard polls — every broker,
+// regardless of auth method, is scanned through the same code path.
+export const scanConnectionHealth = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: conn, error } = await context.supabase
+      .from("exchange_connections").select("*")
+      .eq("id", data.id).eq("user_id", context.userId).maybeSingle();
+    if (error || !conn) throw new Error("Connection not found");
+
+    const { decryptJSON } = await import("@/lib/crypto.server");
+    const { createConnector } = await import("@/lib/connectors/factory.server");
+    const creds = conn.credential_ciphertext
+      ? decryptJSON<Record<string, string>>(conn.credential_ciphertext) : {};
+    const connector = createConnector(conn.connector_id, creds, {
+      supabase: context.supabase, userId: context.userId, connectionId: conn.id,
+    });
+
+    const t0 = Date.now();
+    let ok = true;
+    let message = "";
+    let permissions: Record<string, boolean> = {};
+    try {
+      if (connector.checkHealth) {
+        const h = await connector.checkHealth();
+        ok = h.ok; message = h.message ?? "";
+      } else {
+        const v = await connector.verify();
+        ok = v.ok; message = v.message ?? "";
+      }
+      if (connector.getApiPermissions) {
+        const p = await connector.getApiPermissions();
+        permissions = {
+          reading: p.enableReading,
+          trading: p.enableSpotAndMarginTrading,
+          withdrawals: p.enableWithdrawals,
+          futures: p.enableFutures ?? false,
+          ipRestricted: p.ipRestrict ?? false,
+        };
+        // Hard revocation if withdrawal permission is discovered live.
+        if (p.enableWithdrawals) {
+          await context.supabase.from("exchange_connections").update({
+            status: "disconnected", trading_enabled: false, health: "danger",
+          }).eq("id", conn.id);
+          await context.supabase.from("audit_log").insert({
+            user_id: context.userId, action: "connection.withdraw_scope_detected",
+            entity: "exchange_connections", entity_id: conn.id,
+            payload: { message: "Auto-revoked: withdrawal permission detected." },
+          });
+          throw new Error("This API key has WITHDRAWAL permission enabled. Connection was auto-revoked. Regenerate the key without withdrawal rights.");
+        }
+      }
+    } catch (e) {
+      ok = false;
+      message = e instanceof Error ? e.message : String(e);
+    }
+    const latency = Date.now() - t0;
+
+    const priorErrors = Array.isArray(conn.error_history) ? conn.error_history : [];
+    const nextErrors = ok
+      ? priorErrors
+      : [{ at: new Date().toISOString(), message }, ...priorErrors].slice(0, 10);
+
+    await context.supabase.from("exchange_connections").update({
+      latency_ms: latency,
+      permissions_snapshot: { ...(conn.permissions_snapshot as Record<string, unknown> ?? {}), live: permissions } as never,
+      error_history: nextErrors,
+      health: ok ? "healthy" : "warning",
+      last_sync_at: new Date().toISOString(),
+    }).eq("id", conn.id);
+
+    return { ok, latencyMs: latency, permissions, message };
   });

@@ -2,10 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell, PageHeader } from "@/components/AppShell";
-import { disconnectConnection, listConnections, setPermissions } from "@/lib/trading.functions";
-import { getConnectorDescriptor } from "@/lib/connectors/registry";
-import { Plus, Trash2, Shield, ShieldCheck } from "lucide-react";
+import { disconnectConnection, listConnections, setPermissions, scanConnectionHealth } from "@/lib/trading.functions";
+import { getBroker } from "@/lib/connectors/brokerRegistry";
+import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/accounts")({
   head: () => ({ meta: [{ title: "Connected Accounts — NeurlX" }, { name: "robots", content: "noindex" }] }),
@@ -67,25 +68,60 @@ function Accounts() {
       ) : (
         <div className="space-y-3">
           {conns.map(c => {
-            const desc = getConnectorDescriptor(c.connector_id);
+            const desc = getBroker(c.connector_id);
+            const errs = Array.isArray(c.error_history) ? c.error_history : [];
+            const livePerms = (c.permissions_snapshot as { live?: Record<string, boolean> } | null)?.live;
             return (
               <div key={c.id} className="panel p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold">{c.label}</h3>
                       <span className="text-[10px] font-mono uppercase text-muted-foreground border border-border rounded px-1.5 py-0.5">
                         {desc?.displayName ?? c.connector_id}
                       </span>
+                      {c.auth_method && (
+                        <span className="text-[10px] font-mono uppercase text-primary border border-primary/40 rounded px-1.5 py-0.5">
+                          {c.auth_method.replace("_", " ")}
+                        </span>
+                      )}
                       <span className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 ${
                         c.status === "connected" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
                       }`}>{c.status}</span>
+                      <span className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 ${
+                        c.health === "healthy" ? "bg-success/15 text-success"
+                        : c.health === "warning" ? "bg-warning/15 text-warning"
+                        : c.health === "danger" ? "bg-destructive/15 text-destructive"
+                        : "bg-muted text-muted-foreground"
+                      }`}>{c.health}</span>
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground font-mono">
-                      Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "never"} · Health: {c.health}
+                      Last sync: {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "never"}
+                      {typeof c.latency_ms === "number" && <> · Latency: {c.latency_ms}ms</>}
+                      {c.broker_server && <> · Server: {c.broker_server}</>}
+                      {c.account_number && <> · Acct: {c.account_number}</>}
                     </div>
+                    {livePerms && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Object.entries(livePerms).map(([k, v]) => (
+                          <span key={k} className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border ${
+                            v ? (k === "withdrawals" ? "text-destructive border-destructive/40" : "text-success border-success/40")
+                              : "text-muted-foreground border-border"
+                          }`}>
+                            {k}: {v ? "on" : "off"}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {errs.length > 0 && (
+                      <div className="mt-2 flex items-start gap-1.5 text-xs text-warning">
+                        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <span>Last error: {(errs[0] as { message?: string })?.message ?? "unknown"}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
+                    <ScanButton id={c.id} />
                     <Link to="/accounts/$id/activate" params={{ id: c.id }}
                       className="text-xs px-3 py-1.5 rounded-md border border-primary/40 text-primary hover:bg-primary/10 font-medium whitespace-nowrap">
                       Manage live trading
@@ -145,5 +181,30 @@ function PermRow({ label, desc, on, disabled, icon, onToggle }: {
         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-background transition ${on ? "left-[18px]" : "left-0.5"}`} />
       </button>
     </div>
+  );
+}
+
+function ScanButton({ id }: { id: string }) {
+  const scanFn = useServerFn(scanConnectionHealth);
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await scanFn({ data: { id } });
+      toast[r.ok ? "success" : "error"](
+        r.ok ? `Healthy · ${r.latencyMs}ms` : (r.message || "Health check failed"),
+      );
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Scan failed");
+    } finally { setBusy(false); }
+  }
+  return (
+    <button onClick={run} disabled={busy}
+      title="Run health & permission scan"
+      className="p-2 rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-50">
+      <Activity className={`w-4 h-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
   );
 }

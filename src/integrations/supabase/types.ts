@@ -892,18 +892,27 @@ export type Database = {
       }
       exchange_connections: {
         Row: {
+          account_number: string | null
+          auth_method: string | null
+          broker_category: string | null
+          broker_server: string | null
           clock_skew_ms: number | null
           connector_id: string
           created_at: string
           credential_ciphertext: string | null
+          error_history: Json
           health: string
           id: string
           label: string
           last_error: string | null
           last_reconcile_at: string | null
           last_sync_at: string | null
+          latency_ms: number | null
           max_notional_per_order: number | null
+          oauth_expires_at: string | null
+          oauth_token_ciphertext: string | null
           permission_scan: Json | null
+          permissions_snapshot: Json
           read_enabled: boolean
           status: string
           trading_activated_at: string | null
@@ -914,18 +923,27 @@ export type Database = {
           withdrawal_detected: boolean
         }
         Insert: {
+          account_number?: string | null
+          auth_method?: string | null
+          broker_category?: string | null
+          broker_server?: string | null
           clock_skew_ms?: number | null
           connector_id: string
           created_at?: string
           credential_ciphertext?: string | null
+          error_history?: Json
           health?: string
           id?: string
           label: string
           last_error?: string | null
           last_reconcile_at?: string | null
           last_sync_at?: string | null
+          latency_ms?: number | null
           max_notional_per_order?: number | null
+          oauth_expires_at?: string | null
+          oauth_token_ciphertext?: string | null
           permission_scan?: Json | null
+          permissions_snapshot?: Json
           read_enabled?: boolean
           status?: string
           trading_activated_at?: string | null
@@ -936,18 +954,27 @@ export type Database = {
           withdrawal_detected?: boolean
         }
         Update: {
+          account_number?: string | null
+          auth_method?: string | null
+          broker_category?: string | null
+          broker_server?: string | null
           clock_skew_ms?: number | null
           connector_id?: string
           created_at?: string
           credential_ciphertext?: string | null
+          error_history?: Json
           health?: string
           id?: string
           label?: string
           last_error?: string | null
           last_reconcile_at?: string | null
           last_sync_at?: string | null
+          latency_ms?: number | null
           max_notional_per_order?: number | null
+          oauth_expires_at?: string | null
+          oauth_token_ciphertext?: string | null
           permission_scan?: Json | null
+          permissions_snapshot?: Json
           read_enabled?: boolean
           status?: string
           trading_activated_at?: string | null
