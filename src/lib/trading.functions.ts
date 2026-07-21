@@ -110,6 +110,22 @@ export const getLiveEquity = createServerFn({ method: "GET" })
     const { createConnector } = await import("@/lib/connectors/factory.server");
     const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
     let totalUsd = 0;
+
+    // Fetch a USDT price map from Bybit for converting non-stable crypto balances.
+    const priceMap = new Map<string, number>();
+    for (const s of ["USD", "USDT", "USDC", "DAI", "BUSD", "FDUSD"]) priceMap.set(s, 1);
+    try {
+      const r = await fetch("https://api.bybit.com/v5/market/tickers?category=spot");
+      const j: { result?: { list?: Array<{ symbol: string; lastPrice: string }> } } = await r.json();
+      for (const t of j.result?.list ?? []) {
+        if (t.symbol.endsWith("USDT")) {
+          const asset = t.symbol.slice(0, -4);
+          const px = Number(t.lastPrice);
+          if (px > 0 && !priceMap.has(asset)) priceMap.set(asset, px);
+        }
+      }
+    } catch { /* fallback: only stables counted */ }
+
     for (const c of live) {
       try {
         const { data: row } = await supabase.from("exchange_connections")
@@ -121,8 +137,10 @@ export const getLiveEquity = createServerFn({ method: "GET" })
         const balances = await connector.getBalances();
         const usd = balances.reduce((s: number, b: { currency: string; total?: number | null }) => {
           const cur = b.currency.toUpperCase();
-          if (cur === "USD" || cur === "USDT" || cur === "USDC") return s + Number(b.total ?? 0);
-          return s;
+          const amt = Number(b.total ?? 0);
+          if (!amt) return s;
+          const px = priceMap.get(cur);
+          return px ? s + amt * px : s;
         }, 0);
         accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd });
         totalUsd += usd;
