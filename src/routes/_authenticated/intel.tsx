@@ -148,7 +148,7 @@ function IntelPage() {
               <div className="space-y-3">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground font-mono">Provider breakdown</div>
                 <div className="space-y-2">
-                  {intel!.signals.map((s: any, i: number) => {
+                  {intel!.signals.map((s: IntelSignalOut, i: number) => {
                     const meta = PROVIDER_META[s.provider] ?? { label: s.provider, icon: Gauge };
                     const Icon = meta.icon;
                     return (
