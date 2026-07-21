@@ -114,6 +114,14 @@ export type Database = {
         Row: {
           activation_confirmed_phrase_at: string | null
           allowed_assets: string[]
+          autonomous_consecutive_losses: number
+          autonomous_cooldown_seconds: number
+          autonomous_default_connection_id: string | null
+          autonomous_last_run_at: string | null
+          autonomous_live_enabled: boolean
+          autonomous_max_consecutive_losses: number
+          autonomous_max_open_positions: number
+          autonomous_min_confidence: number
           kill_switch_active: boolean
           live_consecutive_failures: number
           live_kill_reason: string | null
@@ -133,6 +141,14 @@ export type Database = {
         Insert: {
           activation_confirmed_phrase_at?: string | null
           allowed_assets?: string[]
+          autonomous_consecutive_losses?: number
+          autonomous_cooldown_seconds?: number
+          autonomous_default_connection_id?: string | null
+          autonomous_last_run_at?: string | null
+          autonomous_live_enabled?: boolean
+          autonomous_max_consecutive_losses?: number
+          autonomous_max_open_positions?: number
+          autonomous_min_confidence?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -152,6 +168,14 @@ export type Database = {
         Update: {
           activation_confirmed_phrase_at?: string | null
           allowed_assets?: string[]
+          autonomous_consecutive_losses?: number
+          autonomous_cooldown_seconds?: number
+          autonomous_default_connection_id?: string | null
+          autonomous_last_run_at?: string | null
+          autonomous_live_enabled?: boolean
+          autonomous_max_consecutive_losses?: number
+          autonomous_max_open_positions?: number
+          autonomous_min_confidence?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -166,6 +190,56 @@ export type Database = {
           mode?: string
           risk_level?: string
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_settings_autonomous_default_connection_id_fkey"
+            columns: ["autonomous_default_connection_id"]
+            isOneToOne: false
+            referencedRelation: "exchange_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      autonomous_runs: {
+        Row: {
+          errors: Json
+          finished_at: string | null
+          id: string
+          live: boolean
+          reject_reasons: Json
+          signals_executed: number
+          signals_rejected: number
+          signals_scanned: number
+          started_at: string
+          trigger: string
+          user_id: string
+        }
+        Insert: {
+          errors?: Json
+          finished_at?: string | null
+          id?: string
+          live?: boolean
+          reject_reasons?: Json
+          signals_executed?: number
+          signals_rejected?: number
+          signals_scanned?: number
+          started_at?: string
+          trigger?: string
+          user_id: string
+        }
+        Update: {
+          errors?: Json
+          finished_at?: string | null
+          id?: string
+          live?: boolean
+          reject_reasons?: Json
+          signals_executed?: number
+          signals_rejected?: number
+          signals_scanned?: number
+          started_at?: string
+          trigger?: string
           user_id?: string
         }
         Relationships: []
