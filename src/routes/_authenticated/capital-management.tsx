@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { AppShell, PageHeader, Metric, fmtUsd, Card } from "@/components/AppShell";
+import { AppShell, PageHeader, Metric, fmtUsd } from "@/components/AppShell";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
