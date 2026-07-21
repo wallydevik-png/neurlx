@@ -31,7 +31,7 @@ function Analytics() {
   const exportTax = async () => {
     const y = new Date().getFullYear();
     const res = await taxFn({ data: { year: y } });
-    download(`tax-report-${y}.csv`, toCSV(res.rows as Record<string, unknown>[]));
+    download(`tax-report-${y}.csv`, toCSV(res.rows as unknown as Record<string, unknown>[]));
   };
   const exportTrades = () => {
     if (!data) return;
