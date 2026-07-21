@@ -106,14 +106,20 @@ export const getLiveEquity = createServerFn({ method: "GET" })
     const live = (conns ?? []).filter(c => c.connector_id !== "paper");
     if (live.length === 0) return { totalUsd: 0, accounts: [] as Array<{ id: string; label: string; connector: string; usd: number; error?: string }> };
 
-    const { buildConnectorForConnection } = await import("@/lib/connectors/factory.server");
+    const { decryptJSON } = await import("@/lib/crypto.server");
+    const { createConnector } = await import("@/lib/connectors/factory.server");
     const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
     let totalUsd = 0;
     for (const c of live) {
       try {
-        const connector = await buildConnectorForConnection(supabase, c.id);
+        const { data: row } = await supabase.from("exchange_connections")
+          .select("credential_ciphertext").eq("id", c.id).maybeSingle();
+        const creds = row?.credential_ciphertext
+          ? await decryptJSON<Record<string, string>>(row.credential_ciphertext)
+          : {};
+        const connector = createConnector(c.connector_id, creds, { supabase, userId, connectionId: c.id });
         const balances = await connector.getBalances();
-        const usd = balances.reduce((s, b) => {
+        const usd = balances.reduce((s: number, b: { currency: string; total?: number | null }) => {
           const cur = b.currency.toUpperCase();
           if (cur === "USD" || cur === "USDT" || cur === "USDC") return s + Number(b.total ?? 0);
           return s;
