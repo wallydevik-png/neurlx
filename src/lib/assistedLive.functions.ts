@@ -157,6 +157,8 @@ export const resetCircuitBreaker = createServerFn({ method: "POST" })
 const ApproveSchema = z.object({
   signalId: z.string().uuid(),
   modifiedQty: z.number().positive().optional(),
+  connectionId: z.string().uuid().optional(),
+  live: z.boolean().optional(),
 });
 
 export const approveSignalV2 = createServerFn({ method: "POST" })
@@ -173,7 +175,7 @@ export const approveSignalV2 = createServerFn({ method: "POST" })
     const entry = Number(sig.entry);
     const side = sig.side as "buy" | "sell";
 
-    // Risk gate
+    // Risk gate — authoritative, never bypassed
     const { evaluateRisk } = await import("@/lib/trading/riskGate.server");
     const decision = await evaluateRisk(supabase, userId, {
       symbol: sig.symbol, side, qty, entry,
@@ -192,19 +194,40 @@ export const approveSignalV2 = createServerFn({ method: "POST" })
       throw new Error(decision.reason ?? "Rejected by risk gate");
     }
 
-    // Live notional cap (per settings)
-    const { data: settings } = await supabase.from("automation_settings").select("*")
-      .eq("user_id", userId).maybeSingle();
-    const notional = qty * entry;
-    if (settings && notional > Number(settings.live_max_notional_per_order)) {
-      throw new Error(`Order notional $${notional.toFixed(2)} exceeds live cap $${settings.live_max_notional_per_order}.`);
+    // Decide live vs paper. Live requires: explicit live flag from UI + a
+    // trading-enabled connection on this user + circuit breaker closed +
+    // per-order notional cap not exceeded.
+    let live = Boolean(data.live);
+    let connectionId: string | null = data.connectionId ?? null;
+    if (live) {
+      if (!connectionId) throw new Error("connectionId is required for live execution");
+      const { data: conn } = await supabase.from("exchange_connections")
+        .select("id,trading_enabled,status,connector_id")
+        .eq("id", connectionId).eq("user_id", userId).maybeSingle();
+      if (!conn || !conn.trading_enabled || conn.status !== "connected") {
+        throw new Error("Selected connection is not enabled for live trading.");
+      }
+      const { data: settings } = await supabase.from("automation_settings").select("*")
+        .eq("user_id", userId).maybeSingle();
+      if (settings && settings.mode === "autonomous") {
+        // Assisted-mode only in this build; hard block.
+        throw new Error("Autonomous mode is disabled in this build. Approve trades individually.");
+      }
+      const notional = qty * entry;
+      if (settings && notional > Number(settings.live_max_notional_per_order)) {
+        throw new Error(`Order notional $${notional.toFixed(2)} exceeds live cap $${settings.live_max_notional_per_order}.`);
+      }
     }
 
     // Submit through the execution engine
     const { submitOrder } = await import("@/lib/execution/engine.server");
     const result = await submitOrder(supabase, userId, {
       symbol: sig.symbol, side, qty,
-      orderType: "market", signalId: data.signalId, live: false,
+      orderType: "market",
+      stopLoss: Number(sig.stop_loss),
+      takeProfit: Number(sig.take_profit),
+      signalId: data.signalId,
+      connectionId, live,
     });
 
     if (result.status === "rejected" || result.status === "error") {
@@ -233,14 +256,15 @@ export const approveSignalV2 = createServerFn({ method: "POST" })
       ai_regime: sig.market_regime,
     }).select().single();
 
-    // Link the order to the position
     await supabase.from("orders").update({ position_id: pos?.id })
       .eq("id", result.orderId);
 
-    // Deduct cash
-    await supabase.from("paper_accounts").update({
-      cash_balance: Number(acct.cash_balance) - filledPrice * filledQty - result.fees,
-    }).eq("id", acct.id);
+    // Cash accounting only for paper (live venues manage their own).
+    if (!result.isLive) {
+      await supabase.from("paper_accounts").update({
+        cash_balance: Number(acct.cash_balance) - filledPrice * filledQty - result.fees,
+      }).eq("id", acct.id);
+    }
 
     await supabase.from("signals").update({
       status: "executed", resolved_at: new Date().toISOString(),
@@ -253,14 +277,52 @@ export const approveSignalV2 = createServerFn({ method: "POST" })
         qty, filledPrice, filledQty, fees: result.fees,
         modified: data.modifiedQty !== undefined,
         partial: result.status === "partially_filled",
+        isLive: result.isLive, connectionId,
       },
     });
 
     return {
       ok: true, positionId: pos?.id, filledPrice, filledQty,
       partial: result.status === "partially_filled",
+      isLive: result.isLive,
       message: result.message,
     };
+  });
+
+// ---------------------------------------------------------------------------
+// LIVE-ENABLED CONNECTIONS (used by the approvals UI to select execution venue)
+// ---------------------------------------------------------------------------
+export const listLiveConnections = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase.from("exchange_connections")
+      .select("id,label,connector_id,trading_enabled,status,health,max_notional_per_order,clock_skew_ms,last_reconcile_at")
+      .eq("user_id", context.userId)
+      .eq("trading_enabled", true)
+      .eq("status", "connected");
+    return data ?? [];
+  });
+
+// ---------------------------------------------------------------------------
+// MANUAL RECONCILE (button on monitoring page)
+// ---------------------------------------------------------------------------
+export const reconcileNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ connectionId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: conn } = await context.supabase.from("exchange_connections")
+      .select("*").eq("id", data.connectionId).eq("user_id", context.userId).maybeSingle();
+    if (!conn) throw new Error("Connection not found");
+    const { decryptJSON } = await import("@/lib/crypto.server");
+    const { createConnector } = await import("@/lib/connectors/factory.server");
+    const { reconcileConnection } = await import("@/lib/execution/reconcile.server");
+    const creds = conn.credential_ciphertext
+      ? (decryptJSON(conn.credential_ciphertext) as Record<string, string>)
+      : {};
+    const connector = createConnector(conn.connector_id, creds, {
+      supabase: context.supabase, userId: context.userId, connectionId: conn.id,
+    });
+    return reconcileConnection(context.supabase, context.userId, connector, conn.id);
   });
 
 // ---------------------------------------------------------------------------
