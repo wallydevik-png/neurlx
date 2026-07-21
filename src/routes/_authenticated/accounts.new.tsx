@@ -65,7 +65,8 @@ function NewAccount() {
       toast.success(broker.implemented ? "Connected" : `${broker.displayName} added — awaiting first-class connector.`);
       nav({ to: "/accounts" });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      const message = e instanceof Error && e.message ? e.message : "Connection failed. Please check the key fields and try again.";
+      toast.error(message === "Failed" ? "Connection failed. Please check the key fields and try again." : message);
     } finally { setBusy(false); }
   }
 
