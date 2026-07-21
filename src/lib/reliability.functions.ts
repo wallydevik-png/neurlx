@@ -192,7 +192,7 @@ export const captureStateSnapshot = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const [posR, ordR, settingsR] = await Promise.all([
       supabase.from("positions").select("*").eq("user_id", userId).eq("status", "open").limit(500),
-      supabase.from("orders").select("id,symbol,side,status,quantity,filled_quantity,avg_fill_price,created_at").eq("user_id", userId).in("status", ["pending", "submitted", "partial"]).limit(500),
+      supabase.from("orders").select("id,symbol,side,status,qty,filled_price,created_at").eq("user_id", userId).in("status", ["pending", "submitted", "partial"]).limit(500),
       supabase.from("automation_settings").select("*").eq("user_id", userId).maybeSingle(),
     ]);
     const payload = {
