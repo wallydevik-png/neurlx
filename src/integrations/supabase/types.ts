@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      advanced_risk_settings: {
+        Row: {
+          kelly_fraction: number
+          max_correlation: number
+          max_portfolio_heat_pct: number
+          max_sector_pct: number
+          max_var_pct: number
+          target_daily_vol_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          kelly_fraction?: number
+          max_correlation?: number
+          max_portfolio_heat_pct?: number
+          max_sector_pct?: number
+          max_var_pct?: number
+          target_daily_vol_pct?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          kelly_fraction?: number
+          max_correlation?: number
+          max_portfolio_heat_pct?: number
+          max_sector_pct?: number
+          max_var_pct?: number
+          target_daily_vol_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       api_request_log: {
         Row: {
           connection_id: string | null
@@ -1102,6 +1135,48 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      risk_snapshots: {
+        Row: {
+          captured_at: string
+          cvar_95_pct: number
+          equity: number
+          id: string
+          max_correlation: number
+          open_positions: number
+          portfolio_heat_pct: number
+          portfolio_vol_pct: number
+          risk_score: number
+          user_id: string
+          var_95_pct: number
+        }
+        Insert: {
+          captured_at?: string
+          cvar_95_pct?: number
+          equity: number
+          id?: string
+          max_correlation?: number
+          open_positions?: number
+          portfolio_heat_pct?: number
+          portfolio_vol_pct?: number
+          risk_score?: number
+          user_id: string
+          var_95_pct?: number
+        }
+        Update: {
+          captured_at?: string
+          cvar_95_pct?: number
+          equity?: number
+          id?: string
+          max_correlation?: number
+          open_positions?: number
+          portfolio_heat_pct?: number
+          portfolio_vol_pct?: number
+          risk_score?: number
+          user_id?: string
+          var_95_pct?: number
         }
         Relationships: []
       }
