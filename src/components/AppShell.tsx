@@ -29,6 +29,7 @@ const NAV = [
   { to: "/portfolio", label: "AI Decision Center", icon: Brain },
   { to: "/market", label: "Market Scanner", icon: LineChart },
   { to: "/intel", label: "Market Intelligence", icon: Radar },
+  { to: "/altdata", label: "Alternative Data", icon: Layers3 },
   { to: "/accounts", label: "Connected Accounts", icon: Plug },
   { to: "/signals", label: "AI Signals", icon: Signal },
   { to: "/approvals", label: "Approvals", icon: CheckSquare },
