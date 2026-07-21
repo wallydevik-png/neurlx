@@ -7,7 +7,7 @@ import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
   Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
-  Sparkles, Wallet, Bot, Bell, Rocket,
+  Sparkles, Wallet, Bot, Bell, Rocket, ScrollText,
 } from "lucide-react";
 import { unreadNotificationCount } from "@/lib/notifications.functions";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
@@ -38,6 +38,7 @@ const NAV = [
   { to: "/autonomous", label: "Autonomous Engine", icon: Bot },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/compliance", label: "Compliance & Data", icon: ScrollText },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {

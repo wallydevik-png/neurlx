@@ -543,6 +543,36 @@ export type Database = {
           },
         ]
       }
+      gdpr_requests: {
+        Row: {
+          completed_at: string | null
+          id: string
+          kind: string
+          notes: string | null
+          requested_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          kind: string
+          notes?: string | null
+          requested_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          kind?: string
+          notes?: string | null
+          requested_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       market_candles: {
         Row: {
           close: number
@@ -968,6 +998,7 @@ export type Database = {
         Row: {
           autonomous_disclaimer_acked_at: string | null
           created_at: string
+          deletion_requested_at: string | null
           display_name: string | null
           id: string
           updated_at: string
@@ -975,6 +1006,7 @@ export type Database = {
         Insert: {
           autonomous_disclaimer_acked_at?: string | null
           created_at?: string
+          deletion_requested_at?: string | null
           display_name?: string | null
           id: string
           updated_at?: string
@@ -982,6 +1014,7 @@ export type Database = {
         Update: {
           autonomous_disclaimer_acked_at?: string | null
           created_at?: string
+          deletion_requested_at?: string | null
           display_name?: string | null
           id?: string
           updated_at?: string
@@ -1310,6 +1343,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_consents: {
+        Row: {
+          marketing_opt_in: boolean
+          privacy_accepted_at: string | null
+          privacy_version: string | null
+          risk_accepted_at: string | null
+          risk_version: string | null
+          tos_accepted_at: string | null
+          tos_version: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          marketing_opt_in?: boolean
+          privacy_accepted_at?: string | null
+          privacy_version?: string | null
+          risk_accepted_at?: string | null
+          risk_version?: string | null
+          tos_accepted_at?: string | null
+          tos_version?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          marketing_opt_in?: boolean
+          privacy_accepted_at?: string | null
+          privacy_version?: string | null
+          risk_accepted_at?: string | null
+          risk_version?: string | null
+          tos_accepted_at?: string | null
+          tos_version?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
