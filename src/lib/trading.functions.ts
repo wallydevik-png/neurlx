@@ -94,7 +94,41 @@ export const getProfile = createServerFn({ method: "GET" })
     return data;
   });
 
+// Aggregate live-account balances across all connected live venues so the
+// dashboard can switch between Demo (paper $100k) and Live mode.
+export const getLiveEquity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: conns } = await supabase.from("exchange_connections")
+      .select("id,label,connector_id,status,trading_enabled")
+      .eq("user_id", userId).eq("status", "connected");
+    const live = (conns ?? []).filter(c => c.connector_id !== "paper");
+    if (live.length === 0) return { totalUsd: 0, accounts: [] as Array<{ id: string; label: string; connector: string; usd: number; error?: string }> };
+
+    const { buildConnectorForConnection } = await import("@/lib/connectors/factory.server");
+    const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
+    let totalUsd = 0;
+    for (const c of live) {
+      try {
+        const connector = await buildConnectorForConnection(supabase, c.id);
+        const balances = await connector.getBalances();
+        const usd = balances.reduce((s, b) => {
+          const cur = b.currency.toUpperCase();
+          if (cur === "USD" || cur === "USDT" || cur === "USDC") return s + Number(b.total ?? 0);
+          return s;
+        }, 0);
+        accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd });
+        totalUsd += usd;
+      } catch (e) {
+        accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd: 0, error: e instanceof Error ? e.message : "unavailable" });
+      }
+    }
+    return { totalUsd, accounts };
+  });
+
 // ---------- mutations ----------
+
 
 const AddConnectionSchema = z.object({
   connectorId: z.string().min(1),
