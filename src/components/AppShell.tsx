@@ -9,7 +9,7 @@ import {
   Layers, Layers3, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
   Sparkles, Wallet, Bot, Bell, Rocket, ScrollText, Smartphone, Fingerprint, WifiOff,
   Sun, Moon, Shield, HeartPulse,
-} from "lucide-react";
+, Banknote } from "lucide-react";
 import { unreadNotificationCount } from "@/lib/notifications.functions";
 import { Logo } from "@/components/Logo";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
