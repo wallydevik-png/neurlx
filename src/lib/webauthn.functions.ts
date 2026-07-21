@@ -1,12 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-  generateAuthenticationOptions,
-  verifyAuthenticationResponse,
-} from "@simplewebauthn/server";
 
 const RP_NAME = "NeurlX Trading";
 const ORIGIN = typeof process !== "undefined" && process.env.VITE_SITE_URL
@@ -16,6 +10,7 @@ const ORIGIN = typeof process !== "undefined" && process.env.VITE_SITE_URL
 const registrationOptions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { generateRegistrationOptions } = await import("@simplewebauthn/server");
     const { supabase, userId } = context;
     const existing = await supabase
       .from("webauthn_credentials")
@@ -60,6 +55,7 @@ const verifyRegistration = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const { verifyRegistrationResponse } = await import("@simplewebauthn/server");
     const { supabase, userId } = context;
     const challengeRow = await supabase
       .from("webauthn_challenges")
@@ -108,6 +104,7 @@ const verifyRegistration = createServerFn({ method: "POST" })
 const authenticationOptions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { generateAuthenticationOptions } = await import("@simplewebauthn/server");
     const { supabase, userId } = context;
     const credentials = await supabase
       .from("webauthn_credentials")
@@ -143,6 +140,7 @@ const verifyAuthentication = createServerFn({ method: "POST" })
     z.object({ response: z.record(z.any()) }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const { verifyAuthenticationResponse } = await import("@simplewebauthn/server");
     const { supabase, userId } = context;
     const response = data.response as { id?: string; rawId?: string };
     const credentialId = response.id;
