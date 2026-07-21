@@ -94,7 +94,8 @@ function RiskPage() {
             <Metric label="Equity" value={fmtUsd(r.equity)} sub={`${r.openPositions} open`} />
             <Metric label="Portfolio Heat" value={fmtPct(r.portfolioHeatPct / 100)} sub="Open risk / equity" />
             <Metric label="Daily VaR 95%" value={fmtPct(r.var95Pct / 100)} sub={`CVaR ${fmtPct(r.cvar95Pct/100)}`} />
-            <Metric label="Risk Score" value={<span className={scoreColor}>{r.riskScore}</span>} sub={`Vol ${fmtPct(r.portfolioVolPct/100)}`} />
+            <Metric label="Risk Score" value={String(r.riskScore)} sub={`Vol ${fmtPct(r.portfolioVolPct/100)}`} tone={r.riskScore > 70 ? "neg" : r.riskScore < 30 ? "pos" : undefined} />
+{void scoreColor}
           </div>
 
           {(dash.data?.breaches?.length ?? 0) > 0 && (
