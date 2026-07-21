@@ -125,9 +125,15 @@ export const addConnection = createServerFn({ method: "POST" })
       throw new Error("NeurlX never accepts credentials with withdrawal permissions. Regenerate the API key without withdrawal rights.");
     }
 
-    const ciphertext = Object.keys(data.credentials).length
-      ? await encryptJSON(data.credentials)
-      : null;
+    let ciphertext: string | null = null;
+    try {
+      ciphertext = Object.keys(data.credentials).length
+        ? await encryptJSON(data.credentials)
+        : null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "credential encryption failed";
+      throw new Error(`Could not secure credentials: ${message}`);
+    }
     const { data: row, error } = await context.supabase.from("exchange_connections").insert({
       user_id: context.userId,
       connector_id: data.connectorId,
@@ -150,7 +156,7 @@ export const addConnection = createServerFn({ method: "POST" })
         },
       },
     }).select().single();
-    if (error) throw error;
+    if (error) throw new Error(error.message);
     await context.supabase.from("audit_log").insert({
       user_id: context.userId, action: "connection.add",
       entity: "exchange_connections", entity_id: row.id,
