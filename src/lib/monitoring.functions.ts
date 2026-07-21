@@ -261,6 +261,27 @@ export const getReadinessScore = createServerFn({ method: "GET" })
         : `${healthy}/${active.length} active strategies healthy.`,
     });
 
+    // 7. Live assisted performance — only counts once ≥10 closed live trades.
+    const journal = journalR.data ?? [];
+    const liveN = journal.length;
+    const liveWins = journal.filter(t => Number(t.realized_pnl ?? 0) > 0).length;
+    const liveWr = liveN ? liveWins / liveN : 0;
+    const liveQuality = liveN
+      ? journal.reduce((s, t) => s + Number(t.execution_quality_score ?? 0), 0) / liveN / 10
+      : 0;
+    const predEval = journal.filter(t => t.predicted_outcome && t.actual_outcome);
+    const predAcc = predEval.length
+      ? predEval.filter(t => t.predicted_outcome === t.actual_outcome).length / predEval.length : 0;
+    const liveSample = Math.min(1, liveN / 20);
+    const liveScore = liveN < 5 ? 0 : (liveWr * 0.5 + liveQuality * 0.25 + predAcc * 0.25) * liveSample;
+    buckets.push({
+      label: "Live assisted performance",
+      score: liveScore, weight: 0.10,
+      detail: liveN < 5
+        ? "Complete at least 5 assisted trades to score."
+        : `${liveN} live trades · WR ${(liveWr*100).toFixed(0)}% · quality ${(liveQuality*10).toFixed(1)}/10 · AI accuracy ${(predAcc*100).toFixed(0)}%.`,
+    });
+
     const totalWeight = buckets.reduce((s, b) => s + b.weight, 0);
     const overall = buckets.reduce((s, b) => s + b.score * b.weight, 0) / totalWeight;
     const score100 = Math.round(overall * 100);
