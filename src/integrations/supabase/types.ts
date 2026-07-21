@@ -113,6 +113,54 @@ export type Database = {
           },
         ]
       }
+      asset_universe: {
+        Row: {
+          asset_class: string
+          base: string
+          connector_id: string
+          created_at: string
+          exchange: string
+          id: string
+          is_active: boolean
+          leverage_max: number
+          meta: Json | null
+          min_notional: number
+          quote: string
+          symbol: string
+          tick_size: number
+        }
+        Insert: {
+          asset_class: string
+          base: string
+          connector_id: string
+          created_at?: string
+          exchange: string
+          id?: string
+          is_active?: boolean
+          leverage_max?: number
+          meta?: Json | null
+          min_notional?: number
+          quote: string
+          symbol: string
+          tick_size?: number
+        }
+        Update: {
+          asset_class?: string
+          base?: string
+          connector_id?: string
+          created_at?: string
+          exchange?: string
+          id?: string
+          is_active?: boolean
+          leverage_max?: number
+          meta?: Json | null
+          min_notional?: number
+          quote?: string
+          symbol?: string
+          tick_size?: number
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -1745,6 +1793,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_watchlists: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          instrument_id: string
+          notes: string | null
+          priority: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          instrument_id: string
+          notes?: string | null
+          priority?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          instrument_id?: string
+          notes?: string | null
+          priority?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_watchlists_instrument_id_fkey"
+            columns: ["instrument_id"]
+            isOneToOne: false
+            referencedRelation: "asset_universe"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       webauthn_challenges: {
         Row: {
