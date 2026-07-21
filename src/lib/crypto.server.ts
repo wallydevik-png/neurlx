@@ -17,17 +17,18 @@ function base64ToBytes(value: string): Uint8Array {
 async function key(): Promise<CryptoKey> {
   const raw = process.env.CREDENTIAL_ENC_KEY;
   if (!raw) throw new Error("CREDENTIAL_ENC_KEY not set");
-  const material = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(raw),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
+  // Cloudflare Workers cap PBKDF2 iterations and older deployments were
+  // repeatedly failing credential saves there. Use a Worker-safe SHA-256 KDF
+  // instead: deterministic, no runtime iteration cap, and imports cleanly as
+  // an AES-256-GCM key.
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`neurlx-credential-v2:${raw}`),
   );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: new TextEncoder().encode("trading-platform-v1"), iterations: 100_000, hash: "SHA-256" },
-    material,
-    { name: "AES-GCM", length: 256 },
+  return crypto.subtle.importKey(
+    "raw",
+    digest,
+    { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"],
   );
