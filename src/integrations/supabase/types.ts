@@ -941,6 +941,57 @@ export type Database = {
         }
         Relationships: []
       }
+      model_drift_snapshots: {
+        Row: {
+          accuracy: number | null
+          accuracy_delta: number | null
+          brier: number | null
+          calibration_error: number | null
+          created_at: string
+          details: Json | null
+          distribution_shift: number | null
+          drift_flag: boolean
+          drift_reason: string | null
+          id: string
+          model: string
+          sample_size: number
+          user_id: string
+          window_days: number
+        }
+        Insert: {
+          accuracy?: number | null
+          accuracy_delta?: number | null
+          brier?: number | null
+          calibration_error?: number | null
+          created_at?: string
+          details?: Json | null
+          distribution_shift?: number | null
+          drift_flag?: boolean
+          drift_reason?: string | null
+          id?: string
+          model: string
+          sample_size: number
+          user_id: string
+          window_days: number
+        }
+        Update: {
+          accuracy?: number | null
+          accuracy_delta?: number | null
+          brier?: number | null
+          calibration_error?: number | null
+          created_at?: string
+          details?: Json | null
+          distribution_shift?: number | null
+          drift_flag?: boolean
+          drift_reason?: string | null
+          id?: string
+          model?: string
+          sample_size?: number
+          user_id?: string
+          window_days?: number
+        }
+        Relationships: []
+      }
       notification_preferences: {
         Row: {
           channels: Json
@@ -1017,6 +1068,60 @@ export type Database = {
           payload?: Json
           read_at?: string | null
           severity?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      optimization_recommendations: {
+        Row: {
+          applied_at: string | null
+          approved_at: string | null
+          created_at: string
+          evidence: Json | null
+          id: string
+          kind: string
+          rationale: string
+          rejected_at: string | null
+          reviewer_note: string | null
+          severity: string
+          status: string
+          suggested_change: Json
+          target: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          approved_at?: string | null
+          created_at?: string
+          evidence?: Json | null
+          id?: string
+          kind: string
+          rationale: string
+          rejected_at?: string | null
+          reviewer_note?: string | null
+          severity?: string
+          status?: string
+          suggested_change: Json
+          target?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          approved_at?: string | null
+          created_at?: string
+          evidence?: Json | null
+          id?: string
+          kind?: string
+          rationale?: string
+          rejected_at?: string | null
+          reviewer_note?: string | null
+          severity?: string
+          status?: string
+          suggested_change?: Json
+          target?: string | null
           title?: string
           user_id?: string
         }
@@ -1416,6 +1521,39 @@ export type Database = {
         }
         Relationships: []
       }
+      recommendation_audit: {
+        Row: {
+          action: string
+          after_state: Json | null
+          before_state: Json | null
+          created_at: string
+          id: string
+          note: string | null
+          recommendation_id: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          after_state?: Json | null
+          before_state?: Json | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          recommendation_id: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          after_state?: Json | null
+          before_state?: Json | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          recommendation_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       recovery_events: {
         Row: {
           created_at: string
@@ -1775,6 +1913,60 @@ export type Database = {
         }
         Relationships: []
       }
+      strategy_health_scores: {
+        Row: {
+          classification: string
+          created_at: string
+          details: Json | null
+          drawdown: number | null
+          execution_quality: number | null
+          id: string
+          profitability: number | null
+          recent_perf: number | null
+          regime_fit: number | null
+          sample_size: number | null
+          score: number
+          sharpe: number | null
+          stability: number | null
+          strategy_id: string
+          user_id: string
+        }
+        Insert: {
+          classification: string
+          created_at?: string
+          details?: Json | null
+          drawdown?: number | null
+          execution_quality?: number | null
+          id?: string
+          profitability?: number | null
+          recent_perf?: number | null
+          regime_fit?: number | null
+          sample_size?: number | null
+          score: number
+          sharpe?: number | null
+          stability?: number | null
+          strategy_id: string
+          user_id: string
+        }
+        Update: {
+          classification?: string
+          created_at?: string
+          details?: Json | null
+          drawdown?: number | null
+          execution_quality?: number | null
+          id?: string
+          profitability?: number | null
+          recent_perf?: number | null
+          regime_fit?: number | null
+          sample_size?: number | null
+          score?: number
+          sharpe?: number | null
+          stability?: number | null
+          strategy_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       system_heartbeats: {
         Row: {
           component: string
@@ -1939,6 +2131,66 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      trade_reviews: {
+        Row: {
+          ai_model: string | null
+          confidence: number | null
+          confidence_accuracy: string | null
+          created_at: string
+          failure_factors: string | null
+          id: string
+          journal_id: string | null
+          lessons: string | null
+          market_condition_change: string | null
+          outcome: string | null
+          realized_pnl: number | null
+          regime: string | null
+          risk_appropriateness: string | null
+          strategy_id: string | null
+          success_factors: string | null
+          symbol: string | null
+          user_id: string
+        }
+        Insert: {
+          ai_model?: string | null
+          confidence?: number | null
+          confidence_accuracy?: string | null
+          created_at?: string
+          failure_factors?: string | null
+          id?: string
+          journal_id?: string | null
+          lessons?: string | null
+          market_condition_change?: string | null
+          outcome?: string | null
+          realized_pnl?: number | null
+          regime?: string | null
+          risk_appropriateness?: string | null
+          strategy_id?: string | null
+          success_factors?: string | null
+          symbol?: string | null
+          user_id: string
+        }
+        Update: {
+          ai_model?: string | null
+          confidence?: number | null
+          confidence_accuracy?: string | null
+          created_at?: string
+          failure_factors?: string | null
+          id?: string
+          journal_id?: string | null
+          lessons?: string | null
+          market_condition_change?: string | null
+          outcome?: string | null
+          realized_pnl?: number | null
+          regime?: string | null
+          risk_appropriateness?: string | null
+          strategy_id?: string | null
+          success_factors?: string | null
+          symbol?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       user_consents: {
         Row: {
