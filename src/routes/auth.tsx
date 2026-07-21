@@ -42,11 +42,8 @@ function AuthPage() {
   return (
     <div className="min-h-screen grid place-items-center px-4">
       <div className="panel p-8 w-full max-w-sm">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="w-8 h-8 rounded-md bg-primary/20 border border-primary/40 grid place-items-center">
-            <TerminalSquare className="w-4 h-4 text-primary" />
-          </div>
-          <span className="font-semibold">NeurlX</span>
+        <div className="mb-6">
+          <Logo size="md" showTagline />
         </div>
         <h1 className="text-xl font-semibold">{mode === "signin" ? "Sign in" : "Create account"}</h1>
         <p className="text-sm text-muted-foreground mt-1">
