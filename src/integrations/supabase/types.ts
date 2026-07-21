@@ -113,6 +113,39 @@ export type Database = {
           },
         ]
       }
+      approval_records: {
+        Row: {
+          created_at: string
+          decision: string
+          entity_ref: string | null
+          id: string
+          kind: string
+          payload: Json | null
+          rationale: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decision: string
+          entity_ref?: string | null
+          id?: string
+          kind: string
+          payload?: Json | null
+          rationale?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decision?: string
+          entity_ref?: string | null
+          id?: string
+          kind?: string
+          payload?: Json | null
+          rationale?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       asset_universe: {
         Row: {
           asset_class: string
@@ -249,6 +282,39 @@ export type Database = {
           entity_id?: string | null
           id?: string
           payload?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      audit_reports: {
+        Row: {
+          created_at: string
+          id: string
+          metrics: Json
+          period: string
+          period_end: string
+          period_start: string
+          summary_md: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metrics?: Json
+          period: string
+          period_end: string
+          period_start: string
+          summary_md: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metrics?: Json
+          period?: string
+          period_end?: string
+          period_start?: string
+          summary_md?: string
           user_id?: string
         }
         Relationships: []
@@ -623,6 +689,42 @@ export type Database = {
         }
         Relationships: []
       }
+      capital_scale_recommendations: {
+        Row: {
+          created_at: string
+          current_allocation: number | null
+          decided_at: string | null
+          direction: string
+          id: string
+          reasons: Json
+          status: string
+          suggested_allocation: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_allocation?: number | null
+          decided_at?: string | null
+          direction: string
+          id?: string
+          reasons?: Json
+          status?: string
+          suggested_allocation?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_allocation?: number | null
+          decided_at?: string | null
+          direction?: string
+          id?: string
+          reasons?: Json
+          status?: string
+          suggested_allocation?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       capital_snapshots: {
         Row: {
           cash_balance: number
@@ -662,6 +764,36 @@ export type Database = {
         }
         Relationships: []
       }
+      configuration_snapshots: {
+        Row: {
+          automation: Json | null
+          capital_policy: Json | null
+          created_at: string
+          id: string
+          label: string
+          risk: Json | null
+          user_id: string
+        }
+        Insert: {
+          automation?: Json | null
+          capital_policy?: Json | null
+          created_at?: string
+          id?: string
+          label: string
+          risk?: Json | null
+          user_id: string
+        }
+        Update: {
+          automation?: Json | null
+          capital_policy?: Json | null
+          created_at?: string
+          id?: string
+          label?: string
+          risk?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       copy_subscriptions: {
         Row: {
           active: boolean
@@ -692,6 +824,69 @@ export type Database = {
           leader_id?: string
           max_position_size?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      deployment_history: {
+        Row: {
+          actor: string
+          after_state: Json | null
+          before_state: Json | null
+          change_type: string
+          created_at: string
+          id: string
+          reason: string | null
+          summary: string
+          user_id: string
+        }
+        Insert: {
+          actor?: string
+          after_state?: Json | null
+          before_state?: Json | null
+          change_type: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          summary: string
+          user_id: string
+        }
+        Update: {
+          actor?: string
+          after_state?: Json | null
+          before_state?: Json | null
+          change_type?: string
+          created_at?: string
+          id?: string
+          reason?: string | null
+          summary?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      emergency_check_runs: {
+        Row: {
+          created_at: string
+          failed: number
+          id: string
+          passed: number
+          results: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          failed?: number
+          id?: string
+          passed?: number
+          results: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          failed?: number
+          id?: string
+          passed?: number
+          results?: Json
+          user_id?: string
         }
         Relationships: []
       }
@@ -1425,6 +1620,33 @@ export type Database = {
           },
         ]
       }
+      production_checklist_items: {
+        Row: {
+          id: string
+          key: string
+          note: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          key: string
+          note?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          key?: string
+          note?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profile_stats: {
         Row: {
           followers_count: number
@@ -1518,6 +1740,42 @@ export type Database = {
           updated_at?: string
           user_id?: string
           verified?: boolean
+        }
+        Relationships: []
+      }
+      readiness_snapshots: {
+        Row: {
+          blockers: Json
+          capital_tier: string
+          category_scores: Json
+          created_at: string
+          id: string
+          metrics: Json
+          overall_score: number
+          tier: string
+          user_id: string
+        }
+        Insert: {
+          blockers?: Json
+          capital_tier: string
+          category_scores?: Json
+          created_at?: string
+          id?: string
+          metrics?: Json
+          overall_score: number
+          tier: string
+          user_id: string
+        }
+        Update: {
+          blockers?: Json
+          capital_tier?: string
+          category_scores?: Json
+          created_at?: string
+          id?: string
+          metrics?: Json
+          overall_score?: number
+          tier?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1629,6 +1887,33 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      risk_acknowledgments: {
+        Row: {
+          acknowledged_at: string
+          id: string
+          kind: string
+          text_hash: string | null
+          user_id: string
+          version: string
+        }
+        Insert: {
+          acknowledged_at?: string
+          id?: string
+          kind: string
+          text_hash?: string | null
+          user_id: string
+          version: string
+        }
+        Update: {
+          acknowledged_at?: string
+          id?: string
+          kind?: string
+          text_hash?: string | null
+          user_id?: string
+          version?: string
         }
         Relationships: []
       }
