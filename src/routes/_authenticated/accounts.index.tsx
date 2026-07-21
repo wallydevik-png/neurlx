@@ -5,10 +5,11 @@ import { AppShell, PageHeader } from "@/components/AppShell";
 import {
   disconnectConnection, listConnections, setPermissions,
   scanConnectionHealth, runConnectorTests,
+  enableFullAutopilot, disableFullAutopilot,
 } from "@/lib/trading.functions";
 import { getBroker } from "@/lib/connectors/brokerRegistry";
 import { capabilityBadges, getCapabilities } from "@/lib/connectors/capabilities";
-import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle, TestTube2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Trash2, Shield, ShieldCheck, Activity, AlertTriangle, TestTube2, CheckCircle2, XCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 
@@ -27,10 +28,27 @@ function Accounts() {
     queryKey: ["connections"], queryFn: () => fetchFn(),
   });
 
+  const autopilotOnFn = useServerFn(enableFullAutopilot);
+  const autopilotOffFn = useServerFn(disableFullAutopilot);
+
   async function togglePerm(id: string, enabled: boolean) {
     try {
       await permFn({ data: { id, tradingEnabled: enabled } });
       toast.success(enabled ? "Trading permission enabled" : "Trading permission revoked");
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+  }
+
+  async function toggleAutopilot(id: string, turnOn: boolean) {
+    try {
+      if (turnOn) {
+        if (!confirm("Turn on Full Autopilot?\n\nThe AI will scan markets, generate signals, run risk checks, and place LIVE orders on this account 24/7 until you turn it off. Withdrawals stay disabled — profits remain in your exchange account.")) return;
+        await autopilotOnFn({ data: { connectionId: id } });
+        toast.success("Autopilot ON — the AI is now trading this account.");
+      } else {
+        await autopilotOffFn();
+        toast.success("Autopilot OFF");
+      }
       qc.invalidateQueries({ queryKey: ["connections"] });
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
   }
@@ -216,6 +234,42 @@ function Accounts() {
                     onToggle={(v) => togglePerm(c.id, v)}
                   />
                 </div>
+
+                {c.connector_id !== "paper" && c.status === "connected" && (
+                  <div className={`mt-4 pt-4 border-t border-border`}>
+                    <div className={`rounded-lg border p-4 ${c.autopilot_on ? "border-primary/50 bg-primary/5" : "border-border bg-secondary/30"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex gap-2.5 min-w-0">
+                          <Sparkles className={`w-5 h-5 mt-0.5 shrink-0 ${c.autopilot_on ? "text-primary" : "text-muted-foreground"}`} />
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold flex items-center gap-2">
+                              Full Autopilot
+                              {c.autopilot_on && (
+                                <span className="text-[10px] font-mono uppercase rounded px-1.5 py-0.5 bg-primary/20 text-primary border border-primary/40">
+                                  ● ON
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Let the AI do everything — scan markets, backtest, generate signals, size positions, place live orders, and manage SL/TP automatically. You just log in to see your trade history and P&L. Withdrawals stay OFF for your safety.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          disabled={!c.trading_enabled}
+                          onClick={() => toggleAutopilot(c.id, !c.autopilot_on)}
+                          title={!c.trading_enabled ? "Enable Trading permission first" : ""}
+                          className={`w-12 h-7 rounded-full transition relative shrink-0 ${
+                            c.autopilot_on ? "bg-primary" : "bg-muted"
+                          } ${!c.trading_enabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                        >
+                          <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-background transition ${c.autopilot_on ? "left-[22px]" : "left-0.5"}`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
             );
           })}
