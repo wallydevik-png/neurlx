@@ -29,6 +29,7 @@ import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
 import { Route as AuthenticatedJournalRouteImport } from './routes/_authenticated/journal'
 import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authenticated/intelligence'
+import { Route as AuthenticatedIntelRouteImport } from './routes/_authenticated/intel'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedComplianceRouteImport } from './routes/_authenticated/compliance'
@@ -146,6 +147,11 @@ const AuthenticatedIntelligenceRoute =
     path: '/intelligence',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedIntelRoute = AuthenticatedIntelRouteImport.update({
+  id: '/intel',
+  path: '/intel',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -234,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/intel': typeof AuthenticatedIntelRoute
   '/intelligence': typeof AuthenticatedIntelligenceRoute
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
@@ -269,6 +276,7 @@ export interface FileRoutesByTo {
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/history': typeof AuthenticatedHistoryRoute
+  '/intel': typeof AuthenticatedIntelRoute
   '/intelligence': typeof AuthenticatedIntelligenceRoute
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
@@ -306,6 +314,7 @@ export interface FileRoutesById {
   '/_authenticated/compliance': typeof AuthenticatedComplianceRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
+  '/_authenticated/intel': typeof AuthenticatedIntelRoute
   '/_authenticated/intelligence': typeof AuthenticatedIntelligenceRoute
   '/_authenticated/journal': typeof AuthenticatedJournalRoute
   '/_authenticated/lab': typeof AuthenticatedLabRoute
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/compliance'
     | '/dashboard'
     | '/history'
+    | '/intel'
     | '/intelligence'
     | '/journal'
     | '/lab'
@@ -378,6 +388,7 @@ export interface FileRouteTypes {
     | '/compliance'
     | '/dashboard'
     | '/history'
+    | '/intel'
     | '/intelligence'
     | '/journal'
     | '/lab'
@@ -414,6 +425,7 @@ export interface FileRouteTypes {
     | '/_authenticated/compliance'
     | '/_authenticated/dashboard'
     | '/_authenticated/history'
+    | '/_authenticated/intel'
     | '/_authenticated/intelligence'
     | '/_authenticated/journal'
     | '/_authenticated/lab'
@@ -586,6 +598,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIntelligenceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/intel': {
+      id: '/_authenticated/intel'
+      path: '/intel'
+      fullPath: '/intel'
+      preLoaderRoute: typeof AuthenticatedIntelRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/history': {
       id: '/_authenticated/history'
       path: '/history'
@@ -713,6 +732,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedComplianceRoute: typeof AuthenticatedComplianceRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
+  AuthenticatedIntelRoute: typeof AuthenticatedIntelRoute
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
   AuthenticatedJournalRoute: typeof AuthenticatedJournalRoute
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
@@ -743,6 +763,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedComplianceRoute: AuthenticatedComplianceRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
+  AuthenticatedIntelRoute: AuthenticatedIntelRoute,
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,
   AuthenticatedJournalRoute: AuthenticatedJournalRoute,
   AuthenticatedLabRoute: AuthenticatedLabRoute,
