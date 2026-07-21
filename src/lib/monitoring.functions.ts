@@ -156,7 +156,7 @@ export const getReadinessScore = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
 
-    const [backtestsR, shadowR, signalsR, strategiesR] = await Promise.all([
+    const [backtestsR, shadowR, signalsR, strategiesR, journalR] = await Promise.all([
       supabase.from("backtest_runs")
         .select("metrics,kind,created_at")
         .eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
@@ -167,6 +167,9 @@ export const getReadinessScore = createServerFn({ method: "GET" })
         .select("confidence,outcome_status,outcome_pnl_pct")
         .eq("user_id", userId).not("outcome_status", "is", null).limit(500),
       supabase.from("strategies").select("health_status,is_active").eq("user_id", userId),
+      supabase.from("trade_journal")
+        .select("realized_pnl,ai_confidence,execution_quality_score,predicted_outcome,actual_outcome")
+        .eq("user_id", userId).limit(500),
     ]);
 
     type M = { sharpe?: number; sortino?: number; maxDrawdown?: number; winRate?: number; trades?: number; profitFactor?: number };
