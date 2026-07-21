@@ -9,10 +9,15 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Accept either Authorization: Bearer <AUTONOMOUS_CRON_SECRET>
+        // OR apikey header matching the project publishable key (pg_cron default).
         const secret = process.env.AUTONOMOUS_CRON_SECRET;
-        if (!secret) return new Response("cron secret not configured", { status: 500 });
         const auth = request.headers.get("authorization") ?? "";
-        if (auth !== `Bearer ${secret}`) {
+        const apikey = request.headers.get("apikey") ?? "";
+        const publishable = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
+        const okBearer = secret && auth === `Bearer ${secret}`;
+        const okApiKey = publishable && apikey === publishable;
+        if (!okBearer && !okApiKey) {
           return new Response("unauthorized", { status: 401 });
         }
 
