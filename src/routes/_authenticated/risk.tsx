@@ -6,7 +6,14 @@ import { AppShell, PageHeader, Metric, fmtUsd, fmtPct } from "@/components/AppSh
 import {
   getRiskDashboard, getAdvancedRiskSettings, saveAdvancedRiskSettings, suggestPositionSize,
 } from "@/lib/risk.functions";
-import type { PortfolioRiskReport } from "@/lib/risk/portfolioRisk.server";
+
+type PortfolioRiskReport = {
+  equity: number; openPositions: number; portfolioHeatPct: number;
+  perAssetRiskPct: { symbol: string; pct: number }[];
+  var95Pct: number; cvar95Pct: number; portfolioVolPct: number;
+  correlationMax: number; correlationPairs: { a: string; b: string; corr: number }[];
+  riskScore: number; advisories: string[];
+};
 import { Shield, AlertTriangle, Calculator, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
