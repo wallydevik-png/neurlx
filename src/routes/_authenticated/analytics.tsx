@@ -47,7 +47,7 @@ function Analytics() {
       <PageHeader
         title="Advanced Analytics"
         subtitle="Risk-adjusted returns, monthly performance, symbol/strategy attribution, and tax exports."
-        right={
+        action={
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={exportTrades}><Download className="w-4 h-4 mr-1" />Trades</Button>
             <Button size="sm" variant="outline" onClick={exportTax}><Download className="w-4 h-4 mr-1" />Tax CSV</Button>

@@ -125,7 +125,7 @@ export const getTaxReport = createServerFn({ method: "GET" })
     const to = `${data.year + 1}-01-01`;
     const { data: rows } = await context.supabase
       .from("trade_journal")
-      .select("symbol,side,qty,entry_price,exit_price,realized_pnl,fees_total,created_at,closed_at")
+      .select("symbol,side,qty,entry_price,exit_price,realized_pnl,fees_total,created_at")
       .eq("user_id", context.userId)
       .gte("created_at", from)
       .lt("created_at", to)
