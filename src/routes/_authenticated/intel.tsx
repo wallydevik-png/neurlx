@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { getMarketIntel, refreshMarketIntel, getIntelOverview } from "@/lib/intel.functions";
+import { getMarketIntel, refreshMarketIntel, getIntelOverview, type IntelResult, type OverviewRow, type IntelSignalOut } from "@/lib/intel.functions";
 import { listSupportedSymbols } from "@/lib/marketdata/service.server";
 import { Radar, RefreshCw, TrendingUp, TrendingDown, Minus, Newspaper, Users, BarChart3, Gauge } from "lucide-react";
 import { toast } from "sonner";
