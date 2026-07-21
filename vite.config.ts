@@ -7,6 +7,13 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  nitro: {
+    // External GitHub → Cloudflare deployments must build as Cloudflare Pages.
+    // Without this, the repo can be treated as a static/GitHub Pages site and
+    // SSR routes return 404 instead of running the TanStack Start worker.
+    preset: "cloudflare-pages",
+    cloudflare: { nodeCompat: true, deployConfig: true },
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
