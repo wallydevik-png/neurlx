@@ -7,7 +7,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
-type Row = Record<string, unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
 const num = (v: unknown, d = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
