@@ -183,3 +183,28 @@ function PermRow({ label, desc, on, disabled, icon, onToggle }: {
     </div>
   );
 }
+
+function ScanButton({ id }: { id: string }) {
+  const scanFn = useServerFn(scanConnectionHealth);
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await scanFn({ data: { id } });
+      toast[r.ok ? "success" : "error"](
+        r.ok ? `Healthy · ${r.latencyMs}ms` : (r.message || "Health check failed"),
+      );
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Scan failed");
+    } finally { setBusy(false); }
+  }
+  return (
+    <button onClick={run} disabled={busy}
+      title="Run health & permission scan"
+      className="p-2 rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary/40 disabled:opacity-50">
+      <Activity className={`w-4 h-4 ${busy ? "animate-pulse" : ""}`} />
+    </button>
+  );
+}
