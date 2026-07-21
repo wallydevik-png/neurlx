@@ -87,7 +87,7 @@ function Onboarding() {
       title: "6. Run Shadow Mode",
       description: "AI trades against live market data — with zero capital at risk. Builds confidence.",
       cta: { label: "Open Shadow Mode", to: "/shadow" },
-      done: (ready?.buckets?.find(b => b.id === "shadow")?.score ?? 0) > 0,
+      done: (ready?.buckets?.find(b => b.label.toLowerCase().includes("shadow"))?.score ?? 0) > 0,
     },
     {
       id: "readiness",
