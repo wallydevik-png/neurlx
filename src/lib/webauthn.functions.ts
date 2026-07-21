@@ -100,7 +100,7 @@ const verifyRegistration = createServerFn({ method: "POST" })
       user_id: userId,
       action: "webauthn.registered",
       entity: "webauthn_credentials",
-      metadata: { credential_id: info.credential.id, device_type: info.credentialDeviceType },
+      metadata: { credential_id: info.credential.id, device_type: info.credentialDeviceType } as never,
     });
     return { verified: true };
   });
