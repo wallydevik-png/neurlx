@@ -21,6 +21,7 @@ import { Route as AuthenticatedPositionsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
 import { Route as AuthenticatedPerformanceRouteImport } from './routes/_authenticated/performance'
 import { Route as AuthenticatedOptimizerRouteImport } from './routes/_authenticated/optimizer'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
@@ -99,6 +100,11 @@ const AuthenticatedPerformanceRoute =
 const AuthenticatedOptimizerRoute = AuthenticatedOptimizerRouteImport.update({
   id: '/optimizer',
   path: '/optimizer',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedNotificationsRoute =
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/market': typeof AuthenticatedMarketRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/optimizer': typeof AuthenticatedOptimizerRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/market': typeof AuthenticatedMarketRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/optimizer': typeof AuthenticatedOptimizerRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
@@ -287,6 +295,7 @@ export interface FileRoutesById {
   '/_authenticated/market': typeof AuthenticatedMarketRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/optimizer': typeof AuthenticatedOptimizerRoute
   '/_authenticated/performance': typeof AuthenticatedPerformanceRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
@@ -321,6 +330,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/monitoring'
     | '/notifications'
+    | '/onboarding'
     | '/optimizer'
     | '/performance'
     | '/portfolio'
@@ -353,6 +363,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/monitoring'
     | '/notifications'
+    | '/onboarding'
     | '/optimizer'
     | '/performance'
     | '/portfolio'
@@ -386,6 +397,7 @@ export interface FileRouteTypes {
     | '/_authenticated/market'
     | '/_authenticated/monitoring'
     | '/_authenticated/notifications'
+    | '/_authenticated/onboarding'
     | '/_authenticated/optimizer'
     | '/_authenticated/performance'
     | '/_authenticated/portfolio'
@@ -492,6 +504,13 @@ declare module '@tanstack/react-router' {
       path: '/optimizer'
       fullPath: '/optimizer'
       preLoaderRoute: typeof AuthenticatedOptimizerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/notifications': {
@@ -661,6 +680,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedOptimizerRoute: typeof AuthenticatedOptimizerRoute
   AuthenticatedPerformanceRoute: typeof AuthenticatedPerformanceRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
@@ -688,6 +708,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedOptimizerRoute: AuthenticatedOptimizerRoute,
   AuthenticatedPerformanceRoute: AuthenticatedPerformanceRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
