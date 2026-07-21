@@ -94,10 +94,22 @@ function RootComponent() {
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);
   useEffect(() => {
+    // A prior service worker cached HTML and blanked the app. Actively
+    // unregister any lingering registration and clear caches instead of
+    // registering a new one. Re-enable a PWA SW only after the caching
+    // strategy is redesigned (network-first for navigations).
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => { /* silent fail */ });
+      navigator.serviceWorker.getRegistrations()
+        .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+        .catch(() => {});
+      if (typeof caches !== "undefined") {
+        caches.keys()
+          .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+          .catch(() => {});
+      }
     }
   }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />

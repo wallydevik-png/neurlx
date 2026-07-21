@@ -1,64 +1,30 @@
-const CACHE_NAME = "neurlx-v1";
-const STATIC_ASSETS = [
-  "/",
-  "/dashboard",
-  "/favicon.ico",
-  "/manifest.json",
-];
+// Kill-switch service worker.
+// A previous version (neurlx-v1) cached HTML navigation responses and
+// served them forever, which caused the app to render a blank document
+// on preview and Cloudflare. This replacement takes control, deletes
+// every cache, unregisters itself, and reloads open clients so the
+// next request goes straight to the network.
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting()),
-  );
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    (async () => {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch (_) {}
+      try {
+        await self.registration.unregister();
+      } catch (_) {}
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const client of clients) {
+        try { client.navigate(client.url); } catch (_) {}
+      }
+    })(),
   );
 });
 
-self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  // Only handle GET requests for same-origin static assets.
-  if (request.method !== "GET" || !request.url.startsWith(self.location.origin)) return;
-
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request)
-        .then((response) => {
-          if (response && response.status === 200 && response.type === "basic") {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match("/"));
-    }),
-  );
-});
-
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
-  const payload = event.data.json();
-  event.waitUntil(
-    self.registration.showNotification(payload.title || "NeurlX", {
-      body: payload.body || "",
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
-      tag: payload.tag || "neurlx",
-      requireInteraction: payload.priority === "high",
-      data: payload.data || {},
-    }),
-  );
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = event.notification.data?.url || "/dashboard";
-  event.waitUntil(self.clients.openWindow(url));
-});
+// Do not intercept fetches — let the network handle everything.
