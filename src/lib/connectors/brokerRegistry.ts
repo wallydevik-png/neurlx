@@ -87,7 +87,7 @@ const CRYPTO: BrokerDescriptor[] = [
   },
   {
     id: "bybit", displayName: "Bybit", category: "crypto",
-    authMethod: "api_key", supportsRealTrading: false, implemented: false,
+    authMethod: "api_key", supportsRealTrading: true, implemented: true,
     assetClasses: ["crypto_spot", "crypto_perp", "crypto_futures"],
     orderTypes: [...OT_STANDARD, "trailing_stop"],
     description: "Bybit Unified Trading Account via official REST API.",
@@ -100,7 +100,7 @@ const CRYPTO: BrokerDescriptor[] = [
   },
   {
     id: "okx", displayName: "OKX", category: "crypto",
-    authMethod: "api_key", supportsRealTrading: false, implemented: false,
+    authMethod: "api_key", supportsRealTrading: true, implemented: true,
     assetClasses: ["crypto_spot", "crypto_perp", "crypto_futures", "options"],
     orderTypes: [...OT_STANDARD, "trailing_stop", "oco"],
     description: "OKX Unified Account via signed REST API (v5).",
