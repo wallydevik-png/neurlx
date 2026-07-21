@@ -14,18 +14,28 @@ function AuthenticatedLayout() {
   useEffect(() => {
     let cancelled = false;
 
-    supabase.auth.getUser().then(({ data, error }) => {
+    // Read the persisted session from localStorage first (synchronous, no
+    // network) so users are not bounced to /auth on flaky connections.
+    // Only redirect when there is genuinely no session at all.
+    supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
-      if (error || !data.user) {
-        navigate({ to: "/auth", replace: true });
-        return;
-      }
-      setReady(true);
+      if (data.session) { setReady(true); return; }
+      // Fallback: revalidate with the auth server before giving up.
+      supabase.auth.getUser().then(({ data: u }) => {
+        if (cancelled) return;
+        if (u.user) setReady(true);
+        else navigate({ to: "/auth", replace: true });
+      }).catch(() => { if (!cancelled) navigate({ to: "/auth", replace: true }); });
     }).catch(() => {
       if (!cancelled) navigate({ to: "/auth", replace: true });
     });
 
-    return () => { cancelled = true; };
+    // Keep the layout in sync with sign-in / sign-out events.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" || !session) navigate({ to: "/auth", replace: true });
+    });
+
+    return () => { cancelled = true; sub.subscription.unsubscribe(); };
   }, [navigate]);
 
   if (!ready) {

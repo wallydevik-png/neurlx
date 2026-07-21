@@ -94,7 +94,47 @@ export const getProfile = createServerFn({ method: "GET" })
     return data;
   });
 
+// Aggregate live-account balances across all connected live venues so the
+// dashboard can switch between Demo (paper $100k) and Live mode.
+export const getLiveEquity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: conns } = await supabase.from("exchange_connections")
+      .select("id,label,connector_id,status,trading_enabled")
+      .eq("user_id", userId).eq("status", "connected");
+    const live = (conns ?? []).filter(c => c.connector_id !== "paper");
+    if (live.length === 0) return { totalUsd: 0, accounts: [] as Array<{ id: string; label: string; connector: string; usd: number; error?: string }> };
+
+    const { decryptJSON } = await import("@/lib/crypto.server");
+    const { createConnector } = await import("@/lib/connectors/factory.server");
+    const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
+    let totalUsd = 0;
+    for (const c of live) {
+      try {
+        const { data: row } = await supabase.from("exchange_connections")
+          .select("credential_ciphertext").eq("id", c.id).maybeSingle();
+        const creds = row?.credential_ciphertext
+          ? await decryptJSON<Record<string, string>>(row.credential_ciphertext)
+          : {};
+        const connector = createConnector(c.connector_id, creds, { supabase, userId, connectionId: c.id });
+        const balances = await connector.getBalances();
+        const usd = balances.reduce((s: number, b: { currency: string; total?: number | null }) => {
+          const cur = b.currency.toUpperCase();
+          if (cur === "USD" || cur === "USDT" || cur === "USDC") return s + Number(b.total ?? 0);
+          return s;
+        }, 0);
+        accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd });
+        totalUsd += usd;
+      } catch (e) {
+        accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd: 0, error: e instanceof Error ? e.message : "unavailable" });
+      }
+    }
+    return { totalUsd, accounts };
+  });
+
 // ---------- mutations ----------
+
 
 const AddConnectionSchema = z.object({
   connectorId: z.string().min(1),
@@ -322,8 +362,15 @@ export const generateAndRouteSignal = createServerFn({ method: "POST" })
     }).select().single();
     if (error) throw error;
 
-    if (settings.mode === "autonomous") {
-      await executeSignalInternal(supabase, userId, inserted.id);
+    if (settings.mode === "autonomous" && sig.confidence >= Number(settings.min_confidence)) {
+      // Best-effort auto-execute; if the risk gate blocks it, keep the signal
+      // pending so the user can still review it manually instead of failing
+      // the whole generation.
+      try {
+        await executeSignalInternal(supabase, userId, inserted.id);
+      } catch (e) {
+        console.warn("[generateAndRouteSignal] auto-execute skipped:", e instanceof Error ? e.message : e);
+      }
     }
     return inserted;
   });

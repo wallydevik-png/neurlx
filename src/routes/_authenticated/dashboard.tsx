@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { AppShell, PageHeader, Metric, fmtUsd, fmtPct } from "@/components/AppShell";
-import { getDashboard, scanMarketOpportunities, getAiPerformance, listSignals } from "@/lib/trading.functions";
+import { getDashboard, scanMarketOpportunities, getAiPerformance, listSignals, getLiveEquity } from "@/lib/trading.functions";
 import { Plug, ArrowRight, TrendingUp, TrendingDown, Minus, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -15,19 +16,31 @@ function Dashboard() {
   const scanFn = useServerFn(scanMarketOpportunities);
   const perfFn = useServerFn(getAiPerformance);
   const sigFn = useServerFn(listSignals);
+  const liveFn = useServerFn(getLiveEquity);
+
+  const [mode, setMode] = useState<"demo" | "live">(() => {
+    if (typeof window === "undefined") return "demo";
+    return (localStorage.getItem("neurlx.mode") as "demo" | "live") ?? "demo";
+  });
+  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("neurlx.mode", mode); }, [mode]);
+
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetchDash(), refetchInterval: 10000 });
   const { data: scan = [] } = useQuery({ queryKey: ["market-scan"], queryFn: () => scanFn(), refetchInterval: 60000 });
   const { data: perf } = useQuery({ queryKey: ["ai-perf"], queryFn: () => perfFn(), refetchInterval: 60000 });
   const { data: signals = [] } = useQuery({ queryKey: ["signals"], queryFn: () => sigFn(), refetchInterval: 15000 });
+  const { data: liveEq } = useQuery({ queryKey: ["live-equity"], queryFn: () => liveFn(), refetchInterval: 30000, enabled: mode === "live" });
 
   if (isLoading || !data) return <AppShell><div className="text-muted-foreground">Loading…</div></AppShell>;
 
-  const cash = Number(data.account?.cash_balance ?? 0);
-  const equity = cash;
+  const paperCash = Number(data.account?.cash_balance ?? 0);
+  const liveTotal = Number(liveEq?.totalUsd ?? 0);
+  const equity = mode === "live" ? liveTotal : paperCash;
+  const equitySub = mode === "live"
+    ? (liveEq && liveEq.accounts.length ? `${liveEq.accounts.length} live account${liveEq.accounts.length === 1 ? "" : "s"}` : "No live accounts connected")
+    : "Demo · paper";
   const activeSignals = signals.filter(s => s.status === "pending");
   const top = scan.filter(r => r.direction !== "wait").slice(0, 5);
 
-  // Dominant regime among scanned assets
   const regimeCounts = scan.reduce<Record<string, number>>((a, r) => { a[r.regimeLabel] = (a[r.regimeLabel] ?? 0) + 1; return a; }, {});
   const dominantRegime = Object.entries(regimeCounts).sort((a,b) => b[1]-a[1])[0]?.[0] ?? "—";
 
@@ -35,12 +48,24 @@ function Dashboard() {
     <AppShell>
       <PageHeader title="Dashboard" subtitle="Portfolio, market intelligence, and AI performance in one view." />
 
+      <div className="mb-3 flex items-center justify-between panel px-3 py-2">
+        <div className="text-xs text-muted-foreground">
+          Viewing <b className={mode === "live" ? "text-success" : "text-foreground"}>{mode === "live" ? "Live" : "Demo"}</b> equity
+          {mode === "live" && liveEq && liveEq.accounts.length === 0 && <span className="ml-2 text-warning">— connect a live account to see real balances</span>}
+        </div>
+        <div className="inline-flex rounded-md border border-border overflow-hidden text-xs font-mono">
+          <button onClick={() => setMode("demo")} className={`px-3 py-1.5 ${mode === "demo" ? "bg-primary text-primary-foreground" : "hover:bg-secondary/50"}`}>Demo</button>
+          <button onClick={() => setMode("live")} className={`px-3 py-1.5 ${mode === "live" ? "bg-success text-success-foreground" : "hover:bg-secondary/50"}`}>Live</button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Metric label="Equity" value={fmtUsd(equity)} sub={data.account?.base_currency ?? "USD"} />
+        <Metric label="Equity" value={fmtUsd(equity)} sub={equitySub} />
         <Metric label="Realized P&L" value={fmtUsd(data.metrics.realizedPnl)} tone={data.metrics.realizedPnl >= 0 ? "pos" : "neg"} />
         <Metric label="AI Win Rate" value={perf && perf.resolved ? fmtPct(perf.winRate) : "—"} sub={perf ? `${perf.resolved} evaluated` : ""} />
         <Metric label="Active Signals" value={String(activeSignals.length)} sub={`${signals.length} total`} />
       </div>
+
 
       <div className="mt-6 grid md:grid-cols-3 gap-4">
         <div className="panel p-6 md:col-span-2">
