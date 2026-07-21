@@ -24,6 +24,7 @@ import { Route as AuthenticatedOptimizerRouteImport } from './routes/_authentica
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
+import { Route as AuthenticatedMobileRouteImport } from './routes/_authenticated/mobile'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
 import { Route as AuthenticatedJournalRouteImport } from './routes/_authenticated/journal'
@@ -117,6 +118,11 @@ const AuthenticatedNotificationsRoute =
 const AuthenticatedMonitoringRoute = AuthenticatedMonitoringRouteImport.update({
   id: '/monitoring',
   path: '/monitoring',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMobileRoute = AuthenticatedMobileRouteImport.update({
+  id: '/mobile',
+  path: '/mobile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   '/_authenticated/journal': typeof AuthenticatedJournalRoute
   '/_authenticated/lab': typeof AuthenticatedLabRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
+  '/_authenticated/mobile': typeof AuthenticatedMobileRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
     | '/journal'
     | '/lab'
     | '/market'
+    | '/mobile'
     | '/monitoring'
     | '/notifications'
     | '/onboarding'
@@ -372,6 +382,7 @@ export interface FileRouteTypes {
     | '/journal'
     | '/lab'
     | '/market'
+    | '/mobile'
     | '/monitoring'
     | '/notifications'
     | '/onboarding'
@@ -407,6 +418,7 @@ export interface FileRouteTypes {
     | '/_authenticated/journal'
     | '/_authenticated/lab'
     | '/_authenticated/market'
+    | '/_authenticated/mobile'
     | '/_authenticated/monitoring'
     | '/_authenticated/notifications'
     | '/_authenticated/onboarding'
@@ -537,6 +549,13 @@ declare module '@tanstack/react-router' {
       path: '/monitoring'
       fullPath: '/monitoring'
       preLoaderRoute: typeof AuthenticatedMonitoringRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mobile': {
+      id: '/_authenticated/mobile'
+      path: '/mobile'
+      fullPath: '/mobile'
+      preLoaderRoute: typeof AuthenticatedMobileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/market': {
@@ -698,6 +717,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedJournalRoute: typeof AuthenticatedJournalRoute
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
+  AuthenticatedMobileRoute: typeof AuthenticatedMobileRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
@@ -727,6 +747,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedJournalRoute: AuthenticatedJournalRoute,
   AuthenticatedLabRoute: AuthenticatedLabRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
+  AuthenticatedMobileRoute: AuthenticatedMobileRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,

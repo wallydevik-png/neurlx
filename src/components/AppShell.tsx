@@ -7,10 +7,13 @@ import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
   Layers, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
-  Sparkles, Wallet, Bot, Bell, Rocket, ScrollText,
+  Sparkles, Wallet, Bot, Bell, Rocket, ScrollText, Smartphone, Fingerprint, WifiOff,
 } from "lucide-react";
 import { unreadNotificationCount } from "@/lib/notifications.functions";
 import { setKillSwitch, getDashboard } from "@/lib/trading.functions";
+import { listCredentials } from "@/lib/webauthn.functions";
+import { usePWA, vibrate } from "@/hooks/usePWA";
+import { useBiometric } from "@/hooks/useBiometric";
 import { toast } from "sonner";
 
 const NAV = [
@@ -39,6 +42,7 @@ const NAV = [
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/compliance", label: "Compliance & Data", icon: ScrollText },
+  { to: "/mobile", label: "Mobile & Security", icon: Smartphone },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -48,9 +52,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fetchDash = useServerFn(getDashboard);
   const fetchUnread = useServerFn(unreadNotificationCount);
   const kill = useServerFn(setKillSwitch);
+  const fetchCreds = useServerFn(listCredentials);
   const { data } = useQuery({ queryKey: ["dashboard-mini"], queryFn: () => fetchDash(), refetchInterval: 15000 });
   const { data: unreadData } = useQuery({ queryKey: ["notifications-unread"], queryFn: () => fetchUnread(), refetchInterval: 20000 });
+  const { data: credsData } = useQuery({ queryKey: ["biometric-creds"], queryFn: () => fetchCreds() });
   const unread = unreadData?.unread ?? 0;
+  const hasCredentials = (credsData ?? []).length > 0;
+  const { isOnline } = usePWA();
+  const { authenticate } = useBiometric();
   const [open, setOpen] = useState(false);
 
   const killActive = data?.settings?.kill_switch_active;
@@ -73,7 +82,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   async function toggleKill() {
     try {
+      if (killActive && hasCredentials) {
+        await authenticate();
+      }
       await kill({ data: { active: !killActive } });
+      vibrate(killActive ? [30] : [60, 30]);
       toast.success(killActive ? "Kill switch deactivated" : "Kill switch ACTIVE — all automation halted");
       qc.invalidateQueries();
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
@@ -113,6 +126,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
 
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            {!isOnline && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-warning/15 text-warning border border-warning/30">
+                <WifiOff className="w-3.5 h-3.5" /> Offline
+              </span>
+            )}
             <Link to="/notifications" aria-label="Notifications"
               className="relative w-10 h-10 grid place-items-center rounded-md border border-border hover:bg-secondary/50">
               <Bell className="w-4 h-4" />
@@ -199,9 +217,40 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 pb-16 sm:pb-0">
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">{children}</div>
       </main>
+
+      {/* Mobile bottom nav */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/90 backdrop-blur border-t border-border pb-[env(safe-area-inset-bottom)]">
+        {!isOnline && (
+          <div className="bg-warning/15 text-warning text-[10px] font-medium text-center py-1 border-b border-warning/20">
+            <WifiOff className="w-3 h-3 inline-block align-text-bottom mr-1" /> Offline mode
+          </div>
+        )}
+        <div className="flex items-center justify-around h-14">
+          {[
+            { to: "/dashboard", icon: LayoutDashboard, label: "Home" },
+            { to: "/approvals", icon: CheckSquare, label: "Approvals" },
+            { to: "/positions", icon: Activity, label: "Positions" },
+            { to: "/mobile", icon: Smartphone, label: "Mobile" },
+          ].map(item => {
+            const active = pathname === item.to || pathname.startsWith(item.to + "/");
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`flex flex-col items-center justify-center gap-0.5 w-full h-full text-[10px] ${
+                  active ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <item.icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }
