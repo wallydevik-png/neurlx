@@ -126,6 +126,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
 
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            {!isOnline && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-warning/15 text-warning border border-warning/30">
+                <WifiOff className="w-3.5 h-3.5" /> Offline
+              </span>
+            )}
             <Link to="/notifications" aria-label="Notifications"
               className="relative w-10 h-10 grid place-items-center rounded-md border border-border hover:bg-secondary/50">
               <Bell className="w-4 h-4" />
