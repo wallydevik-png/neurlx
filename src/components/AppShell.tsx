@@ -52,9 +52,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fetchDash = useServerFn(getDashboard);
   const fetchUnread = useServerFn(unreadNotificationCount);
   const kill = useServerFn(setKillSwitch);
+  const fetchCreds = useServerFn(listCredentials);
   const { data } = useQuery({ queryKey: ["dashboard-mini"], queryFn: () => fetchDash(), refetchInterval: 15000 });
   const { data: unreadData } = useQuery({ queryKey: ["notifications-unread"], queryFn: () => fetchUnread(), refetchInterval: 20000 });
+  const { data: credsData } = useQuery({ queryKey: ["biometric-creds"], queryFn: () => fetchCreds() });
   const unread = unreadData?.unread ?? 0;
+  const hasCredentials = (credsData ?? []).length > 0;
+  const { isOnline } = usePWA();
+  const { authenticate } = useBiometric();
   const [open, setOpen] = useState(false);
 
   const killActive = data?.settings?.kill_switch_active;
