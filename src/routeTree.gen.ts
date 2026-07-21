@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedStrategiesRouteImport } from './routes/_authenticated/strategies'
 import { Route as AuthenticatedSignalsRouteImport } from './routes/_authenticated/signals'
 import { Route as AuthenticatedShadowRouteImport } from './routes/_authenticated/shadow'
+import { Route as AuthenticatedRiskRouteImport } from './routes/_authenticated/risk'
 import { Route as AuthenticatedResearchRouteImport } from './routes/_authenticated/research'
 import { Route as AuthenticatedReadinessRouteImport } from './routes/_authenticated/readiness'
 import { Route as AuthenticatedPositionsRouteImport } from './routes/_authenticated/positions'
@@ -79,6 +80,11 @@ const AuthenticatedSignalsRoute = AuthenticatedSignalsRouteImport.update({
 const AuthenticatedShadowRoute = AuthenticatedShadowRouteImport.update({
   id: '/shadow',
   path: '/shadow',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRiskRoute = AuthenticatedRiskRouteImport.update({
+  id: '/risk',
+  path: '/risk',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedResearchRoute = AuthenticatedResearchRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
   '/research': typeof AuthenticatedResearchRoute
+  '/risk': typeof AuthenticatedRiskRoute
   '/shadow': typeof AuthenticatedShadowRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/strategies': typeof AuthenticatedStrategiesRoute
@@ -306,6 +313,7 @@ export interface FileRoutesByTo {
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
   '/research': typeof AuthenticatedResearchRoute
+  '/risk': typeof AuthenticatedRiskRoute
   '/shadow': typeof AuthenticatedShadowRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/strategies': typeof AuthenticatedStrategiesRoute
@@ -346,6 +354,7 @@ export interface FileRoutesById {
   '/_authenticated/positions': typeof AuthenticatedPositionsRoute
   '/_authenticated/readiness': typeof AuthenticatedReadinessRoute
   '/_authenticated/research': typeof AuthenticatedResearchRoute
+  '/_authenticated/risk': typeof AuthenticatedRiskRoute
   '/_authenticated/shadow': typeof AuthenticatedShadowRoute
   '/_authenticated/signals': typeof AuthenticatedSignalsRoute
   '/_authenticated/strategies': typeof AuthenticatedStrategiesRoute
@@ -386,6 +395,7 @@ export interface FileRouteTypes {
     | '/positions'
     | '/readiness'
     | '/research'
+    | '/risk'
     | '/shadow'
     | '/signals'
     | '/strategies'
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/positions'
     | '/readiness'
     | '/research'
+    | '/risk'
     | '/shadow'
     | '/signals'
     | '/strategies'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/_authenticated/positions'
     | '/_authenticated/readiness'
     | '/_authenticated/research'
+    | '/_authenticated/risk'
     | '/_authenticated/shadow'
     | '/_authenticated/signals'
     | '/_authenticated/strategies'
@@ -529,6 +541,13 @@ declare module '@tanstack/react-router' {
       path: '/shadow'
       fullPath: '/shadow'
       preLoaderRoute: typeof AuthenticatedShadowRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/risk': {
+      id: '/_authenticated/risk'
+      path: '/risk'
+      fullPath: '/risk'
+      preLoaderRoute: typeof AuthenticatedRiskRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/research': {
@@ -786,6 +805,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPositionsRoute: typeof AuthenticatedPositionsRoute
   AuthenticatedReadinessRoute: typeof AuthenticatedReadinessRoute
   AuthenticatedResearchRoute: typeof AuthenticatedResearchRoute
+  AuthenticatedRiskRoute: typeof AuthenticatedRiskRoute
   AuthenticatedShadowRoute: typeof AuthenticatedShadowRoute
   AuthenticatedSignalsRoute: typeof AuthenticatedSignalsRoute
   AuthenticatedStrategiesRoute: typeof AuthenticatedStrategiesRoute
@@ -819,6 +839,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPositionsRoute: AuthenticatedPositionsRoute,
   AuthenticatedReadinessRoute: AuthenticatedReadinessRoute,
   AuthenticatedResearchRoute: AuthenticatedResearchRoute,
+  AuthenticatedRiskRoute: AuthenticatedRiskRoute,
   AuthenticatedShadowRoute: AuthenticatedShadowRoute,
   AuthenticatedSignalsRoute: AuthenticatedSignalsRoute,
   AuthenticatedStrategiesRoute: AuthenticatedStrategiesRoute,
