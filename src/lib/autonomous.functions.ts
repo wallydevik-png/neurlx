@@ -144,7 +144,11 @@ export async function runAutonomousCycleFor(
   // generate fresh ones from the user's allowed_assets watchlist. This is
   // what makes autopilot truly hands-free: the loop doesn't wait for the
   // user to press "Generate signal" in the UI.
-  const minConfForGen = Number(settings.autonomous_min_confidence ?? 0.85);
+  // Execution floor (strict) vs generation floor (permissive) — so the
+  // signals table always shows recent AI activity, even when nothing clears
+  // the auto-execute bar. Auto-execute still enforces minConf below.
+  const minConfForExec = Number(settings.autonomous_min_confidence ?? 0.85);
+  const minConfForGen = Math.min(minConfForExec, 0.6);
   let { data: signals } = await supabase.from("signals")
     .select("*").eq("user_id", userId).eq("status", "pending")
     .order("created_at", { ascending: false }).limit(20);
@@ -153,18 +157,21 @@ export async function runAutonomousCycleFor(
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
       const { listSupportedSymbols } = await import("@/lib/marketdata/service.server");
-      const universe = (settings.allowed_assets && settings.allowed_assets.length
-        ? settings.allowed_assets
-        : listSupportedSymbols().slice(0, 8));
+      // Always scan a broad universe so we surface *something*, then intersect
+      // with allowed_assets at the execution stage.
+      const watchlist = new Set<string>(settings.allowed_assets ?? []);
+      const universe = Array.from(new Set([
+        ...(settings.allowed_assets ?? []),
+        ...listSupportedSymbols().slice(0, 8),
+      ]));
       const verdicts = await runCommittee(supabase, universe);
-      // Only insert top verdicts that clear the confidence floor AND have
-      // committee agreement — this is the "conference" gate that catches
-      // false positives no single indicator scheme would flag.
       const picks = verdicts
         .filter(v => v.consensusDirection !== "wait"
           && v.consensusConfidence >= minConfForGen
-          && v.agreement >= 2 / 3)
-        .slice(0, capacity);
+          && v.agreement >= 1 / 2
+          && (watchlist.size === 0 || watchlist.has(v.symbol)))
+        .slice(0, Math.max(capacity, 3));
+
       const toInsert = picks.map(v => ({
         user_id: userId,
         symbol: v.symbol, side: v.consensusDirection as "buy" | "sell",
