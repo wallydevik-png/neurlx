@@ -172,11 +172,24 @@ export async function runAutonomousCycleFor(
           && (watchlist.size === 0 || watchlist.has(v.symbol)))
         .slice(0, Math.max(capacity, 3));
 
-      const toInsert = picks.map(v => ({
+      // Scale qty so notional fits the user's per-trade cap. The engine
+      // targets a $500 notional by default; without this, a $10 cap user
+      // would see every generated signal rejected at the risk gate as
+      // "position size exceeds max trade size". Take the smaller of the
+      // paper-side cap (max_trade_size) and, when routing live, the
+      // live per-order cap.
+      const capForSize = live
+        ? Math.min(Number(settings.max_trade_size ?? 500), Number(settings.live_max_notional_per_order ?? 500))
+        : Number(settings.max_trade_size ?? 500);
+
+      const toInsert = picks.map(v => {
+        const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
+        const scaledQty = +(targetNotional / v.base.entry).toFixed(6);
+        return {
         user_id: userId,
         symbol: v.symbol, side: v.consensusDirection as "buy" | "sell",
         entry: v.base.entry, stop_loss: v.base.stopLoss, take_profit: v.base.takeProfit,
-        qty: v.base.qty,
+        qty: scaledQty,
         confidence: v.consensusConfidence,
         reasoning: `AI committee (${v.votes.filter(vt => vt.direction === v.consensusDirection).map(vt => vt.analyst).join(", ")}) — ${v.base.reasoning}`,
         risk_reward: v.base.riskReward, status: "pending",
@@ -189,7 +202,8 @@ export async function runAutonomousCycleFor(
           weight: vt.confidence, detail: vt.rationale,
         }))] as unknown as Record<string, never>,
         risk_factors: v.base.riskFactors as unknown as Record<string, never>,
-      }));
+        };
+      });
       if (toInsert.length) {
         const { data: inserted } = await supabase.from("signals")
           .insert(toInsert).select();
