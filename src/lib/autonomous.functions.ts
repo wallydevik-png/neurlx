@@ -37,6 +37,10 @@ function bump(map: Record<string, number>, key: string) {
   map[key] = (map[key] ?? 0) + 1;
 }
 
+function withDetail(key: string, detail?: string) {
+  return detail ? `${key}: ${detail}` : key;
+}
+
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
@@ -58,22 +62,25 @@ export async function runAutonomousCycleFor(
   const runId = runRow?.id as string;
 
   const finish = async (skipped?: string, live = false) => {
+    const runErrors = skipped ? [...errors, withDetail("skipped", skipped)] : errors;
     await supabase.from("autonomous_runs").update({
       finished_at: new Date().toISOString(),
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
-      reject_reasons: rejectReasons, errors, live,
+      reject_reasons: rejectReasons, errors: runErrors, live,
     }).eq("id", runId);
-    return { runId, scanned, executed, rejected, rejectReasons, errors, skipped };
+    return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
   };
 
   // 1. Load settings
   const { data: settings } = await supabase.from("automation_settings")
     .select("*").eq("user_id", userId).maybeSingle();
   if (!settings) return finish("no_settings");
-  if (settings.mode !== "autonomous") return finish("mode_not_autonomous");
-  if (settings.kill_switch_active) return finish("kill_switch_active");
+  const wantsLive = Boolean(settings.autonomous_live_enabled)
+    && Boolean(settings.autonomous_default_connection_id);
+  if (settings.mode !== "autonomous") return finish("mode_not_autonomous", wantsLive);
+  if (settings.kill_switch_active) return finish("kill_switch_active", wantsLive);
   if (settings.live_kill_until && new Date(settings.live_kill_until) > new Date()) {
-    return finish(`circuit_breaker_open:${settings.live_kill_reason ?? "open"}`);
+    return finish(`circuit_breaker_open:${settings.live_kill_reason ?? "open"}`, wantsLive);
   }
 
   // 2. Cooldown
@@ -81,7 +88,7 @@ export async function runAutonomousCycleFor(
     const nextAllowed = new Date(settings.autonomous_last_run_at).getTime()
       + (settings.autonomous_cooldown_seconds ?? 300) * 1000;
     if (Date.now() < nextAllowed && trigger !== "manual") {
-      return finish("cooldown");
+      return finish(`cooldown_until:${new Date(nextAllowed).toISOString()}`, wantsLive);
     }
   }
 
@@ -111,7 +118,7 @@ export async function runAutonomousCycleFor(
       message: `${maxLosses} consecutive losses — autonomous halted for 24h.`,
       payload: { maxLosses },
     });
-    return finish("consecutive_losses_breaker");
+    return finish("consecutive_losses_breaker", wantsLive);
   }
 
   // 4. Max open positions
@@ -119,23 +126,27 @@ export async function runAutonomousCycleFor(
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId).eq("status", "open");
   const capacity = Math.max(0, (settings.autonomous_max_open_positions ?? 3) - (openCount ?? 0));
-  if (capacity === 0) return finish("no_open_slots");
+  if (capacity === 0) return finish("no_open_slots", wantsLive);
 
   // 5. Daily loss cap check (reuse existing paper account tracking)
   const { data: paperAcct } = await supabase.from("paper_accounts")
     .select("*").eq("user_id", userId).maybeSingle();
 
   // 6. Determine live routing
-  const wantsLive = Boolean(settings.autonomous_live_enabled)
-    && Boolean(settings.autonomous_default_connection_id);
-  let liveConn: { id: string; trading_enabled: boolean; status: string; connector_id: string } | null = null;
+  let liveConn: { id: string; trading_enabled: boolean; status: string; connector_id: string; withdrawal_detected?: boolean | null } | null = null;
   if (wantsLive) {
     const { data: c } = await supabase.from("exchange_connections")
-      .select("id,trading_enabled,status,connector_id")
+      .select("id,trading_enabled,status,connector_id,withdrawal_detected")
       .eq("id", settings.autonomous_default_connection_id!)
       .eq("user_id", userId).maybeSingle();
-    if (c && c.trading_enabled && c.status === "connected" && c.connector_id !== "paper") {
+    if (!c) return finish("live_connection_missing", true);
+    if (c.withdrawal_detected) {
+      errors.push("live_permission_warning: previous scan saw withdrawal permission; pre-trade check will rescan before any order can reach the venue");
+    }
+    if (c.trading_enabled && c.status === "connected" && c.connector_id !== "paper") {
       liveConn = c;
+    } else {
+      return finish(`live_connection_not_ready:${c.connector_id}:${c.status}:trading_enabled=${c.trading_enabled}`, true);
     }
   }
   const live = liveConn !== null;
@@ -149,8 +160,12 @@ export async function runAutonomousCycleFor(
   // the auto-execute bar. Auto-execute still enforces minConf below.
   const minConfForExec = Number(settings.autonomous_min_confidence ?? 0.85);
   const minConfForGen = Math.min(minConfForExec, 0.6);
+  await supabase.from("signals").update({
+    status: "expired", resolved_at: new Date().toISOString(),
+  }).eq("user_id", userId).eq("status", "pending").lt("expires_at", new Date().toISOString());
   let { data: signals } = await supabase.from("signals")
     .select("*").eq("user_id", userId).eq("status", "pending")
+    .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false }).limit(20);
 
   if ((!signals || signals.length === 0) && capacity > 0) {
@@ -208,6 +223,9 @@ export async function runAutonomousCycleFor(
         const { data: inserted } = await supabase.from("signals")
           .insert(toInsert).select();
         signals = inserted ?? [];
+        errors.push(`committee_generated:${toInsert.length}:${toInsert.map(s => `${s.symbol}:${s.side}:${Number(s.confidence).toFixed(2)}`).join(",")}`);
+      } else {
+        errors.push(`committee_no_trade:${verdicts.slice(0, 5).map(v => `${v.symbol}:${v.consensusDirection}:${v.consensusConfidence.toFixed(2)}:${v.agreement.toFixed(2)}`).join(",") || "no_verdicts"}`);
       }
     } catch (e) {
       errors.push(`committee_gen: ${e instanceof Error ? e.message : String(e)}`);
@@ -234,10 +252,18 @@ export async function runAutonomousCycleFor(
   for (const sig of signals) {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
     if (Number(sig.confidence) < minConf) {
-      bump(rejectReasons, "below_min_confidence"); rejected++; continue;
+      bump(rejectReasons, "below_min_confidence"); rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
     }
     if (allowedAssets.size > 0 && !allowedAssets.has(sig.symbol)) {
-      bump(rejectReasons, "asset_not_allowed"); rejected++; continue;
+      bump(rejectReasons, "asset_not_allowed"); rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
     }
     const qty = Number(sig.qty);
     const entry = Number(sig.entry);

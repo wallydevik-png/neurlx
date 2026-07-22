@@ -37,9 +37,9 @@ function reweight(base: AiSignal, weights: Record<string, number>): AnalystVote 
     else if (c.signal === "bearish") score -= w;
     if (w > 0.15 && c.weight !== 0) drivers.push(c.indicator);
   }
-  // Boosted confidence curve so consensus can realistically clear a 0.65 bar
-  // on modest-but-directional setups (previously capped ~0.75 for perfect scores).
-  const confidence = Math.min(0.99, Math.max(0.05, 0.5 + score * 0.75));
+  // Confidence measures conviction, not direction. Using the signed score made
+  // bearish votes look like low confidence, blocking sell-side autopilot trades.
+  const confidence = Math.min(0.99, Math.max(0.05, 0.5 + Math.abs(score) * 0.75));
   // Lowered direction floor from 0.15 → 0.08 so ranging markets still surface
   // the strongest available bias instead of everyone voting "wait".
   let direction: Direction = "wait";
