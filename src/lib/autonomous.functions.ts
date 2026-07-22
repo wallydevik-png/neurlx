@@ -165,12 +165,16 @@ export async function runAutonomousCycleFor(
         ...listSupportedSymbols().slice(0, 8),
       ]));
       const verdicts = await runCommittee(supabase, universe);
+      // Diagnostic breadcrumb so autonomous_runs.errors surfaces exactly why
+      // the committee dropped every candidate on a given cycle.
+      errors.push(`committee: universe=${universe.length} verdicts=${verdicts.length} sample=${verdicts.slice(0,3).map(v => `${v.symbol}:${v.consensusDirection}:${v.consensusConfidence.toFixed(2)}:agree${v.agreement.toFixed(2)}`).join("|")}`);
       const picks = verdicts
         .filter(v => v.consensusDirection !== "wait"
           && v.consensusConfidence >= minConfForGen
           && v.agreement >= 1 / 2
           && (watchlist.size === 0 || watchlist.has(v.symbol)))
         .slice(0, Math.max(capacity, 3));
+      errors.push(`picks=${picks.length} minGen=${minConfForGen.toFixed(2)} watchlist=${[...watchlist].join(",")}`);
 
       // Scale qty so notional fits the user's per-trade cap. The engine
       // targets a $500 notional by default; without this, a $10 cap user
