@@ -101,8 +101,8 @@ export const activateLiveTrading = createServerFn({ method: "POST" })
     if (!conn.permission_scan) {
       throw new Error("Run a permission scan first — we won't enable trading on unaudited keys.");
     }
-    if (conn.withdrawal_detected && !data.acknowledgedWithdrawal) {
-      throw new Error("API key has WITHDRAWAL permission. Revoke it on the exchange and re-scan — or explicitly acknowledge the risk.");
+    if (conn.withdrawal_detected) {
+      throw new Error("API key has WITHDRAWAL permission. Revoke it on the exchange and re-scan before enabling live trading.");
     }
     const scan = conn.permission_scan as {
       can_read?: boolean; can_trade?: boolean; can_withdraw?: boolean;

@@ -113,7 +113,7 @@ function Activate() {
     && scan.can_trade
     && phrase === "ENABLE LIVE TRADING"
     && Number(maxNotional) > 0
-    && (!scan.can_withdraw || ackWithdrawal);
+    && !scan.can_withdraw;
 
   return (
     <AppShell>
@@ -194,7 +194,7 @@ function Activate() {
                   <div className="font-medium text-destructive">Withdrawal permission detected</div>
                   <p className="text-xs text-muted-foreground mt-1">
                     Regenerate this API key on the exchange with withdrawals <b>disabled</b>, then re-scan.
-                    Or acknowledge the risk to proceed anyway.
+                    NeurlX will not activate live trading for withdrawal-enabled keys.
                   </p>
                   <label className="mt-2 flex items-center gap-2 text-xs">
                     <input type="checkbox" checked={ackWithdrawal} onChange={e => setAckWithdrawal(e.target.checked)} />
