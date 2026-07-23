@@ -109,6 +109,8 @@ function Activate() {
   }
 
   const canActivate = scan
+    && scan.can_read
+    && scan.can_trade
     && phrase === "ENABLE LIVE TRADING"
     && Number(maxNotional) > 0
     && (!scan.can_withdraw || ackWithdrawal);

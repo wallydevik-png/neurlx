@@ -123,20 +123,24 @@ export const getLiveEquity = createServerFn({ method: "GET" })
     const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
     let totalUsd = 0;
 
-    // Fetch a USDT price map from Bybit for converting non-stable crypto balances.
+    // Fetch a USDT price map for converting non-stable crypto balances. The
+    // market-data layer rotates Bybit hosts and falls back when edge regions are
+    // blocked, so live equity no longer depends on the primary Bybit hostname.
+    const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
     const priceMap = new Map<string, number>();
     for (const s of ["USD", "USDT", "USDC", "DAI", "BUSD", "FDUSD"]) priceMap.set(s, 1);
-    try {
-      const r = await fetch("https://api.bybit.com/v5/market/tickers?category=spot");
-      const j: { result?: { list?: Array<{ symbol: string; lastPrice: string }> } } = await r.json();
-      for (const t of j.result?.list ?? []) {
-        if (t.symbol.endsWith("USDT")) {
-          const asset = t.symbol.slice(0, -4);
-          const px = Number(t.lastPrice);
-          if (px > 0 && !priceMap.has(asset)) priceMap.set(asset, px);
-        }
+
+    const ensureUsdPrice = async (asset: string) => {
+      const cur = asset.toUpperCase();
+      if (priceMap.has(cur)) return priceMap.get(cur) ?? 0;
+      try {
+        const px = await fetchLastPrice(`${cur}-USD`);
+        if (px > 0) priceMap.set(cur, px);
+        return px > 0 ? px : 0;
+      } catch {
+        return 0;
       }
-    } catch { /* fallback: only stables counted */ }
+    };
 
     for (const c of live) {
       try {
@@ -147,13 +151,14 @@ export const getLiveEquity = createServerFn({ method: "GET" })
           : {};
         const connector = createConnector(c.connector_id, creds, { supabase, userId, connectionId: c.id });
         const balances = await connector.getBalances();
-        const usd = balances.reduce((s: number, b: { currency: string; total?: number | null }) => {
+        let usd = 0;
+        for (const b of balances as Array<{ currency: string; total?: number | null }>) {
           const cur = b.currency.toUpperCase();
           const amt = Number(b.total ?? 0);
-          if (!amt) return s;
-          const px = priceMap.get(cur);
-          return px ? s + amt * px : s;
-        }, 0);
+          if (!amt) continue;
+          const px = await ensureUsdPrice(cur);
+          if (px) usd += amt * px;
+        }
         accounts.push({ id: c.id, label: c.label, connector: c.connector_id, usd });
         totalUsd += usd;
       } catch (e) {
@@ -262,10 +267,14 @@ export const setPermissions = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: conn } = await context.supabase.from("exchange_connections")
-      .select("connector_id").eq("id", data.id).eq("user_id", context.userId).maybeSingle();
+      .select("connector_id,permission_scan,withdrawal_detected,status").eq("id", data.id).eq("user_id", context.userId).maybeSingle();
     if (!conn) throw new Error("Connection not found");
     if (data.tradingEnabled && conn.connector_id !== "paper") {
-      throw new Error("Live trading permissions are disabled in this build. Only paper trading is enabled.");
+      if (conn.status !== "connected") throw new Error("Connect this account before enabling trading.");
+      const scan = conn.permission_scan as { can_read?: boolean; can_trade?: boolean } | null;
+      if (!scan) throw new Error("Run Manage live trading → Scan permissions before enabling live trading.");
+      if (!scan.can_read || !scan.can_trade) throw new Error("API key must have read and trade permissions enabled.");
+      if (conn.withdrawal_detected) throw new Error("Withdrawal permission detected. Recreate the API key without withdrawals, then re-scan.");
     }
     await context.supabase.from("exchange_connections")
       .update({ trading_enabled: data.tradingEnabled })

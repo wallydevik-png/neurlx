@@ -7,11 +7,6 @@ import { z } from "zod";
 // ---------------------------------------------------------------------------
 // PERMISSION SCAN
 // ---------------------------------------------------------------------------
-// Simulated: real Binance would call GET /api/v3/account and inspect the
-// account permissions + apiRestrictions. In this build we produce a
-// deterministic "safe" scan for paper connections and a "cautious" one for
-// binance connections (assumes worst-case that keys have withdrawal enabled
-// unless the user later re-scans with a permission-restricted key).
 export const scanConnectionPermissions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ connectionId: z.string().uuid() }).parse(d))
@@ -20,7 +15,6 @@ export const scanConnectionPermissions = createServerFn({ method: "POST" })
       .select("*").eq("id", data.connectionId).eq("user_id", context.userId).maybeSingle();
     if (!conn) throw new Error("Connection not found");
 
-    // Deterministic simulated scan
     let scan: {
       scopes: string[]; can_read: boolean; can_trade: boolean;
       can_withdraw: boolean; can_transfer_internal: boolean; can_margin: boolean;
@@ -32,12 +26,34 @@ export const scanConnectionPermissions = createServerFn({ method: "POST" })
         can_withdraw: false, can_transfer_internal: false, can_margin: false, can_futures: false,
       };
     } else {
-      // Real exchanges: assume worst case for the demo — user must recreate key
-      // with withdrawals disabled before we allow live trading (simulated only).
+      const { decryptJSON } = await import("@/lib/crypto.server");
+      const { createConnector } = await import("@/lib/connectors/factory.server");
+      const creds = conn.credential_ciphertext
+        ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
+        : {};
+      const connector = createConnector(conn.connector_id, creds, {
+        supabase: context.supabase, userId: context.userId, connectionId: conn.id,
+      });
+      if (!connector.getApiPermissions) {
+        throw new Error("This connector does not expose a live permission scanner yet.");
+      }
+      const p = await connector.getApiPermissions();
+      const raw = p.raw as { permissions?: Record<string, string[]> } | undefined;
+      const rawScopes = raw?.permissions
+        ? Object.values(raw.permissions).flat().map(String)
+        : [];
       scan = {
-        scopes: ["read", "trade", "withdraw", "transfer_internal"],
-        can_read: true, can_trade: true, can_withdraw: true,
-        can_transfer_internal: true, can_margin: false, can_futures: false,
+        scopes: rawScopes.length ? rawScopes : [
+          p.enableReading ? "read" : null,
+          p.enableSpotAndMarginTrading ? "trade" : null,
+          p.enableWithdrawals ? "withdraw" : null,
+        ].filter((x): x is string => x !== null),
+        can_read: p.enableReading,
+        can_trade: p.enableSpotAndMarginTrading,
+        can_withdraw: p.enableWithdrawals,
+        can_transfer_internal: rawScopes.some(s => /transfer/i.test(s)),
+        can_margin: rawScopes.some(s => /margin/i.test(s)),
+        can_futures: rawScopes.some(s => /contract|future|derivative/i.test(s)),
       };
     }
 
@@ -88,8 +104,13 @@ export const activateLiveTrading = createServerFn({ method: "POST" })
     if (conn.withdrawal_detected && !data.acknowledgedWithdrawal) {
       throw new Error("API key has WITHDRAWAL permission. Revoke it on the exchange and re-scan — or explicitly acknowledge the risk.");
     }
+    const scan = conn.permission_scan as {
+      can_read?: boolean; can_trade?: boolean; can_withdraw?: boolean;
+    } | null;
+    if (!scan?.can_read) throw new Error("API key must have read permission enabled.");
+    if (!scan?.can_trade) throw new Error("API key must have trade permission enabled.");
     // Live trading is now supported on connectors with real execution
-    // (currently: Binance). Paper keeps its own simulation path.
+    // through the modular connector layer. Paper keeps its own simulation path.
     const isReal = conn.connector_id !== "paper";
 
     await context.supabase.from("exchange_connections").update({
@@ -116,7 +137,7 @@ export const activateLiveTrading = createServerFn({ method: "POST" })
     return {
       ok: true, simulatedOnly: !isReal,
       message: isReal
-        ? "Live trading activated. Every trade still requires your explicit approval."
+        ? "Live trading activated. Autopilot and assisted approvals can now place real orders after safety checks."
         : "Paper trading activated.",
     };
   });
