@@ -144,10 +144,19 @@ export async function runAutonomousCycleFor(
     .select("*").eq("user_id", userId).maybeSingle();
 
   // 6. Determine live routing
-  let liveConn: { id: string; trading_enabled: boolean; status: string; connector_id: string; withdrawal_detected?: boolean | null } | null = null;
+  let liveConn: {
+    id: string;
+    trading_enabled: boolean;
+    status: string;
+    connector_id: string;
+    withdrawal_detected?: boolean | null;
+    credential_ciphertext?: string | null;
+  } | null = null;
+  let liveStableUsd = 0;
+  let liveBaseAvailable = new Map<string, number>();
   if (wantsLive) {
     const { data: c } = await supabase.from("exchange_connections")
-      .select("id,trading_enabled,status,connector_id,withdrawal_detected")
+      .select("id,trading_enabled,status,connector_id,withdrawal_detected,credential_ciphertext")
       .eq("id", settings.autonomous_default_connection_id!)
       .eq("user_id", userId).maybeSingle();
     if (!c) return finish("live_connection_missing", true);
@@ -156,6 +165,22 @@ export async function runAutonomousCycleFor(
     }
     if (c.trading_enabled && c.status === "connected" && c.connector_id !== "paper") {
       liveConn = c;
+      try {
+        const { decryptJSON } = await import("@/lib/crypto.server");
+        const { createConnector } = await import("@/lib/connectors/factory.server");
+        const creds = c.credential_ciphertext
+          ? await decryptJSON<Record<string, string>>(c.credential_ciphertext)
+          : {};
+        const connector = createConnector(c.connector_id, creds, { supabase, userId, connectionId: c.id });
+        const balances = await connector.getBalances();
+        liveStableUsd = balances
+          .filter(b => ["USD", "USDT", "USDC"].includes(b.currency.toUpperCase()))
+          .reduce((sum, b) => sum + Math.max(0, Number(b.available ?? 0)), 0);
+        liveBaseAvailable = new Map(balances.map(b => [b.currency.toUpperCase(), Math.max(0, Number(b.available ?? 0))]));
+        errors.push(`live_wallet:stable=${liveStableUsd.toFixed(2)}:${balances.filter(b => Number(b.available ?? 0) > 0).map(b => `${b.currency}:${Number(b.available).toFixed(6)}`).slice(0, 5).join(",")}`);
+      } catch (e) {
+        errors.push(`live_wallet_unavailable:${e instanceof Error ? e.message : String(e)}`);
+      }
     } else {
       return finish(`live_connection_not_ready:${c.connector_id}:${c.status}:trading_enabled=${c.trading_enabled}`, true);
     }
@@ -191,9 +216,16 @@ export async function runAutonomousCycleFor(
         ...listSupportedSymbols().slice(0, 8),
       ]));
       const verdicts = await runCommittee(supabase, universe);
+      const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
+        if (!live || side === "wait") return true;
+        if (side === "buy") return liveStableUsd > 1;
+        const base = symbol.includes("-") ? symbol.split("-")[0].toUpperCase() : symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
+        return (liveBaseAvailable.get(base) ?? 0) > 0;
+      };
+
       const picks = verdicts
         .filter(v => v.consensusDirection !== "wait"
-          && (!live || !["bybit", "binance", "okx", "kraken"].includes(liveConn?.connector_id ?? "") || v.consensusDirection === "buy")
+          && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
           && v.agreement >= 1 / 2
           && (watchlist.size === 0 || watchlist.has(v.symbol)))
@@ -210,8 +242,19 @@ export async function runAutonomousCycleFor(
         : Number(settings.max_trade_size ?? 500);
 
       const toInsert = picks.map(v => {
-        const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
-        const scaledQty = +(targetNotional / v.base.entry).toFixed(6);
+        let scaledQty = 0;
+        if (live && v.consensusDirection === "buy") {
+          const targetNotional = Math.max(1, Math.min(capForSize * 0.95, liveStableUsd * 0.9));
+          scaledQty = +(targetNotional / v.base.entry).toFixed(6);
+        } else if (live && v.consensusDirection === "sell") {
+          const base = v.symbol.includes("-") ? v.symbol.split("-")[0].toUpperCase() : v.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
+          const byCap = (capForSize * 0.95) / v.base.entry;
+          scaledQty = +Math.min((liveBaseAvailable.get(base) ?? 0) * 0.95, byCap).toFixed(6);
+        } else {
+          const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
+          scaledQty = +(targetNotional / v.base.entry).toFixed(6);
+        }
+        if (scaledQty <= 0) return null;
         return {
         user_id: userId,
         symbol: v.symbol, side: v.consensusDirection as "buy" | "sell",
@@ -230,7 +273,7 @@ export async function runAutonomousCycleFor(
         }))] as unknown as Record<string, never>,
         risk_factors: v.base.riskFactors as unknown as Record<string, never>,
         };
-      });
+      }).filter((row): row is NonNullable<typeof row> => row !== null);
       if (toInsert.length) {
         const { data: inserted } = await supabase.from("signals")
           .insert(toInsert).select();
