@@ -54,6 +54,15 @@ function maxPositive(...values: Array<string | number | undefined | null>): numb
   return nums.length ? Math.max(...nums) : 0;
 }
 
+function isRegionBlocked(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return msg.includes("cloudfront")
+    || msg.includes("block access from your country")
+    || msg.includes("u.s ip")
+    || msg.includes("us ip")
+    || msg.includes("403");
+}
+
 export function createBybitConnector(
   credentials: Record<string, string>,
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null; orderId?: string | null } = {},
@@ -193,13 +202,23 @@ export function createBybitConnector(
 
     async getQuote(symbol: string): Promise<Quote> {
       const s = toBybit(symbol);
-      const r = await publicGet<{ result: { list: Array<{ symbol: string; bid1Price: string; ask1Price: string; lastPrice: string }> } }>(
-        "/v5/market/tickers", { category: "spot", symbol: s },
-      );
-      const t = r.result?.list?.[0];
-      if (!t) throw new Error(`No ticker for ${s}`);
-      const bid = Number(t.bid1Price), ask = Number(t.ask1Price);
-      return { symbol, bid, ask, mid: (bid + ask) / 2 || Number(t.lastPrice), ts: Date.now() };
+      try {
+        const r = await publicGet<{ result: { list: Array<{ symbol: string; bid1Price: string; ask1Price: string; lastPrice: string }> } }>(
+          "/v5/market/tickers", { category: "spot", symbol: s },
+        );
+        const t = r.result?.list?.[0];
+        if (!t) throw new Error(`No ticker for ${s}`);
+        const bid = Number(t.bid1Price), ask = Number(t.ask1Price);
+        return { symbol, bid, ask, mid: (bid + ask) / 2 || Number(t.lastPrice), ts: Date.now() };
+      } catch (e) {
+        if (!isRegionBlocked(e)) throw e;
+        // Some server regions can read signed wallet endpoints but not Bybit's
+        // public ticker endpoint. Use the market-data facade fallback so this
+        // public-data block does not stop a funded signed order path.
+        const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
+        const mid = await fetchLastPrice(symbol);
+        return { symbol, bid: mid * 0.999, ask: mid * 1.001, mid, ts: Date.now() };
+      }
     },
 
     async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
@@ -259,18 +278,23 @@ export function createBybitConnector(
 
     async getSymbolFilter(symbol: string) {
       const s = toBybit(symbol);
-      const r = await publicGet<{ result?: { list?: Array<{
-        priceFilter?: { tickSize?: string };
-        lotSizeFilter?: { basePrecision?: string; minOrderQty?: string; minOrderAmt?: string };
-      }> } }>("/v5/market/instruments-info", { category: "spot", symbol: s });
-      const info = r.result?.list?.[0];
-      if (!info) return null;
-      return {
-        minQty: Number(info.lotSizeFilter?.minOrderQty || 0),
-        stepSize: Number(info.lotSizeFilter?.basePrecision || 0),
-        tickSize: Number(info.priceFilter?.tickSize || 0),
-        minNotional: Number(info.lotSizeFilter?.minOrderAmt || 0),
-      };
+      try {
+        const r = await publicGet<{ result?: { list?: Array<{
+          priceFilter?: { tickSize?: string };
+          lotSizeFilter?: { basePrecision?: string; minOrderQty?: string; minOrderAmt?: string };
+        }> } }>("/v5/market/instruments-info", { category: "spot", symbol: s });
+        const info = r.result?.list?.[0];
+        if (!info) return null;
+        return {
+          minQty: Number(info.lotSizeFilter?.minOrderQty || 0),
+          stepSize: Number(info.lotSizeFilter?.basePrecision || 0),
+          tickSize: Number(info.priceFilter?.tickSize || 0),
+          minNotional: Number(info.lotSizeFilter?.minOrderAmt || 0),
+        };
+      } catch (e) {
+        if (!isRegionBlocked(e)) throw e;
+        return { minQty: 0.000001, stepSize: 0.000001, tickSize: 0.000001, minNotional: 5 };
+      }
     },
 
     async checkHealth(): Promise<ConnectionHealth> {

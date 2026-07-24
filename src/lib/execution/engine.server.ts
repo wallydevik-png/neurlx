@@ -255,8 +255,19 @@ export async function submitOrder(
   if (isLive) {
     let pre: { ok: boolean; reason?: string; adjustments?: { qty?: number } };
     try {
-      const q = await connector.getQuote(req.symbol);
-      const estPrice = req.side === "buy" ? q.ask : q.bid;
+      let estPrice: number;
+      try {
+        const q = await connector.getQuote(req.symbol);
+        estPrice = req.side === "buy" ? q.ask : q.bid;
+      } catch (quoteError) {
+        const msg = quoteError instanceof Error ? quoteError.message.toLowerCase() : String(quoteError).toLowerCase();
+        if (!msg.includes("cloudfront") && !msg.includes("block access from your country") && !msg.includes("403")) {
+          throw quoteError;
+        }
+        const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
+        const mid = await fetchLastPrice(req.symbol);
+        estPrice = req.side === "buy" ? mid * 1.001 : mid * 0.999;
+      }
       const { runPreTradeCheck } = await import("@/lib/execution/preTradeCheck.server");
       pre = await runPreTradeCheck(supabase, userId, connector, {
         symbol: req.symbol, side: req.side, qty: req.qty, estPrice,
