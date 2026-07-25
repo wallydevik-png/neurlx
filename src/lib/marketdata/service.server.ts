@@ -63,3 +63,11 @@ export async function fetchLastPrice(symbol: string): Promise<number> {
   }
   throw lastError instanceof Error ? lastError : new Error(`No market-data provider succeeded for ${symbol}`);
 }
+
+export async function fallbackLastPrice(symbol: string): Promise<number> {
+  const fallback = createSyntheticProvider();
+  if (!fallback.supports(symbol)) {
+    throw new Error(`No fallback market-data provider for ${symbol}`);
+  }
+  return fallback.getLastPrice(symbol);
+}
