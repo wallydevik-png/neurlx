@@ -41,6 +41,16 @@ function withDetail(key: string, detail?: string) {
   return detail ? `${key}: ${detail}` : key;
 }
 
+function isRegionalConnectivityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return message.includes("cloudfront")
+    || message.includes("block access from your country")
+    || message.includes("server region")
+    || message.includes("u.s ip")
+    || message.includes("us ip")
+    || message.includes("403");
+}
+
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
@@ -166,6 +176,7 @@ export async function runAutonomousCycleFor(
     credential_ciphertext?: string | null;
   } | null = null;
   let liveStableUsd = 0;
+  let liveWalletUnavailableReason: string | null = null;
   let liveBaseAvailable = new Map<string, number>();
   if (wantsLive) {
     const { data: c } = await supabase.from("exchange_connections")
@@ -192,13 +203,20 @@ export async function runAutonomousCycleFor(
         liveBaseAvailable = new Map(balances.map(b => [b.currency.toUpperCase(), Math.max(0, Number(b.available ?? 0))]));
         errors.push(`live_wallet:stable=${liveStableUsd.toFixed(2)}:${balances.filter(b => Number(b.available ?? 0) > 0).map(b => `${b.currency}:${Number(b.available).toFixed(6)}`).slice(0, 5).join(",")}`);
       } catch (e) {
-        errors.push(`live_wallet_unavailable:${e instanceof Error ? e.message : String(e)}`);
+        liveWalletUnavailableReason = e instanceof Error ? e.message : String(e);
+        errors.push(`live_wallet_unavailable:${liveWalletUnavailableReason}`);
       }
     } else {
       return finish(`live_connection_not_ready:${c.connector_id}:${c.status}:trading_enabled=${c.trading_enabled}`, true);
     }
   }
   const live = liveConn !== null;
+  if (live && liveWalletUnavailableReason) {
+    const reason = isRegionalConnectivityError(liveWalletUnavailableReason)
+      ? "live_wallet_region_blocked: configure a Bybit regional gateway hosted from an allowed country such as Nigeria before live orders can be submitted"
+      : `live_wallet_unavailable:${liveWalletUnavailableReason}`;
+    return finish(reason, true);
+  }
 
   // 7. Pull pending signals — and if none exist, have the AI committee
   // generate fresh ones from the user's allowed_assets watchlist. This is
