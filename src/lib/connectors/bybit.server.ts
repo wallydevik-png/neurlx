@@ -63,14 +63,66 @@ function isRegionBlocked(error: unknown): boolean {
     || msg.includes("403");
 }
 
+function regionBlockedMessage(path: string): string {
+  return `Bybit is rejecting this app server region for ${path}. Configure a Bybit regional gateway from an allowed country (for example Nigeria) so orders and wallet checks do not route through a blocked Cloudflare IP.`;
+}
+
 export function createBybitConnector(
   credentials: Record<string, string>,
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null; orderId?: string | null } = {},
 ): TradingConnector {
   const apiKey = credentials.apiKey ?? "";
   const apiSecret = credentials.apiSecret ?? "";
+  const configuredGatewayUrl = credentials.regionalGatewayUrl || credentials.gatewayUrl || "";
+  const configuredGatewaySecret = credentials.regionalGatewaySecret || credentials.gatewaySecret || "";
   const hasKeys = Boolean(apiKey && apiSecret);
   const logCtx = { ...ctx, venue: "bybit" };
+
+  function gatewayConfig() {
+    const url = configuredGatewayUrl || process.env.BYBIT_REGIONAL_GATEWAY_URL || "";
+    if (!url) return null;
+    return {
+      url,
+      secret: configuredGatewaySecret || process.env.BYBIT_REGIONAL_GATEWAY_SECRET || "",
+    };
+  }
+
+  async function viaGateway<T>(input: {
+    method: "GET" | "POST";
+    path: string;
+    queryString?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signed?: boolean;
+  }): Promise<T | null> {
+    const gateway = gatewayConfig();
+    if (!gateway) return null;
+    const payload = JSON.stringify({
+      method: input.method,
+      path: input.path,
+      queryString: input.queryString ?? "",
+      headers: input.headers ?? {},
+      body: input.body ?? "",
+    });
+    const gatewayHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (gateway.secret) {
+      gatewayHeaders["X-NeurlX-Signature"] = await hmacSha256Hex(gateway.secret, payload);
+    }
+    const response = await doRequest<unknown>({
+      ctx: logCtx,
+      method: "POST",
+      path: `gateway:${input.path}`,
+      url: gateway.url,
+      headers: gatewayHeaders,
+      body: payload,
+      params: { gateway: true, method: input.method, path: input.path, signed: input.signed ?? false },
+      signed: input.signed,
+    });
+    const maybeWrapped = response as { status?: number; body?: unknown; data?: unknown };
+    const body = maybeWrapped.body ?? maybeWrapped.data ?? response;
+    const parsed = typeof body === "string" ? JSON.parse(body || "{}") : body;
+    return ensureBybitOk(parsed as T & { retCode?: number; retMsg?: string }, input.path) as T;
+  }
 
   async function sign(payload: string): Promise<{ ts: string; sig: string }> {
     const ts = Date.now().toString();
@@ -80,6 +132,8 @@ export function createBybitConnector(
 
   async function publicGet<T>(path: string, params?: Record<string, string>): Promise<T> {
     const qs = params ? new URLSearchParams(params).toString() : "";
+    const gatewayResult = await viaGateway<T>({ method: "GET", path, queryString: qs });
+    if (gatewayResult) return gatewayResult;
     let lastError: unknown = null;
     for (const base of BYBIT_BASE_URLS) {
       try {
@@ -92,12 +146,27 @@ export function createBybitConnector(
         lastError = e;
       }
     }
+    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
     throw lastError instanceof Error ? lastError : new Error("Bybit public API unavailable");
   }
 
   async function signedGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     if (!hasKeys) throw new Error("Bybit API keys required for signed endpoints");
     const qs = new URLSearchParams(params).toString();
+    const { ts: gatewayTs, sig: gatewaySig } = await sign(qs);
+    const gatewayResult = await viaGateway<T>({
+      method: "GET",
+      path,
+      queryString: qs,
+      headers: {
+        "X-BAPI-API-KEY": apiKey,
+        "X-BAPI-TIMESTAMP": gatewayTs,
+        "X-BAPI-RECV-WINDOW": RECV,
+        "X-BAPI-SIGN": gatewaySig,
+      },
+      signed: true,
+    });
+    if (gatewayResult) return gatewayResult;
     let lastError: unknown = null;
     for (const base of BYBIT_BASE_URLS) {
       try {
@@ -115,12 +184,28 @@ export function createBybitConnector(
         lastError = e;
       }
     }
+    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
     throw lastError instanceof Error ? lastError : new Error("Bybit signed API unavailable");
   }
 
   async function signedPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
     if (!hasKeys) throw new Error("Bybit API keys required for signed endpoints");
     const raw = JSON.stringify(body);
+    const { ts: gatewayTs, sig: gatewaySig } = await sign(raw);
+    const gatewayResult = await viaGateway<T>({
+      method: "POST",
+      path,
+      body: raw,
+      headers: {
+        "Content-Type": "application/json",
+        "X-BAPI-API-KEY": apiKey,
+        "X-BAPI-TIMESTAMP": gatewayTs,
+        "X-BAPI-RECV-WINDOW": RECV,
+        "X-BAPI-SIGN": gatewaySig,
+      },
+      signed: true,
+    });
+    if (gatewayResult) return gatewayResult;
     let lastError: unknown = null;
     for (const base of BYBIT_BASE_URLS) {
       try {
@@ -138,6 +223,7 @@ export function createBybitConnector(
         lastError = e;
       }
     }
+    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
     throw lastError instanceof Error ? lastError : new Error("Bybit signed API unavailable");
   }
 
@@ -305,6 +391,9 @@ export function createBybitConnector(
         const skew = r.time ? r.time - Date.now() : null;
         return { ok: true, pingLatencyMs: latency, clockSkewMs: skew };
       } catch (e) {
+        if (isRegionBlocked(e)) {
+          return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: regionBlockedMessage("/v5/market/time") };
+        }
         return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: e instanceof Error ? e.message : String(e) };
       }
     },
