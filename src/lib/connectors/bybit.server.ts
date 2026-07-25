@@ -132,8 +132,12 @@ export function createBybitConnector(
 
   async function publicGet<T>(path: string, params?: Record<string, string>): Promise<T> {
     const qs = params ? new URLSearchParams(params).toString() : "";
-    const gatewayResult = await viaGateway<T>({ method: "GET", path, queryString: qs });
-    if (gatewayResult) return gatewayResult;
+    try {
+      const gatewayResult = await viaGateway<T>({ method: "GET", path, queryString: qs });
+      if (gatewayResult) return gatewayResult;
+    } catch (e) {
+      throw e instanceof Error ? e : new Error(String(e));
+    }
     let lastError: unknown = null;
     for (const base of BYBIT_BASE_URLS) {
       try {
@@ -301,8 +305,8 @@ export function createBybitConnector(
         // Some server regions can read signed wallet endpoints but not Bybit's
         // public ticker endpoint. Use the market-data facade fallback so this
         // public-data block does not stop a funded signed order path.
-        const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
-        const mid = await fetchLastPrice(symbol);
+        const { fallbackLastPrice } = await import("@/lib/marketdata/service.server");
+        const mid = await fallbackLastPrice(symbol);
         return { symbol, bid: mid * 0.999, ask: mid * 1.001, mid, ts: Date.now() };
       }
     },
@@ -391,6 +395,17 @@ export function createBybitConnector(
         const skew = r.time ? r.time - Date.now() : null;
         return { ok: true, pingLatencyMs: latency, clockSkewMs: skew };
       } catch (e) {
+        // Public time can be geo-blocked even when signed account endpoints are
+        // reachable through a configured regional gateway. Do not fail health on
+        // public-data reachability alone; prove the signed path instead.
+        if (hasKeys && isRegionBlocked(e)) {
+          try {
+            await signedGet<{ retCode: number; retMsg: string }>("/v5/account/wallet-balance", { accountType: "UNIFIED" });
+            return { ok: true, pingLatencyMs: Date.now() - t0, clockSkewMs: null };
+          } catch (signedError) {
+            return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: signedError instanceof Error ? signedError.message : String(signedError) };
+          }
+        }
         if (isRegionBlocked(e)) {
           return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: regionBlockedMessage("/v5/market/time") };
         }
