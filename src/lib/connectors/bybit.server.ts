@@ -265,27 +265,35 @@ export function createBybitConnector(
       const account = r.result?.list?.[0];
       const coins = account?.coin ?? [];
       const balances = coins.map(c => {
+        const currency = c.coin.toUpperCase();
         const wallet = numericCandidate(c.walletBalance) ?? 0;
         const equity = numericCandidate(c.equity) ?? wallet;
         const locked = numericCandidate(c.locked) ?? 0;
         const free = numericCandidate(c.free);
         const withdrawable = numericCandidate(c.availableToWithdraw);
-        const total = maxPositive(wallet, equity, c.usdValue && ["USD", "USDT", "USDC"].includes(c.coin.toUpperCase()) ? c.usdValue : null);
+        const total = maxPositive(wallet, equity, c.usdValue && ["USD", "USDT", "USDC"].includes(currency) ? c.usdValue : null);
         // Bybit often returns availableToWithdraw: "0" for Unified accounts even
         // when the coin is tradable. Do not let that zero mask wallet/free funds.
         const spendableFromWallet = Math.max(0, wallet - locked);
         const spendableFromEquity = Math.max(0, equity - locked);
         const available = maxPositive(withdrawable, free, spendableFromWallet, spendableFromEquity, total);
-        return { currency: c.coin, total, available };
+        return { currency, total, available };
       }).filter(b => b.total > 0 || b.available > 0);
-      const availableUsd = Number(account?.totalAvailableBalance || 0);
-      const walletUsd = Number(account?.totalWalletBalance || availableUsd || 0);
+      const availableUsd = numericCandidate(account?.totalAvailableBalance) ?? 0;
+      const walletUsd = numericCandidate(account?.totalWalletBalance) ?? availableUsd;
       const usdish = balances.find(b => b.currency === "USDT" || b.currency === "USD" || b.currency === "USDC");
-      if (availableUsd > 0 && usdish) {
-        usdish.available = Math.max(usdish.available, availableUsd);
-        usdish.total = Math.max(usdish.total, walletUsd, availableUsd);
-      } else if (availableUsd > 0 || walletUsd > 0) {
-        balances.push({ currency: "USDT", total: Math.max(walletUsd, availableUsd), available: availableUsd });
+      const stableAvailable = balances
+        .filter(b => b.currency === "USDT" || b.currency === "USD" || b.currency === "USDC")
+        .reduce((sum, b) => sum + Math.max(0, b.available), 0);
+      // Some Unified accounts expose account-level wallet value while per-coin
+      // available fields are zero/omitted. Treat that account-level value as
+      // tradable buying power for sizing; Bybit still performs final validation.
+      const unifiedAvailableUsd = availableUsd > 0 ? availableUsd : stableAvailable > 0 ? stableAvailable : walletUsd;
+      if (unifiedAvailableUsd > 0 && usdish) {
+        usdish.available = Math.max(usdish.available, unifiedAvailableUsd);
+        usdish.total = Math.max(usdish.total, walletUsd, unifiedAvailableUsd);
+      } else if (unifiedAvailableUsd > 0 || walletUsd > 0) {
+        balances.push({ currency: "USDT", total: Math.max(walletUsd, unifiedAvailableUsd), available: unifiedAvailableUsd });
       }
       return balances;
     },
