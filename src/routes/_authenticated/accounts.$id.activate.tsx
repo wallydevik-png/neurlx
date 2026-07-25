@@ -209,7 +209,7 @@ function Activate() {
             </label>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={doSaveGateway} disabled={savingGateway || gatewayUrl.trim() === ""}
+            <button onClick={() => { void doSaveGateway(); }} disabled={savingGateway || gatewayUrl.trim() === ""}
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed">
               {savingGateway ? "Saving…" : "Save gateway"}
             </button>
