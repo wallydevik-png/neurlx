@@ -91,10 +91,12 @@ const CRYPTO: BrokerDescriptor[] = [
     assetClasses: ["crypto_spot", "crypto_perp", "crypto_futures"],
     orderTypes: [...OT_STANDARD, "trailing_stop"],
     description: "Bybit Unified Trading Account via official REST API.",
-    authNote: "Create a system-generated API key with Read + Trade permissions. NeurlX rejects keys with Withdraw enabled.",
+    authNote: "Create a system-generated API key with Read + Trade permissions. NeurlX rejects keys with Withdraw enabled. If Bybit blocks the app server region, add a regional gateway URL hosted in a Bybit-allowed country such as Nigeria.",
     credentialFields: [
       { key: "apiKey", label: "API Key" },
       { key: "apiSecret", label: "API Secret", secret: true },
+      { key: "regionalGatewayUrl", label: "Bybit regional gateway URL", placeholder: "Optional — e.g. https://your-ng-gateway.example.com/bybit", optional: true, helper: "Use only when Bybit rejects Cloudflare/server IPs. The gateway must run from a Bybit-allowed region and forward signed Bybit REST requests." },
+      { key: "regionalGatewaySecret", label: "Gateway shared secret", secret: true, optional: true, helper: "Optional HMAC secret used to authenticate NeurlX to your regional gateway." },
     ],
     docsUrl: "https://bybit-exchange.github.io/docs/v5/intro",
   },
