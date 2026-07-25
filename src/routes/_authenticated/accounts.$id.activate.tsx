@@ -110,13 +110,13 @@ function Activate() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
   }
 
-  async function doSaveGateway() {
+  async function doSaveGateway(nextUrl = gatewayUrl, nextSecret = gatewaySecret) {
     setSavingGateway(true);
     try {
       const r = await gatewayFn({ data: {
         id,
-        regionalGatewayUrl: gatewayUrl.trim(),
-        regionalGatewaySecret: gatewaySecret,
+        regionalGatewayUrl: nextUrl.trim(),
+        regionalGatewaySecret: nextSecret,
       }});
       toast.success(r.gatewayConfigured ? "Bybit regional gateway saved" : "Bybit regional gateway cleared");
       setGatewayUrl("");
@@ -213,7 +213,7 @@ function Activate() {
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed">
               {savingGateway ? "Saving…" : "Save gateway"}
             </button>
-            <button onClick={() => { setGatewayUrl(""); setGatewaySecret(""); void doSaveGateway(); }} disabled={savingGateway}
+            <button onClick={() => { setGatewayUrl(""); setGatewaySecret(""); void doSaveGateway("", ""); }} disabled={savingGateway}
               className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-secondary disabled:opacity-50">
               Clear gateway
             </button>
