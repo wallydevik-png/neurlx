@@ -37,6 +37,7 @@ export const getDashboard = createServerFn({ method: "GET" })
 export const listConnections = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { decryptJSON } = await import("@/lib/crypto.server");
     const [{ data, error }, { data: settings }] = await Promise.all([
       context.supabase.from("exchange_connections").select("*")
         .eq("user_id", context.userId).order("created_at", { ascending: false }),
@@ -45,13 +46,29 @@ export const listConnections = createServerFn({ method: "GET" })
         .eq("user_id", context.userId).maybeSingle(),
     ]);
     if (error) throw error;
-    const rows = (data ?? []).map(c => ({
-      ...c,
-      autopilot_on:
-        settings?.mode === "autonomous"
-        && !!settings?.autonomous_live_enabled
-        && !settings?.kill_switch_active
-        && settings?.autonomous_default_connection_id === c.id,
+    const rows = await Promise.all((data ?? []).map(async (c) => {
+      const safe = { ...c };
+      delete (safe as { credential_ciphertext?: unknown }).credential_ciphertext;
+      let bybitGatewayConfigured = false;
+      if (c.connector_id === "bybit" && c.credential_ciphertext) {
+        try {
+          const creds = await decryptJSON<Record<string, string>>(c.credential_ciphertext);
+          bybitGatewayConfigured = Boolean(
+            creds.regionalGatewayUrl || creds.gatewayUrl || process.env.BYBIT_REGIONAL_GATEWAY_URL,
+          );
+        } catch {
+          bybitGatewayConfigured = false;
+        }
+      }
+      return {
+        ...safe,
+        bybit_gateway_configured: bybitGatewayConfigured,
+        autopilot_on:
+          settings?.mode === "autonomous"
+          && !!settings?.autonomous_live_enabled
+          && !settings?.kill_switch_active
+          && settings?.autonomous_default_connection_id === c.id,
+      };
     }));
     return rows;
   });
@@ -257,6 +274,59 @@ export const disconnectConnection = createServerFn({ method: "POST" })
       entity: "exchange_connections", entity_id: data.id, payload: {},
     });
     return { ok: true };
+  });
+
+const UpdateRegionalGatewaySchema = z.object({
+  id: z.string().uuid(),
+  regionalGatewayUrl: z.string().trim().max(300).default(""),
+  regionalGatewaySecret: z.string().max(300).optional(),
+}).refine(
+  d => d.regionalGatewayUrl === "" || d.regionalGatewayUrl.startsWith("https://"),
+  { path: ["regionalGatewayUrl"], message: "Gateway URL must start with https://" },
+);
+
+export const updateRegionalGateway = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => UpdateRegionalGatewaySchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: conn } = await context.supabase.from("exchange_connections")
+      .select("id,label,connector_id,credential_ciphertext")
+      .eq("id", data.id).eq("user_id", context.userId).maybeSingle();
+    if (!conn) throw new Error("Connection not found");
+    if (conn.connector_id !== "bybit") {
+      throw new Error("Regional gateway routing is only needed for Bybit connections.");
+    }
+    const { decryptJSON, encryptJSON } = await import("@/lib/crypto.server");
+    const creds = conn.credential_ciphertext
+      ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
+      : {};
+
+    if (data.regionalGatewayUrl) {
+      creds.regionalGatewayUrl = data.regionalGatewayUrl;
+      if (data.regionalGatewaySecret !== undefined && data.regionalGatewaySecret.trim() !== "") {
+        creds.regionalGatewaySecret = data.regionalGatewaySecret.trim();
+      }
+    } else {
+      delete creds.regionalGatewayUrl;
+      delete creds.gatewayUrl;
+      delete creds.regionalGatewaySecret;
+      delete creds.gatewaySecret;
+    }
+
+    const ciphertext = Object.keys(creds).length ? await encryptJSON(creds) : null;
+    await context.supabase.from("exchange_connections").update({
+      credential_ciphertext: ciphertext,
+      health: data.regionalGatewayUrl ? "warning" : "unknown",
+      last_sync_at: new Date().toISOString(),
+    }).eq("id", data.id).eq("user_id", context.userId);
+    await context.supabase.from("audit_log").insert({
+      user_id: context.userId,
+      action: data.regionalGatewayUrl ? "connection.gateway.update" : "connection.gateway.clear",
+      entity: "exchange_connections",
+      entity_id: data.id,
+      payload: { connectorId: conn.connector_id, label: conn.label, gatewayConfigured: Boolean(data.regionalGatewayUrl) },
+    });
+    return { ok: true, gatewayConfigured: Boolean(data.regionalGatewayUrl) };
   });
 
 export const setPermissions = createServerFn({ method: "POST" })
