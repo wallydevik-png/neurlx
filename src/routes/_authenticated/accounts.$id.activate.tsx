@@ -5,7 +5,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell, PageHeader } from "@/components/AppShell";
-import { listConnections, getSettings } from "@/lib/trading.functions";
+import { listConnections, getSettings, updateRegionalGateway } from "@/lib/trading.functions";
 import {
   scanConnectionPermissions, activateLiveTrading, deactivateLiveTrading,
   resetCircuitBreaker,
@@ -39,6 +39,7 @@ function Activate() {
   const activateFn = useServerFn(activateLiveTrading);
   const deactivateFn = useServerFn(deactivateLiveTrading);
   const resetCbFn = useServerFn(resetCircuitBreaker);
+  const gatewayFn = useServerFn(updateRegionalGateway);
 
   const { data: conns = [] } = useQuery({ queryKey: ["connections"], queryFn: () => listFn() });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => settingsFn() });
@@ -51,6 +52,9 @@ function Activate() {
   );
   const [scanning, setScanning] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [gatewayUrl, setGatewayUrl] = useState("");
+  const [gatewaySecret, setGatewaySecret] = useState("");
+  const [savingGateway, setSavingGateway] = useState(false);
 
   const cbOpen = settings?.live_kill_until && new Date(settings.live_kill_until) > new Date();
 
@@ -106,6 +110,22 @@ function Activate() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
   }
 
+  async function doSaveGateway() {
+    setSavingGateway(true);
+    try {
+      const r = await gatewayFn({ data: {
+        id,
+        regionalGatewayUrl: gatewayUrl.trim(),
+        regionalGatewaySecret: gatewaySecret,
+      }});
+      toast.success(r.gatewayConfigured ? "Bybit regional gateway saved" : "Bybit regional gateway cleared");
+      setGatewayUrl("");
+      setGatewaySecret("");
+      qc.invalidateQueries({ queryKey: ["connections"] });
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSavingGateway(false); }
+  }
+
   const canActivate = scan
     && scan.can_read
     && scan.can_trade
@@ -155,6 +175,50 @@ function Activate() {
             </button>
           </div>
         </div>
+      )}
+
+      {conn.connector_id === "bybit" && (
+        <Section n={0} title="Bybit regional routing">
+          <div className="rounded-md border border-warning/40 bg-warning/5 p-3 mb-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <div className="font-medium text-warning">Bybit is blocking this app server region</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add an HTTPS gateway hosted in a Bybit-allowed region such as Nigeria. This routes signed Bybit REST requests from that region so wallet checks and live orders do not fail as unavailable balance.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="text-sm">
+              <div className="text-[10px] uppercase font-mono text-muted-foreground mb-1">Gateway URL</div>
+              <input type="url" value={gatewayUrl} onChange={e => setGatewayUrl(e.target.value)}
+                placeholder="https://your-ng-gateway.example.com/bybit"
+                className="w-full px-3 py-2 rounded-md bg-input border border-border font-mono text-sm" />
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Current status: {(conn as { bybit_gateway_configured?: boolean }).bybit_gateway_configured ? "configured" : "not configured"}
+              </div>
+            </label>
+            <label className="text-sm">
+              <div className="text-[10px] uppercase font-mono text-muted-foreground mb-1">Gateway shared secret</div>
+              <input type="password" value={gatewaySecret} onChange={e => setGatewaySecret(e.target.value)}
+                placeholder="Optional — required if your gateway checks signatures"
+                className="w-full px-3 py-2 rounded-md bg-input border border-border font-mono text-sm" />
+              <div className="text-[11px] text-muted-foreground mt-1">Leave blank to keep the existing secret when changing only the URL.</div>
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={doSaveGateway} disabled={savingGateway || gatewayUrl.trim() === ""}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed">
+              {savingGateway ? "Saving…" : "Save gateway"}
+            </button>
+            <button onClick={() => { setGatewayUrl(""); setGatewaySecret(""); void doSaveGateway(); }} disabled={savingGateway}
+              className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-secondary disabled:opacity-50">
+              Clear gateway
+            </button>
+          </div>
+        </Section>
       )}
 
       {/* Step 1: permission scan */}
