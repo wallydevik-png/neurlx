@@ -21,6 +21,7 @@ const BYBIT_BASE_URLS = [
   // CloudFront country blocks from some server regions, even when the user's
   // own country is allowed.
   "https://api.bytick.com",
+  "https://api.byhkbit.com",
   "https://api.bybit.kz",
   "https://api.bybit-tr.com",
   "https://api.bybit.nl",
