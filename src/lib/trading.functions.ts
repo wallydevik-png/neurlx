@@ -67,6 +67,7 @@ export const listConnections = createServerFn({ method: "GET" })
           settings?.autonomous_default_connection_id === c.id
           && settings?.live_kill_until
           && new Date(settings.live_kill_until) > new Date()
+          && !(c.connector_id === "bybit" && bybitGatewayConfigured)
             ? settings.live_kill_reason
             : null,
         autopilot_on:
