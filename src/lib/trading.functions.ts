@@ -325,8 +325,15 @@ export const updateRegionalGateway = createServerFn({ method: "POST" })
     await context.supabase.from("exchange_connections").update({
       credential_ciphertext: ciphertext,
       health: data.regionalGatewayUrl ? "warning" : "unknown",
+      last_error: null,
       last_sync_at: new Date().toISOString(),
     }).eq("id", data.id).eq("user_id", context.userId);
+    if (data.regionalGatewayUrl) {
+      await context.supabase.from("automation_settings").update({
+        live_kill_until: null,
+        live_kill_reason: null,
+      }).eq("user_id", context.userId).eq("autonomous_default_connection_id", data.id);
+    }
     await context.supabase.from("audit_log").insert({
       user_id: context.userId,
       action: data.regionalGatewayUrl ? "connection.gateway.update" : "connection.gateway.clear",
