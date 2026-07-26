@@ -103,6 +103,8 @@ function Accounts() {
               overallOk: boolean; passed: number; failed: number; skipped: number;
               steps: Array<{ step: string; ok: boolean; ms: number; detail?: string }>;
             } | null;
+            const autopilotBlockedReason = (c as { autopilot_blocked_reason?: string | null }).autopilot_blocked_reason;
+            const bybitGatewayConfigured = (c as { bybit_gateway_configured?: boolean }).bybit_gateway_configured;
             return (
               <div key={c.id} className="panel p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -178,6 +180,21 @@ function Accounts() {
                       <div className="mt-2 flex items-start gap-1.5 text-xs text-warning">
                         <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                         <span>Last error: {(errs[0] as { message?: string })?.message ?? "unknown"}</span>
+                      </div>
+                    )}
+                    {autopilotBlockedReason && (
+                      <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Autopilot paused for this account</div>
+                          <div className="mt-1 text-destructive/90">{autopilotBlockedReason}</div>
+                          {c.connector_id === "bybit" && !bybitGatewayConfigured && (
+                            <Link to="/accounts/$id/activate" params={{ id: c.id }}
+                              className="mt-2 inline-flex text-primary underline underline-offset-4">
+                              Configure Bybit regional routing
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -260,12 +277,12 @@ function Accounts() {
                           </div>
                         </div>
                         <button
-                          disabled={!c.trading_enabled}
+                          disabled={!c.trading_enabled || !!autopilotBlockedReason}
                           onClick={() => toggleAutopilot(c.id, !c.autopilot_on)}
-                          title={!c.trading_enabled ? "Enable Trading permission first" : ""}
+                          title={!c.trading_enabled ? "Enable Trading permission first" : autopilotBlockedReason ?? ""}
                           className={`w-12 h-7 rounded-full transition relative shrink-0 ${
                             c.autopilot_on ? "bg-primary" : "bg-muted"
-                          } ${!c.trading_enabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                          } ${!c.trading_enabled || !!autopilotBlockedReason ? "opacity-40 cursor-not-allowed" : ""}`}
                         >
                           <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-background transition ${c.autopilot_on ? "left-[22px]" : "left-0.5"}`} />
                         </button>

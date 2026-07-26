@@ -23,13 +23,22 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: users, error } = await supabaseAdmin.from("automation_settings")
-          .select("user_id")
+          .select("user_id,live_kill_until,live_kill_reason")
           .eq("mode", "autonomous")
           .eq("kill_switch_active", false);
         if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
         const results: Array<{ userId: string; executed: number; rejected: number; skipped?: string }> = [];
         for (const u of users ?? []) {
+          if (u.live_kill_until && new Date(u.live_kill_until) > new Date()) {
+            results.push({
+              userId: u.user_id,
+              executed: 0,
+              rejected: 0,
+              skipped: `circuit_breaker_open:${u.live_kill_reason ?? "open"}`,
+            });
+            continue;
+          }
           try {
             const r = await runAutonomousCycleFor(supabaseAdmin, u.user_id, "cron");
             results.push({
