@@ -51,6 +51,31 @@ function isRegionalConnectivityError(error: unknown): boolean {
     || message.includes("403");
 }
 
+const BYBIT_REGION_BLOCKED_REASON = "Bybit region block — live autopilot paused because Bybit is rejecting the hosted app server IP. Configure a Bybit regional gateway from an allowed country or switch this account to another live venue.";
+
+async function markConnectionRegionBlocked(
+  supabase: SupabaseClient,
+  connectionId: string,
+  userId: string,
+  detail: string,
+) {
+  const { data: conn } = await supabase.from("exchange_connections")
+    .select("error_history")
+    .eq("id", connectionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const priorErrors = Array.isArray(conn?.error_history) ? conn.error_history : [];
+  await supabase.from("exchange_connections").update({
+    health: "danger",
+    last_error: BYBIT_REGION_BLOCKED_REASON,
+    error_history: [
+      { at: new Date().toISOString(), message: BYBIT_REGION_BLOCKED_REASON, detail },
+      ...priorErrors,
+    ].slice(0, 10),
+    last_sync_at: new Date().toISOString(),
+  }).eq("id", connectionId).eq("user_id", userId);
+}
+
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
@@ -212,9 +237,24 @@ export async function runAutonomousCycleFor(
   }
   const live = liveConn !== null;
   if (live && liveWalletUnavailableReason) {
-    const reason = isRegionalConnectivityError(liveWalletUnavailableReason)
-      ? "live_wallet_region_blocked: configure a Bybit regional gateway hosted from an allowed country such as Nigeria before live orders can be submitted"
+    const isRegionBlocked = isRegionalConnectivityError(liveWalletUnavailableReason);
+    const reason = isRegionBlocked
+      ? `live_wallet_region_blocked: ${BYBIT_REGION_BLOCKED_REASON}`
       : `live_wallet_unavailable:${liveWalletUnavailableReason}`;
+    if (isRegionBlocked && liveConn) {
+      await markConnectionRegionBlocked(supabase, liveConn.id, userId, liveWalletUnavailableReason);
+      await supabase.from("automation_settings").update({
+        live_kill_until: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+        live_kill_reason: BYBIT_REGION_BLOCKED_REASON,
+      }).eq("user_id", userId);
+      await supabase.from("execution_log").insert({
+        user_id: userId,
+        event: "autonomous.region_blocked",
+        severity: "critical",
+        message: BYBIT_REGION_BLOCKED_REASON,
+        payload: { connectionId: liveConn.id, detail: liveWalletUnavailableReason },
+      });
+    }
     return finish(reason, true);
   }
 

@@ -21,6 +21,7 @@ const BYBIT_BASE_URLS = [
   // CloudFront country blocks from some server regions, even when the user's
   // own country is allowed.
   "https://api.bytick.com",
+  "https://api.byhkbit.com",
   "https://api.bybit.kz",
   "https://api.bybit-tr.com",
   "https://api.bybit.nl",
@@ -64,7 +65,7 @@ function isRegionBlocked(error: unknown): boolean {
 }
 
 function regionBlockedMessage(path: string): string {
-  return `Bybit is rejecting this app server region for ${path}. Configure a Bybit regional gateway from an allowed country (for example Nigeria) so orders and wallet checks do not route through a blocked Cloudflare IP.`;
+  return `Bybit is rejecting this app server region for ${path}. Bybit blocks API requests from some Cloudflare/server IP regions, so this connection cannot trade from the hosted app until a Bybit regional gateway is configured from an allowed country or another live venue is used.`;
 }
 
 export function createBybitConnector(

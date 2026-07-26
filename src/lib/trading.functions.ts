@@ -42,7 +42,7 @@ export const listConnections = createServerFn({ method: "GET" })
       context.supabase.from("exchange_connections").select("*")
         .eq("user_id", context.userId).order("created_at", { ascending: false }),
       context.supabase.from("automation_settings")
-        .select("mode,autonomous_live_enabled,autonomous_default_connection_id,autonomous_last_run_at,kill_switch_active,live_kill_reason")
+        .select("mode,autonomous_live_enabled,autonomous_default_connection_id,autonomous_last_run_at,kill_switch_active,live_kill_reason,live_kill_until")
         .eq("user_id", context.userId).maybeSingle(),
     ]);
     if (error) throw error;
@@ -63,10 +63,18 @@ export const listConnections = createServerFn({ method: "GET" })
       return {
         ...safe,
         bybit_gateway_configured: bybitGatewayConfigured,
+        autopilot_blocked_reason:
+          settings?.autonomous_default_connection_id === c.id
+          && settings?.live_kill_until
+          && new Date(settings.live_kill_until) > new Date()
+          && !(c.connector_id === "bybit" && bybitGatewayConfigured)
+            ? settings.live_kill_reason
+            : null,
         autopilot_on:
           settings?.mode === "autonomous"
           && !!settings?.autonomous_live_enabled
           && !settings?.kill_switch_active
+          && (!settings?.live_kill_until || new Date(settings.live_kill_until) <= new Date())
           && settings?.autonomous_default_connection_id === c.id,
       };
     }));
@@ -317,8 +325,15 @@ export const updateRegionalGateway = createServerFn({ method: "POST" })
     await context.supabase.from("exchange_connections").update({
       credential_ciphertext: ciphertext,
       health: data.regionalGatewayUrl ? "warning" : "unknown",
+      last_error: null,
       last_sync_at: new Date().toISOString(),
     }).eq("id", data.id).eq("user_id", context.userId);
+    if (data.regionalGatewayUrl) {
+      await context.supabase.from("automation_settings").update({
+        live_kill_until: null,
+        live_kill_reason: null,
+      }).eq("user_id", context.userId).eq("autonomous_default_connection_id", data.id);
+    }
     await context.supabase.from("audit_log").insert({
       user_id: context.userId,
       action: data.regionalGatewayUrl ? "connection.gateway.update" : "connection.gateway.clear",
@@ -441,11 +456,51 @@ export const enableFullAutopilot = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: conn } = await supabase.from("exchange_connections")
-      .select("id,status,trading_enabled,connector_id,label")
+      .select("id,status,trading_enabled,connector_id,label,credential_ciphertext,error_history")
       .eq("id", data.connectionId).eq("user_id", userId).maybeSingle();
     if (!conn) throw new Error("Connection not found.");
     if (conn.status !== "connected") throw new Error("Connect this account first.");
     if (!conn.trading_enabled) throw new Error("Enable Trading permission on this account first.");
+
+    if (conn.connector_id === "bybit") {
+      const { decryptJSON } = await import("@/lib/crypto.server");
+      const { createConnector } = await import("@/lib/connectors/factory.server");
+      const creds = conn.credential_ciphertext
+        ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
+        : {};
+      const hasGateway = Boolean(creds.regionalGatewayUrl || creds.gatewayUrl || process.env.BYBIT_REGIONAL_GATEWAY_URL);
+      if (!hasGateway) {
+        try {
+          const connector = createConnector(conn.connector_id, creds, { supabase, userId, connectionId: conn.id });
+          await connector.getBalances();
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          const lower = message.toLowerCase();
+          const regionBlocked = lower.includes("cloudfront")
+            || lower.includes("block access from your country")
+            || lower.includes("server region")
+            || lower.includes("u.s ip")
+            || lower.includes("us ip")
+            || lower.includes("403");
+          if (regionBlocked) {
+            const blockedReason = "Bybit is blocking the hosted app server IP, so Full Autopilot cannot place real Bybit orders from Cloudflare yet. Configure Bybit regional routing or use another live venue.";
+            const priorErrors = Array.isArray(conn.error_history) ? conn.error_history : [];
+            await supabase.from("exchange_connections").update({
+              health: "danger",
+              last_error: blockedReason,
+              error_history: [{ at: new Date().toISOString(), message: blockedReason, detail: message }, ...priorErrors].slice(0, 10),
+              last_sync_at: new Date().toISOString(),
+            }).eq("id", conn.id).eq("user_id", userId);
+            await supabase.from("automation_settings").update({
+              live_kill_until: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+              live_kill_reason: blockedReason,
+            }).eq("user_id", userId);
+            throw new Error(blockedReason);
+          }
+          throw e;
+        }
+      }
+    }
 
     // Auto-ack disclaimer on autopilot enable (user is explicitly opting in).
     await supabase.from("profiles")
@@ -460,6 +515,7 @@ export const enableFullAutopilot = createServerFn({ method: "POST" })
       autonomous_last_run_at: null,
       autonomous_consecutive_losses: 0,
       live_kill_reason: null,
+      live_kill_until: null,
     }).eq("user_id", userId);
     if (error) throw error;
 
@@ -864,12 +920,20 @@ export const scanConnectionHealth = createServerFn({ method: "POST" })
     const nextErrors = ok
       ? priorErrors
       : [{ at: new Date().toISOString(), message }, ...priorErrors].slice(0, 10);
+    const lowerMessage = message.toLowerCase();
+    const regionBlocked = lowerMessage.includes("cloudfront")
+      || lowerMessage.includes("block access from your country")
+      || lowerMessage.includes("server region")
+      || lowerMessage.includes("u.s ip")
+      || lowerMessage.includes("us ip")
+      || lowerMessage.includes("403");
 
     await context.supabase.from("exchange_connections").update({
       latency_ms: latency,
       permissions_snapshot: { ...(conn.permissions_snapshot as Record<string, unknown> ?? {}), live: permissions } as never,
       error_history: nextErrors,
-      health: ok ? "healthy" : "warning",
+      last_error: ok ? null : message,
+      health: ok ? "healthy" : regionBlocked ? "danger" : "warning",
       last_sync_at: new Date().toISOString(),
     }).eq("id", conn.id);
 
