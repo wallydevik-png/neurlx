@@ -221,6 +221,14 @@ export async function updateGatewayHealthRecord(input: {
     last_sync_at: new Date().toISOString(),
   };
   const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-  const db = input.supabase as unknown as { from: (table: string) => { update: (values: Record<string, unknown>) => { eq: (column: string, value: string) => { eq: (column: string, value: string) => Promise<unknown> } } } } };
+  const db = input.supabase as unknown as {
+    from: (table: string) => {
+      update: (values: Record<string, unknown>) => {
+        eq: (column: string, value: string) => {
+          eq: (column: string, value: string) => Promise<unknown>;
+        };
+      };
+    };
+  };
   await db.from("exchange_connections").update(sanitized).eq("id", input.connectionId).eq("user_id", input.userId);
 }
