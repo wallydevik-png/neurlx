@@ -221,6 +221,10 @@ export async function runAutonomousCycleFor(
           ? await decryptJSON<Record<string, string>>(c.credential_ciphertext)
           : {};
         const connector = createConnector(c.connector_id, creds, { supabase, userId, connectionId: c.id });
+        if (connector.checkHealth) {
+          const health = await connector.checkHealth();
+          if (!health.ok) throw new Error(health.message || "Regional trading gateway health check failed");
+        }
         const balances = await connector.getBalances();
         liveStableUsd = balances
           .filter(b => ["USD", "USDT", "USDC"].includes(b.currency.toUpperCase()))

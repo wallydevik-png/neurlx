@@ -14,11 +14,8 @@ export interface BybitGatewayEnvelope {
   method: "GET" | "POST";
   path: string;
   queryString?: string;
+  headers?: Record<string, string>;
   body?: string;
-  auth?: {
-    apiKey: string;
-    apiSecret: string;
-  };
 }
 
 export interface BybitGatewayCallMeta {
@@ -203,21 +200,9 @@ export async function updateGatewayHealthRecord(input: {
 }) {
   if (!input.supabase || !input.userId || !input.connectionId) return;
   const patch = {
-    gateway_status: {
-      status: input.status,
-      region: input.region ?? null,
-      url: input.url ?? null,
-      latencyMs: input.latencyMs ?? null,
-      message: input.message ?? null,
-      checkedAt: new Date().toISOString(),
-    },
-    gateway_last_health_at: new Date().toISOString(),
-    gateway_current_url: input.url ?? null,
-    gateway_region: input.region ?? null,
-    gateway_last_region_switch_at: input.switched ? new Date().toISOString() : undefined,
     latency_ms: input.latencyMs ?? null,
     health: input.status === "ONLINE" ? "healthy" : input.status === "BLOCKED" ? "danger" : "warning",
-    last_error: input.status === "ONLINE" ? null : input.message ?? input.status,
+    last_error: input.status === "ONLINE" ? null : input.message ?? `Gateway ${input.status}${input.region ? ` (${input.region})` : ""}`,
     last_sync_at: new Date().toISOString(),
   };
   const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
