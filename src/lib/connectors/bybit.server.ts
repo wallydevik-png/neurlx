@@ -12,6 +12,15 @@ import type {
 } from "./types";
 import { hmacSha256Hex } from "./signing.server";
 import { doRequest } from "./rest.server";
+import {
+  bybitGatewayRequiredMessage,
+  callBybitGateway,
+  getBybitGatewayTargets,
+  isAuthenticatedBybitPath,
+  isRegionBlockedMessage,
+  regionBlockedMessage,
+  updateGatewayHealthRecord,
+} from "./bybitGateway.server";
 
 // Rotate through Bybit's official API hosts. Some edge regions receive a
 // CloudFront 403 from the primary host, which was stopping live autopilot
@@ -55,38 +64,15 @@ function maxPositive(...values: Array<string | number | undefined | null>): numb
   return nums.length ? Math.max(...nums) : 0;
 }
 
-function isRegionBlocked(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return msg.includes("cloudfront")
-    || msg.includes("block access from your country")
-    || msg.includes("u.s ip")
-    || msg.includes("us ip")
-    || msg.includes("403");
-}
-
-function regionBlockedMessage(path: string): string {
-  return `Bybit is rejecting this app server region for ${path}. Bybit blocks API requests from some Cloudflare/server IP regions, so this connection cannot trade from the hosted app until a Bybit regional gateway is configured from an allowed country or another live venue is used.`;
-}
-
 export function createBybitConnector(
   credentials: Record<string, string>,
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null; orderId?: string | null } = {},
 ): TradingConnector {
   const apiKey = credentials.apiKey ?? "";
   const apiSecret = credentials.apiSecret ?? "";
-  const configuredGatewayUrl = credentials.regionalGatewayUrl || credentials.gatewayUrl || "";
-  const configuredGatewaySecret = credentials.regionalGatewaySecret || credentials.gatewaySecret || "";
+  const gatewayTargets = getBybitGatewayTargets(credentials);
   const hasKeys = Boolean(apiKey && apiSecret);
   const logCtx = { ...ctx, venue: "bybit" };
-
-  function gatewayConfig() {
-    const url = configuredGatewayUrl || process.env.BYBIT_REGIONAL_GATEWAY_URL || "";
-    if (!url) return null;
-    return {
-      url,
-      secret: configuredGatewaySecret || process.env.BYBIT_REGIONAL_GATEWAY_SECRET || "",
-    };
-  }
 
   async function viaGateway<T>(input: {
     method: "GET" | "POST";
@@ -96,33 +82,40 @@ export function createBybitConnector(
     body?: string;
     signed?: boolean;
   }): Promise<T | null> {
-    const gateway = gatewayConfig();
-    if (!gateway) return null;
-    const payload = JSON.stringify({
-      method: input.method,
-      path: input.path,
-      queryString: input.queryString ?? "",
-      headers: input.headers ?? {},
-      body: input.body ?? "",
-    });
-    const gatewayHeaders: Record<string, string> = { "Content-Type": "application/json" };
-    if (gateway.secret) {
-      gatewayHeaders["X-NeurlX-Signature"] = await hmacSha256Hex(gateway.secret, payload);
+    if (gatewayTargets.length === 0) return null;
+    try {
+      const result = await callBybitGateway<T>({
+        targets: gatewayTargets,
+        envelope: {
+          method: input.method,
+          path: input.path,
+          queryString: input.queryString ?? "",
+          headers: input.headers ?? {},
+          body: input.body ?? "",
+        },
+        log: { ...ctx, signed: input.signed },
+      });
+      await updateGatewayHealthRecord({
+        supabase: ctx.supabase,
+        userId: ctx.userId,
+        connectionId: ctx.connectionId,
+        status: "ONLINE",
+        region: result.meta.target.region,
+        url: result.meta.target.url,
+        latencyMs: result.meta.latencyMs,
+        switched: result.meta.switched,
+      });
+      return ensureBybitOk(result.data as T & { retCode?: number; retMsg?: string }, input.path) as T;
+    } catch (error) {
+      await updateGatewayHealthRecord({
+        supabase: ctx.supabase,
+        userId: ctx.userId,
+        connectionId: ctx.connectionId,
+        status: isRegionBlockedMessage(error) ? "BLOCKED" : "OFFLINE",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-    const response = await doRequest<unknown>({
-      ctx: logCtx,
-      method: "POST",
-      path: `gateway:${input.path}`,
-      url: gateway.url,
-      headers: gatewayHeaders,
-      body: payload,
-      params: { gateway: true, method: input.method, path: input.path, signed: input.signed ?? false },
-      signed: input.signed,
-    });
-    const maybeWrapped = response as { status?: number; body?: unknown; data?: unknown };
-    const body = maybeWrapped.body ?? maybeWrapped.data ?? response;
-    const parsed = typeof body === "string" ? JSON.parse(body || "{}") : body;
-    return ensureBybitOk(parsed as T & { retCode?: number; retMsg?: string }, input.path) as T;
   }
 
   async function sign(payload: string): Promise<{ ts: string; sig: string }> {
@@ -133,12 +126,6 @@ export function createBybitConnector(
 
   async function publicGet<T>(path: string, params?: Record<string, string>): Promise<T> {
     const qs = params ? new URLSearchParams(params).toString() : "";
-    try {
-      const gatewayResult = await viaGateway<T>({ method: "GET", path, queryString: qs });
-      if (gatewayResult) return gatewayResult;
-    } catch (e) {
-      throw e instanceof Error ? e : new Error(String(e));
-    }
     let lastError: unknown = null;
     for (const base of BYBIT_BASE_URLS) {
       try {
@@ -151,12 +138,19 @@ export function createBybitConnector(
         lastError = e;
       }
     }
-    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
+    if (isRegionBlockedMessage(lastError)) {
+      const gatewayResult = await viaGateway<T>({ method: "GET", path, queryString: qs });
+      if (gatewayResult) return gatewayResult;
+      throw new Error(regionBlockedMessage(path));
+    }
     throw lastError instanceof Error ? lastError : new Error("Bybit public API unavailable");
   }
 
   async function signedGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     if (!hasKeys) throw new Error("Bybit API keys required for signed endpoints");
+    if (isAuthenticatedBybitPath(path) && gatewayTargets.length === 0) {
+      throw new Error(bybitGatewayRequiredMessage(path));
+    }
     const qs = new URLSearchParams(params).toString();
     const { ts: gatewayTs, sig: gatewaySig } = await sign(qs);
     const gatewayResult = await viaGateway<T>({
@@ -172,29 +166,14 @@ export function createBybitConnector(
       signed: true,
     });
     if (gatewayResult) return gatewayResult;
-    let lastError: unknown = null;
-    for (const base of BYBIT_BASE_URLS) {
-      try {
-        const { ts, sig } = await sign(qs);
-        return ensureBybitOk(await doRequest<T & { retCode?: number; retMsg?: string }>({
-          ctx: logCtx, method: "GET", path,
-          url: `${base}${path}${qs ? "?" + qs : ""}`,
-          headers: {
-            "X-BAPI-API-KEY": apiKey, "X-BAPI-TIMESTAMP": ts,
-            "X-BAPI-RECV-WINDOW": RECV, "X-BAPI-SIGN": sig,
-          },
-          params, signed: true,
-        }), path) as T;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
-    throw lastError instanceof Error ? lastError : new Error("Bybit signed API unavailable");
+    throw new Error(bybitGatewayRequiredMessage(path));
   }
 
   async function signedPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
     if (!hasKeys) throw new Error("Bybit API keys required for signed endpoints");
+    if (isAuthenticatedBybitPath(path) && gatewayTargets.length === 0) {
+      throw new Error(bybitGatewayRequiredMessage(path));
+    }
     const raw = JSON.stringify(body);
     const { ts: gatewayTs, sig: gatewaySig } = await sign(raw);
     const gatewayResult = await viaGateway<T>({
@@ -211,25 +190,7 @@ export function createBybitConnector(
       signed: true,
     });
     if (gatewayResult) return gatewayResult;
-    let lastError: unknown = null;
-    for (const base of BYBIT_BASE_URLS) {
-      try {
-        const { ts, sig } = await sign(raw);
-        return ensureBybitOk(await doRequest<T & { retCode?: number; retMsg?: string }>({
-          ctx: logCtx, method: "POST", path, url: `${base}${path}`,
-          headers: {
-            "Content-Type": "application/json",
-            "X-BAPI-API-KEY": apiKey, "X-BAPI-TIMESTAMP": ts,
-            "X-BAPI-RECV-WINDOW": RECV, "X-BAPI-SIGN": sig,
-          },
-          body: raw, params: body, signed: true,
-        }), path) as T;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (isRegionBlocked(lastError)) throw new Error(regionBlockedMessage(path));
-    throw lastError instanceof Error ? lastError : new Error("Bybit signed API unavailable");
+    throw new Error(bybitGatewayRequiredMessage(path));
   }
 
   return {
@@ -310,7 +271,7 @@ export function createBybitConnector(
         const bid = Number(t.bid1Price), ask = Number(t.ask1Price);
         return { symbol, bid, ask, mid: (bid + ask) / 2 || Number(t.lastPrice), ts: Date.now() };
       } catch (e) {
-        if (!isRegionBlocked(e)) throw e;
+        if (!isRegionBlockedMessage(e)) throw e;
         // Some server regions can read signed wallet endpoints but not Bybit's
         // public ticker endpoint. Use the market-data facade fallback so this
         // public-data block does not stop a funded signed order path.
@@ -391,7 +352,7 @@ export function createBybitConnector(
           minNotional: Number(info.lotSizeFilter?.minOrderAmt || 0),
         };
       } catch (e) {
-        if (!isRegionBlocked(e)) throw e;
+        if (!isRegionBlockedMessage(e)) throw e;
         return { minQty: 0.000001, stepSize: 0.000001, tickSize: 0.000001, minNotional: 5 };
       }
     },
@@ -399,6 +360,13 @@ export function createBybitConnector(
     async checkHealth(): Promise<ConnectionHealth> {
       const t0 = Date.now();
       try {
+        if (hasKeys && gatewayTargets.length > 0) {
+          await signedGet<{ retCode: number; retMsg: string }>("/v5/account/wallet-balance", { accountType: "UNIFIED" });
+          return { ok: true, pingLatencyMs: Date.now() - t0, clockSkewMs: null, message: "Regional gateway signed path online" };
+        }
+        if (hasKeys) {
+          return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: bybitGatewayRequiredMessage("/v5/account/wallet-balance") };
+        }
         const r = await publicGet<{ time: number }>("/v5/market/time");
         const latency = Date.now() - t0;
         const skew = r.time ? r.time - Date.now() : null;
@@ -407,7 +375,7 @@ export function createBybitConnector(
         // Public time can be geo-blocked even when signed account endpoints are
         // reachable through a configured regional gateway. Do not fail health on
         // public-data reachability alone; prove the signed path instead.
-        if (hasKeys && isRegionBlocked(e)) {
+        if (hasKeys && isRegionBlockedMessage(e)) {
           try {
             await signedGet<{ retCode: number; retMsg: string }>("/v5/account/wallet-balance", { accountType: "UNIFIED" });
             return { ok: true, pingLatencyMs: Date.now() - t0, clockSkewMs: null };
@@ -415,7 +383,7 @@ export function createBybitConnector(
             return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: signedError instanceof Error ? signedError.message : String(signedError) };
           }
         }
-        if (isRegionBlocked(e)) {
+        if (isRegionBlockedMessage(e)) {
           return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: regionBlockedMessage("/v5/market/time") };
         }
         return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: e instanceof Error ? e.message : String(e) };
