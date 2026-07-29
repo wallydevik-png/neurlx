@@ -6,10 +6,15 @@
 // Pepperstone, FP Markets, XM, MT5, MT4) uses this exact connector. The
 // broker is only cosmetic — the transport is one universal bridge.
 //
-// Credentials required from the user:
-//   metaApiToken   — MetaApi provisioning token (bearer)
-//   accountId      — MetaApi account ID for the linked MT5/MT4 login
-//   region         — us-east-1 | london | new-york | singapore (optional)
+// Credential shapes accepted (in priority order):
+//   1. Bring-your-own: { metaApiToken, accountId, region? }
+//   2. Native MT (auto-provisioned): { login, password, server, region? }
+//      + workspace env METAAPI_TOKEN
+//
+// When shape #2 is used and no accountId exists yet, the connector calls
+// MetaApi's provisioning API to create + deploy the account, then persists
+// the returned accountId back into the encrypted credential blob so future
+// calls skip provisioning.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
@@ -18,13 +23,68 @@ import type {
 } from "./types";
 import { doRequest } from "./rest.server";
 
-function baseFor(region: string): string {
+const PROVISIONING_BASE = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
+function clientBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-client-api-v1.${r}.agiliumtrade.ai`;
 }
 function toMt(symbol: string): string {
-  // NeurlX "EUR-USD" → MT "EURUSD"; leave "XAUUSD" etc. alone.
   return symbol.toUpperCase().replace("-", "");
+}
+function isMt4(brokerId: string): boolean {
+  return brokerId === "mt4";
+}
+
+async function persistCredentials(
+  ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
+  updated: Record<string, string>,
+): Promise<void> {
+  if (!ctx.supabase || !ctx.connectionId || !ctx.userId) return;
+  try {
+    const { encryptJSON } = await import("@/lib/crypto.server");
+    const ciphertext = await encryptJSON(updated);
+    await ctx.supabase.from("exchange_connections")
+      .update({ credential_ciphertext: ciphertext, last_sync_at: new Date().toISOString() })
+      .eq("id", ctx.connectionId).eq("user_id", ctx.userId);
+  } catch {
+    // Non-fatal — provisioning still succeeded, next call will re-provision.
+  }
+}
+
+async function provisionAccount(params: {
+  token: string; brokerId: string; login: string; password: string;
+  server: string; region: string; name: string;
+}): Promise<string> {
+  const platform = isMt4(params.brokerId) ? "mt4" : "mt5";
+  const res = await fetch(`${PROVISIONING_BASE}/users/current/accounts`, {
+    method: "POST",
+    headers: { "auth-token": params.token, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: params.name.slice(0, 60),
+      type: "cloud-g2",
+      login: params.login,
+      password: params.password,
+      server: params.server,
+      platform,
+      magic: 0,
+      application: "MetaApi",
+      region: params.region,
+      keywords: ["NeurlX"],
+      reliability: "high",
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`MetaApi provisioning failed (${res.status}): ${text.slice(0, 240)}`);
+  }
+  let parsed: { id?: string };
+  try { parsed = JSON.parse(text); } catch { throw new Error("MetaApi provisioning returned non-JSON"); }
+  if (!parsed.id) throw new Error("MetaApi provisioning did not return an account id");
+  // Best-effort deploy — safe to retry, idempotent server-side.
+  await fetch(`${PROVISIONING_BASE}/users/current/accounts/${parsed.id}/deploy`, {
+    method: "POST", headers: { "auth-token": params.token },
+  }).catch(() => undefined);
+  return parsed.id;
 }
 
 export function createMt5Connector(
@@ -32,48 +92,96 @@ export function createMt5Connector(
   credentials: Record<string, string>,
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null; orderId?: string | null } = {},
 ): TradingConnector {
-  const token = credentials.metaApiToken ?? credentials.accessToken ?? "";
-  const accountId = credentials.accountId ?? credentials.mtAccountId ?? "";
-  const region = credentials.region ?? "new-york";
-  const hasCreds = Boolean(token && accountId);
-  const base = baseFor(region);
+  const state = {
+    token: credentials.metaApiToken ?? credentials.accessToken ?? process.env.METAAPI_TOKEN ?? "",
+    accountId: credentials.accountId ?? credentials.mtAccountId ?? "",
+    region: credentials.region ?? "new-york",
+    login: credentials.login ?? credentials.accountNumber ?? "",
+    password: credentials.password ?? "",
+    server: credentials.server ?? credentials.brokerServer ?? "",
+  };
   const logCtx = { ...ctx, venue: `mt5:${brokerId}` };
-  const headers = () => ({ "auth-token": token, "Content-Type": "application/json" });
+  const label = brokerId === "mt5" || brokerId === "mt4"
+    ? "MetaTrader" : `${brokerId.toUpperCase()} · MetaTrader 5`;
+  const canProvision = () => Boolean(state.token && state.login && state.password && state.server);
+  const isReady = () => Boolean(state.token && state.accountId);
+
+  async function ensureReady(): Promise<void> {
+    if (isReady()) return;
+    if (!state.token) {
+      throw new Error(
+        "MetaApi bridge unavailable — set the METAAPI_TOKEN workspace secret (or provide a per-connection metaApiToken) so NeurlX can reach your MT account.",
+      );
+    }
+    if (state.accountId) return;
+    if (!canProvision()) {
+      throw new Error(
+        "Missing MT credentials — provide login, password, and server (or an existing MetaApi accountId).",
+      );
+    }
+    state.accountId = await provisionAccount({
+      token: state.token, brokerId,
+      login: state.login, password: state.password,
+      server: state.server, region: state.region,
+      name: `NeurlX ${brokerId.toUpperCase()} ${state.login}`,
+    });
+    await persistCredentials(ctx, {
+      ...credentials,
+      metaApiToken: credentials.metaApiToken ?? "", // keep BYO field if user supplied
+      accountId: state.accountId,
+      region: state.region,
+      login: state.login,
+      password: state.password,
+      server: state.server,
+    });
+  }
 
   async function req<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+    await ensureReady();
+    const base = clientBaseFor(state.region);
     return doRequest<T>({
       ctx: logCtx, method, path, url: `${base}${path}`,
-      headers: headers(),
+      headers: { "auth-token": state.token, "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
       params: body as Record<string, unknown> | undefined, signed: true,
     });
   }
 
-  const label = brokerId === "mt5" || brokerId === "mt4"
-    ? "MetaTrader" : `${brokerId.toUpperCase()} · MetaTrader 5`;
-
   return {
-    id: brokerId, displayName: label, supportsRealExecution: hasCreds,
+    id: brokerId, displayName: label,
+    supportsRealExecution: canProvision() || isReady(),
 
     async verify() {
       try {
-        if (!hasCreds) return { ok: false, message: "MetaApi token + account ID required" };
-        const r = await req<{ balance: number; currency: string }>("GET", `/users/current/accounts/${accountId}/accountInformation`);
+        await ensureReady();
+        const r = await req<{ balance: number; currency: string }>(
+          "GET", `/users/current/accounts/${state.accountId}/accountInformation`,
+        );
         return { ok: Number.isFinite(r.balance), message: `${r.currency} ${r.balance}` };
-      } catch (e) { return { ok: false, message: e instanceof Error ? e.message : String(e) }; }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // MetaApi returns 404 for a few seconds while the terminal boots.
+        if (/not found|not deployed|initializing|not connected/i.test(msg)) {
+          return { ok: true, message: "MT account provisioning — first sync may take up to 5 minutes." };
+        }
+        return { ok: false, message: msg };
+      }
     },
 
     async getBalances(): Promise<Balance[]> {
-      if (!hasCreds) return [];
-      const r = await req<{ balance: number; equity: number; currency: string; freeMargin: number }>(
-        "GET", `/users/current/accounts/${accountId}/accountInformation`,
-      );
-      return [{ currency: r.currency, total: r.equity, available: r.freeMargin }];
+      try {
+        const r = await req<{ balance: number; equity: number; currency: string; freeMargin: number }>(
+          "GET", `/users/current/accounts/${state.accountId}/accountInformation`,
+        );
+        return [{ currency: r.currency, total: r.equity, available: r.freeMargin }];
+      } catch { return []; }
     },
 
     async getQuote(symbol: string): Promise<Quote> {
       const s = toMt(symbol);
-      const r = await req<{ bid: number; ask: number }>("GET", `/users/current/accounts/${accountId}/symbols/${s}/current-price`);
+      const r = await req<{ bid: number; ask: number }>(
+        "GET", `/users/current/accounts/${state.accountId}/symbols/${s}/current-price`,
+      );
       return { symbol, bid: r.bid, ask: r.ask, mid: (r.bid + r.ask) / 2, ts: Date.now() };
     },
 
@@ -87,13 +195,14 @@ export function createMt5Connector(
         symbol: toMt(input.symbol),
         volume: input.qty,
         ...(input.limitPrice ? { openPrice: input.limitPrice } : {}),
-        ...(input.clientOrderId ? { clientId: input.clientOrderId } : {}),
+        ...(input.stopPrice ? { stopLoss: input.stopPrice } : {}),
+        ...(input.clientOrderId ? { clientId: input.clientOrderId.slice(0, 32) } : {}),
       };
-      const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string }>(
-        "POST", `/users/current/accounts/${accountId}/trade`, { trade: body },
+      const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string }>(
+        "POST", `/users/current/accounts/${state.accountId}/trade`, { trade: body },
       );
       const success = r.stringCode === "TRADE_RETCODE_DONE" || r.numericCode === 10009;
-      if (!success) throw new Error(`MT trade rejected: ${r.stringCode} (${r.numericCode})`);
+      if (!success) throw new Error(`MT trade rejected: ${r.stringCode ?? "unknown"} (${r.numericCode ?? "?"})${r.message ? " — " + r.message : ""}`);
       return {
         externalOrderId: r.positionId ?? r.orderId,
         clientOrderId: input.clientOrderId,
@@ -104,54 +213,62 @@ export function createMt5Connector(
 
     async cancelOrder(externalOrderId: string) {
       try {
-        await req<void>("POST", `/users/current/accounts/${accountId}/trade`, {
-          trade: { actionType: "ORDER_MODIFY", orderId: externalOrderId, close: true },
+        await req<void>("POST", `/users/current/accounts/${state.accountId}/trade`, {
+          trade: { actionType: "POSITION_CLOSE_ID", positionId: externalOrderId },
         });
         return { ok: true };
       } catch { return { ok: false }; }
     },
 
     async getPositions(): Promise<ConnectorPosition[]> {
-      if (!hasCreds) return [];
-      const r = await req<Array<{ symbol: string; volume: number; type: string; openPrice: number }>>(
-        "GET", `/users/current/accounts/${accountId}/positions`,
-      );
-      return (r ?? []).map(p => ({
-        symbol: p.symbol,
-        qty: p.type === "POSITION_TYPE_SELL" ? -p.volume : p.volume,
-        avgEntry: p.openPrice,
-      }));
+      try {
+        const r = await req<Array<{ symbol: string; volume: number; type: string; openPrice: number }>>(
+          "GET", `/users/current/accounts/${state.accountId}/positions`,
+        );
+        return (r ?? []).map(p => ({
+          symbol: p.symbol,
+          qty: p.type === "POSITION_TYPE_SELL" ? -p.volume : p.volume,
+          avgEntry: p.openPrice,
+        }));
+      } catch { return []; }
     },
 
     async getHistory(limit = 50): Promise<HistoryEntry[]> {
-      if (!hasCreds) return [];
-      const end = new Date().toISOString();
-      const start = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-      const r = await req<Array<{ id: string; symbol: string; type: string; volume: number; price: number; commission: number; time: string }>>(
-        "GET", `/users/current/accounts/${accountId}/history-deals/time/${start}/${end}?limit=${limit}`,
-      );
-      return (r ?? []).map(d => ({
-        externalOrderId: d.id, symbol: d.symbol,
-        side: d.type === "DEAL_TYPE_SELL" ? "sell" : "buy",
-        qty: d.volume, price: d.price,
-        fees: Math.abs(d.commission ?? 0), ts: new Date(d.time).getTime(),
-      }));
+      try {
+        const end = new Date().toISOString();
+        const start = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+        const r = await req<Array<{ id: string; symbol: string; type: string; volume: number; price: number; commission: number; time: string }>>(
+          "GET", `/users/current/accounts/${state.accountId}/history-deals/time/${start}/${end}?limit=${limit}`,
+        );
+        return (r ?? []).map(d => ({
+          externalOrderId: d.id, symbol: d.symbol,
+          side: d.type === "DEAL_TYPE_SELL" ? "sell" : "buy",
+          qty: d.volume, price: d.price,
+          fees: Math.abs(d.commission ?? 0), ts: new Date(d.time).getTime(),
+        }));
+      } catch { return []; }
     },
 
     async checkHealth(): Promise<ConnectionHealth> {
       const t0 = Date.now();
       try {
-        await req<unknown>("GET", `/users/current/accounts/${accountId}/accountInformation`);
+        await req<unknown>("GET", `/users/current/accounts/${state.accountId}/accountInformation`);
         return { ok: true, pingLatencyMs: Date.now() - t0, clockSkewMs: 0 };
-      } catch (e) { return { ok: false, pingLatencyMs: null, clockSkewMs: null, message: e instanceof Error ? e.message : String(e) }; }
+      } catch (e) {
+        return {
+          ok: false, pingLatencyMs: null, clockSkewMs: null,
+          message: e instanceof Error ? e.message : String(e),
+        };
+      }
     },
 
     async getApiPermissions(): Promise<ApiPermissionSnapshot> {
       // MT permissions are set on the trading account, not on the API token —
       // investor password = read-only, trading password = read + trade.
       // Withdrawals are never performed via the trading protocol.
+      const canTrade = canProvision() || isReady();
       return {
-        enableReading: hasCreds, enableSpotAndMarginTrading: hasCreds, enableWithdrawals: false,
+        enableReading: canTrade, enableSpotAndMarginTrading: canTrade, enableWithdrawals: false,
       };
     },
   };
