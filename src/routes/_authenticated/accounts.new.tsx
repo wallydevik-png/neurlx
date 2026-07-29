@@ -196,19 +196,20 @@ function NewAccount() {
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground flex gap-2">
                 <Fingerprint className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
                 <div>
-                  NeurlX connects through the official {broker.id === "mt4" ? "MetaTrader 4" : "MetaTrader 5"} gateway.
-                  Use the <b>investor password</b> for read-only, or the <b>trading password</b> to allow order placement.
+                  NeurlX connects through the official {broker.id === "mt4" ? "MetaTrader 4" : "MetaTrader 5"} bridge (MetaApi cloud).
+                  Provide your MT login, password (<b>investor</b> = read-only, <b>trading</b> = orders enabled) and your broker's server.
+                  NeurlX will auto-provision the MetaApi account on first sync — this can take up to 5 minutes.
                   Your website / broker portal password is never requested.
                 </div>
               </div>
               <Field label="MT Login (account number)">
                 <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
-                  placeholder="e.g. 51234567"
+                  placeholder="e.g. 51234567" required
                   className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm outline-none focus:border-primary" />
               </Field>
               <Field label="MT Password" hint="Investor password = read only. Trading password = orders enabled.">
                 <input type="password" value={creds.password ?? ""}
-                  onChange={e => setCreds({ ...creds, password: e.target.value })}
+                  onChange={e => setCreds({ ...creds, password: e.target.value })} required
                   className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm outline-none focus:border-primary" />
               </Field>
               <Field label="Broker Server" hint="Shown in your MT terminal under File → Login to Trade Account.">
@@ -218,14 +219,37 @@ function NewAccount() {
                     {broker.metatraderServers.map(s => <option key={s} value={s}>{s}</option>)}
                     <option value="">Other — type below</option>
                   </select>
-                ) : (
+                ) : null}
+                {(!broker.metatraderServers?.length || server === "") && (
                   <input value={server} onChange={e => setServer(e.target.value)}
                     placeholder="e.g. ICMarketsSC-Live22"
-                    className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm outline-none focus:border-primary" />
+                    className="mt-2 w-full rounded-md bg-input border border-border px-3 py-2 text-sm outline-none focus:border-primary" />
                 )}
               </Field>
+
+              {/* Advanced: bring-your-own MetaApi (optional) */}
+              <details className="rounded-md border border-border bg-secondary/30 p-3">
+                <summary className="text-xs font-mono uppercase text-muted-foreground cursor-pointer">
+                  Advanced — bring-your-own MetaApi (optional)
+                </summary>
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                  Skip these fields for the standard flow. Only fill them if you already manage the MT account inside MetaApi and want NeurlX to reuse it instead of provisioning a new one.
+                </p>
+                <div className="mt-3 space-y-3">
+                  {(broker.credentialFields ?? [])
+                    .filter(f => !["login", "password", "server"].includes(f.key))
+                    .map(f => (
+                      <Field key={f.key} label={f.label} hint={f.helper}>
+                        <input type={f.secret ? "password" : "text"} placeholder={f.placeholder}
+                          value={creds[f.key] ?? ""} onChange={e => setCreds({ ...creds, [f.key]: e.target.value })}
+                          className="w-full rounded-md bg-input border border-border px-3 py-2 text-sm outline-none focus:border-primary" />
+                      </Field>
+                    ))}
+                </div>
+              </details>
             </>
           )}
+
 
           {/* SDK */}
           {broker.authMethod === "sdk" && (
