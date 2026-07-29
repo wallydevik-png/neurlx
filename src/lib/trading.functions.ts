@@ -225,15 +225,36 @@ export const addConnection = createServerFn({ method: "POST" })
       throw new Error("NeurlX never accepts credentials with withdrawal permissions. Regenerate the API key without withdrawal rights.");
     }
 
+    // For MetaTrader connections the wizard collects login/password/server in
+    // dedicated fields — mirror them into `credentials` so the MT connector
+    // can auto-provision the MetaApi account. Never store the plain password
+    // outside the encrypted credential blob.
+    const authMethod = data.authMethod ?? broker.authMethod;
+    const credsForStorage: Record<string, string> = { ...data.credentials };
+    if (authMethod === "metatrader") {
+      if (data.accountNumber && !credsForStorage.login) credsForStorage.login = data.accountNumber;
+      if (data.brokerServer && !credsForStorage.server) credsForStorage.server = data.brokerServer;
+    }
+
     let ciphertext: string | null = null;
     try {
-      ciphertext = Object.keys(data.credentials).length
-        ? await encryptJSON(data.credentials)
+      ciphertext = Object.keys(credsForStorage).length
+        ? await encryptJSON(credsForStorage)
         : null;
     } catch (error) {
       const message = error instanceof Error ? error.message : "credential encryption failed";
       throw new Error(`Could not secure credentials: ${message}`);
     }
+
+    // MT connections can trade live once the MetaApi account is provisioned;
+    // paper is always tradable. Everything else stays read-only until the
+    // user explicitly upgrades on the Connected Accounts page.
+    const tradingEnabled = data.connectorId === "paper"
+      ? data.tradingEnabled
+      : authMethod === "metatrader"
+        ? Boolean(credsForStorage.password || credsForStorage.metaApiToken)
+        : false;
+
     const { data: row, error } = await context.supabase.from("exchange_connections").insert({
       user_id: context.userId,
       connector_id: data.connectorId,
@@ -241,21 +262,22 @@ export const addConnection = createServerFn({ method: "POST" })
       status: "connected",
       health: broker.implemented ? "healthy" : "pending",
       read_enabled: true,
-      trading_enabled: data.tradingEnabled && data.connectorId === "paper",
+      trading_enabled: tradingEnabled,
       credential_ciphertext: ciphertext,
       last_sync_at: new Date().toISOString(),
       broker_category: data.brokerCategory ?? broker.category,
-      auth_method: data.authMethod ?? broker.authMethod,
+      auth_method: authMethod,
       broker_server: data.brokerServer ?? null,
       account_number: data.accountNumber ?? null,
       permissions_snapshot: {
         declared: {
           reading: true,
-          trading: data.tradingEnabled && data.connectorId === "paper",
+          trading: tradingEnabled,
           withdrawals: false,
         },
       },
     }).select().single();
+
     if (error) throw new Error(error.message);
     await context.supabase.from("audit_log").insert({
       user_id: context.userId, action: "connection.add",
