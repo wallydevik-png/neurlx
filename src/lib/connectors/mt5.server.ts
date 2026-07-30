@@ -556,7 +556,16 @@ export function createMt5Connector(
           ? "filled" : "working",
         fees: 0, slippageBps: 0, latencyMs: Date.now() - started,
         // Surfaces the exact broker instrument in the execution log.
-        raw: { mtSymbol, actionType, requestedSymbol: input.symbol, request: body, response: r },
+        raw: {
+          mtSymbol, actionType, requestedSymbol: input.symbol,
+          requestedVolume: Number(input.qty), finalVolume: sized.volume,
+          volumeNote: sized.note ?? null,
+          brokerLimits: {
+            volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
+            volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
+          },
+          request: body, response: r,
+        },
       };
     },
 
