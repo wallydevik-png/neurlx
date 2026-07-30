@@ -331,6 +331,7 @@ export type Database = {
           autonomous_max_consecutive_losses: number
           autonomous_max_open_positions: number
           autonomous_min_confidence: number
+          daily_profit_target: number
           kill_switch_active: boolean
           live_consecutive_failures: number
           live_kill_reason: string | null
@@ -338,10 +339,12 @@ export type Database = {
           live_max_notional_per_order: number
           live_rejected_today: number
           live_trading_enabled: boolean
+          margin_pause_active: boolean
           max_daily_loss: number
           max_trade_size: number
           max_trades_per_day: number
           min_confidence: number
+          min_free_margin_pct: number
           mode: string
           risk_level: string
           updated_at: string
@@ -358,6 +361,7 @@ export type Database = {
           autonomous_max_consecutive_losses?: number
           autonomous_max_open_positions?: number
           autonomous_min_confidence?: number
+          daily_profit_target?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -365,10 +369,12 @@ export type Database = {
           live_max_notional_per_order?: number
           live_rejected_today?: number
           live_trading_enabled?: boolean
+          margin_pause_active?: boolean
           max_daily_loss?: number
           max_trade_size?: number
           max_trades_per_day?: number
           min_confidence?: number
+          min_free_margin_pct?: number
           mode?: string
           risk_level?: string
           updated_at?: string
@@ -385,6 +391,7 @@ export type Database = {
           autonomous_max_consecutive_losses?: number
           autonomous_max_open_positions?: number
           autonomous_min_confidence?: number
+          daily_profit_target?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -392,10 +399,12 @@ export type Database = {
           live_max_notional_per_order?: number
           live_rejected_today?: number
           live_trading_enabled?: boolean
+          margin_pause_active?: boolean
           max_daily_loss?: number
           max_trade_size?: number
           max_trades_per_day?: number
           min_confidence?: number
+          min_free_margin_pct?: number
           mode?: string
           risk_level?: string
           updated_at?: string
@@ -592,6 +601,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      broker_trade_tickets: {
+        Row: {
+          broker_position_ticket: string | null
+          broker_symbol: string | null
+          client_order_id: string | null
+          closed_at: string | null
+          connection_id: string | null
+          created_at: string
+          detail: Json
+          id: string
+          metaapi_order_id: string | null
+          opened_at: string
+          order_id: string | null
+          position_id: string | null
+          requested_symbol: string | null
+          side: string | null
+          state: string
+          updated_at: string
+          user_id: string
+          venue: string
+          volume: number | null
+        }
+        Insert: {
+          broker_position_ticket?: string | null
+          broker_symbol?: string | null
+          client_order_id?: string | null
+          closed_at?: string | null
+          connection_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          metaapi_order_id?: string | null
+          opened_at?: string
+          order_id?: string | null
+          position_id?: string | null
+          requested_symbol?: string | null
+          side?: string | null
+          state?: string
+          updated_at?: string
+          user_id: string
+          venue?: string
+          volume?: number | null
+        }
+        Update: {
+          broker_position_ticket?: string | null
+          broker_symbol?: string | null
+          client_order_id?: string | null
+          closed_at?: string | null
+          connection_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          metaapi_order_id?: string | null
+          opened_at?: string
+          order_id?: string | null
+          position_id?: string | null
+          requested_symbol?: string | null
+          side?: string | null
+          state?: string
+          updated_at?: string
+          user_id?: string
+          venue?: string
+          volume?: number | null
+        }
+        Relationships: []
       }
       capital_allocations: {
         Row: {
@@ -1563,11 +1638,16 @@ export type Database = {
           ai_regime: string | null
           avg_entry: number
           break_even_moved: boolean
+          broker_symbol: string | null
           closed_at: string | null
+          commission: number
+          connection_id: string | null
           duration_seconds: number | null
           exit_price: number | null
           exit_reason: string | null
+          external_position_id: string | null
           filled_qty: number | null
+          gross_pnl: number | null
           id: string
           opened_at: string
           original_qty: number | null
@@ -1578,11 +1658,13 @@ export type Database = {
           status: string
           stop_loss: number | null
           strategy_id: string | null
+          swap: number
           symbol: string
           take_profit: number | null
           trailing_activated_at: string | null
           trailing_high_water: number | null
           trailing_stop_pct: number | null
+          used_margin: number | null
           user_id: string
         }
         Insert: {
@@ -1592,11 +1674,16 @@ export type Database = {
           ai_regime?: string | null
           avg_entry: number
           break_even_moved?: boolean
+          broker_symbol?: string | null
           closed_at?: string | null
+          commission?: number
+          connection_id?: string | null
           duration_seconds?: number | null
           exit_price?: number | null
           exit_reason?: string | null
+          external_position_id?: string | null
           filled_qty?: number | null
+          gross_pnl?: number | null
           id?: string
           opened_at?: string
           original_qty?: number | null
@@ -1607,11 +1694,13 @@ export type Database = {
           status?: string
           stop_loss?: number | null
           strategy_id?: string | null
+          swap?: number
           symbol: string
           take_profit?: number | null
           trailing_activated_at?: string | null
           trailing_high_water?: number | null
           trailing_stop_pct?: number | null
+          used_margin?: number | null
           user_id: string
         }
         Update: {
@@ -1621,11 +1710,16 @@ export type Database = {
           ai_regime?: string | null
           avg_entry?: number
           break_even_moved?: boolean
+          broker_symbol?: string | null
           closed_at?: string | null
+          commission?: number
+          connection_id?: string | null
           duration_seconds?: number | null
           exit_price?: number | null
           exit_reason?: string | null
+          external_position_id?: string | null
           filled_qty?: number | null
+          gross_pnl?: number | null
           id?: string
           opened_at?: string
           original_qty?: number | null
@@ -1636,11 +1730,13 @@ export type Database = {
           status?: string
           stop_loss?: number | null
           strategy_id?: string | null
+          swap?: number
           symbol?: string
           take_profit?: number | null
           trailing_activated_at?: string | null
           trailing_high_water?: number | null
           trailing_stop_pct?: number | null
+          used_margin?: number | null
           user_id?: string
         }
         Relationships: [
