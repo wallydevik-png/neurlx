@@ -707,6 +707,113 @@ export function createMt5Connector(
       } catch { return []; }
     },
 
+    // ---- Live desk -------------------------------------------------------
+    async getAccountSummary(): Promise<AccountSummary | null> {
+      try {
+        const r = await accountInformation();
+        const equity = Number(r.equity ?? r.balance ?? 0);
+        const used = Number(r.margin ?? 0);
+        return {
+          currency: r.currency ?? "USD",
+          balance: Number(r.balance ?? 0),
+          equity,
+          freeMargin: Number(r.freeMargin ?? 0),
+          usedMargin: used,
+          marginLevel: r.marginLevel != null ? Number(r.marginLevel)
+            : used > 0 ? (equity / used) * 100 : null,
+          leverage: r.leverage ?? null,
+        };
+      } catch { return null; }
+    },
+
+    async getRichPositions(): Promise<RichPosition[]> {
+      try {
+        const r = await req<Array<{
+          id: string; symbol: string; type: string; volume: number; openPrice: number;
+          currentPrice?: number; profit?: number; swap?: number; commission?: number;
+          stopLoss?: number; takeProfit?: number; time: string; margin?: number;
+        }>>("GET", `/users/current/accounts/${state.accountId}/positions`);
+        return (r ?? []).map(p => ({
+          ticket: String(p.id),
+          symbol: p.symbol,
+          side: p.type === "POSITION_TYPE_SELL" ? "short" as const : "long" as const,
+          volume: Number(p.volume ?? 0),
+          openPrice: Number(p.openPrice ?? 0),
+          currentPrice: p.currentPrice != null ? Number(p.currentPrice) : null,
+          profit: Number(p.profit ?? 0),
+          swap: Number(p.swap ?? 0),
+          commission: Number(p.commission ?? 0),
+          usedMargin: p.margin != null ? Number(p.margin) : null,
+          stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
+          takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
+          openedAt: p.time,
+          raw: p,
+        }));
+      } catch { return []; }
+    },
+
+    async getClosedDeals(sinceMs = Date.now() - 90 * 24 * 3600 * 1000): Promise<ClosedDeal[]> {
+      try {
+        const end = new Date().toISOString();
+        const start = new Date(sinceMs).toISOString();
+        const deals = await req<Array<{
+          id: string; positionId?: string; symbol?: string; type: string; entryType?: string;
+          volume?: number; price?: number; profit?: number; commission?: number; swap?: number;
+          time: string; comment?: string;
+        }>>("GET", `/users/current/accounts/${state.accountId}/history-deals/time/${start}/${end}`);
+
+        // Pair DEAL_ENTRY_IN with DEAL_ENTRY_OUT on the same broker position.
+        const opens = new Map<string, { price: number; time: string; type: string }>();
+        const out: ClosedDeal[] = [];
+        for (const d of deals ?? []) {
+          if (!d.symbol) continue;
+          const pos = String(d.positionId ?? d.id);
+          if (d.entryType === "DEAL_ENTRY_IN") {
+            opens.set(pos, { price: Number(d.price ?? 0), time: d.time, type: d.type });
+            continue;
+          }
+          if (d.entryType && d.entryType !== "DEAL_ENTRY_OUT" && d.entryType !== "DEAL_ENTRY_OUT_BY") continue;
+          const open = opens.get(pos);
+          const gross = Number(d.profit ?? 0);
+          const commission = Number(d.commission ?? 0);
+          const swap = Number(d.swap ?? 0);
+          out.push({
+            ticket: String(d.id),
+            positionTicket: d.positionId ? String(d.positionId) : null,
+            symbol: d.symbol,
+            // Closing deal side is the inverse of the position direction.
+            side: d.type === "DEAL_TYPE_SELL" ? "long" : "short",
+            volume: Number(d.volume ?? 0),
+            entryPrice: open ? open.price : null,
+            exitPrice: Number(d.price ?? 0),
+            grossProfit: gross,
+            commission,
+            swap,
+            netProfit: Number((gross + commission + swap).toFixed(2)),
+            openedAt: open?.time ?? null,
+            closedAt: d.time,
+            comment: d.comment ?? null,
+          });
+        }
+        return out.sort((a, b) => +new Date(b.closedAt) - +new Date(a.closedAt));
+      } catch { return []; }
+    },
+
+    async estimateMargin(symbol, side, volume, price): Promise<MarginEstimate | null> {
+      try {
+        const mtSymbol = await resolveSymbol(symbol);
+        const action = resolveTradeAction(side, "market");
+        const p = Number(price) > 0 ? Number(price) : await midPrice(mtSymbol);
+        const margin = await calcMargin(mtSymbol, action, volume, p);
+        const info = await accountInformation();
+        const freeMargin = Number(info.freeMargin ?? 0);
+        if (margin == null) return null;
+        return { margin, freeMargin, sufficient: margin <= freeMargin * 0.8 };
+      } catch { return null; }
+    },
+
+
+
     async checkHealth(): Promise<ConnectionHealth> {
       const t0 = Date.now();
       try {
