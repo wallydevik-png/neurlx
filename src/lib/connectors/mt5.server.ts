@@ -40,14 +40,39 @@ function stripDecorations(mtSymbol: string): string[] {
   out.add(base.replace(/^(FX|CFD)/, ""));
   return [...out].filter(Boolean);
 }
-/** Quote-currency aliases: many venues list USDT/USD interchangeably. */
-function candidatesFor(symbol: string): string[] {
+/** Split "CRV-USD" / "EUR/USD" / "BTCUSDT" into { base, quote } when possible. */
+const QUOTES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "AUD", "CHF", "CAD", "NZD", "BTC", "ETH"];
+export function splitPair(symbol: string): { base: string; quote: string } | null {
+  const raw = symbol.toUpperCase().trim();
+  const sep = raw.match(/^([A-Z0-9]+)[-/_ ]([A-Z0-9]+)$/);
+  if (sep) return { base: sep[1], quote: sep[2] };
+  const k = normalizeKey(raw);
+  for (const q of QUOTES) {
+    if (k.length > q.length && k.endsWith(q)) return { base: k.slice(0, -q.length), quote: q };
+  }
+  return null;
+}
+
+/** All broker-name candidates for an AI symbol, ordered best-first. */
+export function candidatesFor(symbol: string): string[] {
   const k = normalizeKey(symbol);
   const c = new Set<string>([k]);
-  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k.slice(0, -3) + "USDT"); }
+  const pair = splitPair(symbol);
+  if (pair) {
+    const { base, quote } = pair;
+    const quoteAliases = quote === "USD" ? ["USD", "USDT", "USDC"]
+      : quote === "USDT" ? ["USDT", "USD", "USDC"]
+        : quote === "USDC" ? ["USDC", "USDT", "USD"]
+          : [quote];
+    // Some brokers list crypto with an "XBT"/"BTC" alias.
+    const baseAliases = base === "BTC" ? ["BTC", "XBT"] : base === "XBT" ? ["XBT", "BTC"] : [base];
+    for (const b of baseAliases) for (const q of quoteAliases) c.add(`${b}${q}`);
+  }
+  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k + "C"); }
   if (k.endsWith("USDT")) c.add(k.slice(0, -1));
-  return [...c];
+  return [...c].filter(Boolean);
 }
+
 export class UnsupportedSymbolError extends Error {
   readonly unsupportedSymbol: string;
   constructor(symbol: string, venue: string) {
@@ -99,20 +124,36 @@ export function resolveTradeAction(
 }
 
 /**
- * MetaApi validates clientId against ^[a-zA-Z0-9_]+$ with a max length of 24
- * (the value is forwarded to the terminal comment field). Our internal ids look
- * like "hlx_d7c4be3c525a4a7dae692d48c551" — too long, so MetaApi rejects them.
- * We sanitize and truncate; if nothing valid remains we omit the field entirely
- * (it is optional and MetaApi will generate its own).
+ * MetaApi's clientId is NOT a free-form string: per
+ * https://metaapi.cloud/docs/client/clientIdUsage/ it must follow
+ * `${strategyId}_${positionId}_${orderId}` (three alphanumeric parts joined by
+ * underscores) and the combined comment+clientId length must be <= 26.
+ * Anything else — including our internal "hlx_23e5a02f91ba44c1948b" ids — is
+ * rejected with "Invalid value. Value must match required pattern".
+ *
+ * We therefore build a compliant three-part id from the internal order id, and
+ * omit the field entirely when we cannot (it is optional).
  */
-export const MT_CLIENT_ID_PATTERN = /^[a-zA-Z0-9_]{1,24}$/;
+export const MT_CLIENT_ID_PATTERN = /^[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}$/;
+export const MT_CLIENT_ID_MAX_LEN = 26;
 
 export function sanitizeClientId(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24);
-  if (!cleaned) return undefined;
-  return MT_CLIENT_ID_PATTERN.test(cleaned) ? cleaned : undefined;
+  // Already compliant? keep as-is.
+  if (MT_CLIENT_ID_PATTERN.test(raw) && raw.length <= MT_CLIENT_ID_MAX_LEN) return raw;
+
+  const alnum = raw.replace(/[^A-Za-z0-9]/g, "");
+  if (!alnum) return undefined;
+  // NX_<first 9 chars>_<last 8 chars>  -> max 3 + 9 + 1 + 8 = 21 chars
+  const head = alnum.slice(0, 9);
+  const tail = alnum.length > 9 ? alnum.slice(-8) : alnum.slice(0, 8);
+  const candidate = `NX_${head}_${tail}`;
+  if (!MT_CLIENT_ID_PATTERN.test(candidate) || candidate.length > MT_CLIENT_ID_MAX_LEN) {
+    return undefined;
+  }
+  return candidate;
 }
+
 
 /** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
 export function buildTradeRequest(
