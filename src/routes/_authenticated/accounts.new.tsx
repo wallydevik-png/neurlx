@@ -6,6 +6,7 @@ import {
   BROKER_CATEGORIES, brokersByCategory, getBroker,
   type BrokerCategory, type BrokerDescriptor,
 } from "@/lib/connectors/brokerRegistry";
+import { buildCredentialValues, findMissingCredential } from "@/lib/connectors/credentialForm";
 import { addConnection } from "@/lib/trading.functions";
 import { toast } from "sonner";
 import { Lock, ArrowLeft, ExternalLink, ShieldCheck, KeyRound, Fingerprint, LogIn, Zap } from "lucide-react";
