@@ -60,6 +60,67 @@ function isMt4(brokerId: string): boolean {
   return brokerId === "mt4";
 }
 
+/** Every MetaApi action NeurlX can emit. */
+export const MT_ACTIONS = {
+  buy_market: "ORDER_TYPE_BUY",
+  sell_market: "ORDER_TYPE_SELL",
+  buy_limit: "ORDER_TYPE_BUY_LIMIT",
+  sell_limit: "ORDER_TYPE_SELL_LIMIT",
+  buy_stop: "ORDER_TYPE_BUY_STOP",
+  sell_stop: "ORDER_TYPE_SELL_STOP",
+} as const;
+export type MtAction = (typeof MT_ACTIONS)[keyof typeof MT_ACTIONS];
+
+/** Normalize any AI/committee side or order-type wording into a MetaApi action. */
+export function resolveTradeAction(
+  side: string | undefined,
+  orderType: string | undefined,
+): MtAction {
+  const s = String(side ?? "").toLowerCase().trim();
+  const t = String(orderType ?? "market").toLowerCase().trim();
+
+  // Some upstream signals encode direction inside orderType ("buy_limit").
+  const combined = `${s}_${t}`;
+  const direction = /sell|short|bearish/.test(combined) ? "sell"
+    : /buy|long|bullish/.test(combined) ? "buy"
+    : null;
+  if (!direction) throw new Error(`Unknown trade direction "${side}" (orderType "${orderType}")`);
+
+  const kind = /stop_loss_limit|take_profit_limit|limit/.test(t) ? "limit"
+    : /stop/.test(t) ? "stop"
+    : "market";
+
+  const action = kind === "limit"
+    ? (direction === "buy" ? MT_ACTIONS.buy_limit : MT_ACTIONS.sell_limit)
+    : kind === "stop"
+      ? (direction === "buy" ? MT_ACTIONS.buy_stop : MT_ACTIONS.sell_stop)
+      : (direction === "buy" ? MT_ACTIONS.buy_market : MT_ACTIONS.sell_market);
+  return action;
+}
+
+/** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
+export function buildTradeRequest(
+  input: PlaceOrderInput,
+  mtSymbol: string,
+): Record<string, unknown> {
+  const actionType = resolveTradeAction(input.side, input.orderType);
+  if (!actionType) throw new Error(`Refusing to submit MT trade with undefined action for ${mtSymbol}`);
+  const volume = Number(input.qty);
+  if (!(volume > 0)) throw new Error(`Invalid MT volume ${input.qty} for ${mtSymbol}`);
+  const isPending = actionType !== MT_ACTIONS.buy_market && actionType !== MT_ACTIONS.sell_market;
+  if (isPending && !(Number(input.limitPrice) > 0)) {
+    throw new Error(`Pending order on ${mtSymbol} requires a positive openPrice`);
+  }
+  return {
+    actionType,
+    symbol: mtSymbol,
+    volume,
+    ...(isPending && input.limitPrice ? { openPrice: Number(input.limitPrice) } : {}),
+    ...(input.stopPrice ? { stopLoss: Number(input.stopPrice) } : {}),
+    ...(input.clientOrderId ? { clientId: input.clientOrderId.slice(0, 32) } : {}),
+  };
+}
+
 
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
