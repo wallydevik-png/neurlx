@@ -185,8 +185,19 @@ export interface TradingConnector {
     symbol: string,
     clientOrderId?: string,
   ): Promise<OrderStatusResult>;
+  /** Live-desk extensions (implemented by MetaTrader today). */
+  getAccountSummary?(): Promise<AccountSummary | null>;
+  getRichPositions?(): Promise<RichPosition[]>;
+  getClosedDeals?(sinceMs?: number): Promise<ClosedDeal[]>;
+  estimateMargin?(
+    symbol: string,
+    side: Side,
+    volume: number,
+    price?: number,
+  ): Promise<MarginEstimate | null>;
   supportsRealExecution?: boolean;
 }
+
 
 export interface ConnectorDescriptor {
   id: string;
