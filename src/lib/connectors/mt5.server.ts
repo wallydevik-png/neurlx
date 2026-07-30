@@ -40,14 +40,39 @@ function stripDecorations(mtSymbol: string): string[] {
   out.add(base.replace(/^(FX|CFD)/, ""));
   return [...out].filter(Boolean);
 }
-/** Quote-currency aliases: many venues list USDT/USD interchangeably. */
-function candidatesFor(symbol: string): string[] {
+/** Split "CRV-USD" / "EUR/USD" / "BTCUSDT" into { base, quote } when possible. */
+const QUOTES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "AUD", "CHF", "CAD", "NZD", "BTC", "ETH"];
+export function splitPair(symbol: string): { base: string; quote: string } | null {
+  const raw = symbol.toUpperCase().trim();
+  const sep = raw.match(/^([A-Z0-9]+)[-/_ ]([A-Z0-9]+)$/);
+  if (sep) return { base: sep[1], quote: sep[2] };
+  const k = normalizeKey(raw);
+  for (const q of QUOTES) {
+    if (k.length > q.length && k.endsWith(q)) return { base: k.slice(0, -q.length), quote: q };
+  }
+  return null;
+}
+
+/** All broker-name candidates for an AI symbol, ordered best-first. */
+export function candidatesFor(symbol: string): string[] {
   const k = normalizeKey(symbol);
   const c = new Set<string>([k]);
-  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k.slice(0, -3) + "USDT"); }
+  const pair = splitPair(symbol);
+  if (pair) {
+    const { base, quote } = pair;
+    const quoteAliases = quote === "USD" ? ["USD", "USDT", "USDC"]
+      : quote === "USDT" ? ["USDT", "USD", "USDC"]
+        : quote === "USDC" ? ["USDC", "USDT", "USD"]
+          : [quote];
+    // Some brokers list crypto with an "XBT"/"BTC" alias.
+    const baseAliases = base === "BTC" ? ["BTC", "XBT"] : base === "XBT" ? ["XBT", "BTC"] : [base];
+    for (const b of baseAliases) for (const q of quoteAliases) c.add(`${b}${q}`);
+  }
+  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k + "C"); }
   if (k.endsWith("USDT")) c.add(k.slice(0, -1));
-  return [...c];
+  return [...c].filter(Boolean);
 }
+
 export class UnsupportedSymbolError extends Error {
   readonly unsupportedSymbol: string;
   constructor(symbol: string, venue: string) {
@@ -99,20 +124,36 @@ export function resolveTradeAction(
 }
 
 /**
- * MetaApi validates clientId against ^[a-zA-Z0-9_]+$ with a max length of 24
- * (the value is forwarded to the terminal comment field). Our internal ids look
- * like "hlx_d7c4be3c525a4a7dae692d48c551" — too long, so MetaApi rejects them.
- * We sanitize and truncate; if nothing valid remains we omit the field entirely
- * (it is optional and MetaApi will generate its own).
+ * MetaApi's clientId is NOT a free-form string: per
+ * https://metaapi.cloud/docs/client/clientIdUsage/ it must follow
+ * `${strategyId}_${positionId}_${orderId}` (three alphanumeric parts joined by
+ * underscores) and the combined comment+clientId length must be <= 26.
+ * Anything else — including our internal "hlx_23e5a02f91ba44c1948b" ids — is
+ * rejected with "Invalid value. Value must match required pattern".
+ *
+ * We therefore build a compliant three-part id from the internal order id, and
+ * omit the field entirely when we cannot (it is optional).
  */
-export const MT_CLIENT_ID_PATTERN = /^[a-zA-Z0-9_]{1,24}$/;
+export const MT_CLIENT_ID_PATTERN = /^[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}$/;
+export const MT_CLIENT_ID_MAX_LEN = 26;
 
 export function sanitizeClientId(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24);
-  if (!cleaned) return undefined;
-  return MT_CLIENT_ID_PATTERN.test(cleaned) ? cleaned : undefined;
+  // Already compliant? keep as-is.
+  if (MT_CLIENT_ID_PATTERN.test(raw) && raw.length <= MT_CLIENT_ID_MAX_LEN) return raw;
+
+  const alnum = raw.replace(/[^A-Za-z0-9]/g, "");
+  if (!alnum) return undefined;
+  // NX_<first 9 chars>_<last 8 chars>  -> max 3 + 9 + 1 + 8 = 21 chars
+  const head = alnum.slice(0, 9);
+  const tail = alnum.length > 9 ? alnum.slice(-8) : alnum.slice(0, 8);
+  const candidate = `NX_${head}_${tail}`;
+  if (!MT_CLIENT_ID_PATTERN.test(candidate) || candidate.length > MT_CLIENT_ID_MAX_LEN) {
+    return undefined;
+  }
+  return candidate;
 }
+
 
 /** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
 export function buildTradeRequest(
@@ -191,6 +232,35 @@ async function provisionAccount(params: {
   return parsed.id;
 }
 
+// ---- Process-level caches ------------------------------------------------
+// The executor creates a fresh connector per order. Without caching, each order
+// re-provisions / re-lists symbols, which is what produced the repeated
+// 429 TooManyRequestsError from MetaApi.
+const accountIdCache = new Map<string, string>();          // credential key -> deployed accountId
+const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
+const SYMBOL_TTL_MS = 30 * 60 * 1000;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Retry 429 / 5xx with exponential backoff + jitter; never retry 4xx validation. */
+async function withBackoff<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const err = e as { httpStatus?: number; retryable?: boolean; message?: string };
+      const status = err?.httpStatus;
+      const retryable = err?.retryable === true || status === 429 || (status ?? 0) >= 500
+        || /TooManyRequests/i.test(err?.message ?? "");
+      if (!retryable || i === attempts - 1) throw e;
+      await sleep(Math.round((500 * 2 ** i) * (1 + Math.random() * 0.3)));
+    }
+  }
+  throw lastErr;
+}
+
 export function createMt5Connector(
   brokerId: string,
   credentials: Record<string, string>,
@@ -204,6 +274,10 @@ export function createMt5Connector(
     password: credentials.password ?? "",
     server: credentials.server ?? credentials.brokerServer ?? "",
   };
+  // Stable key for this MT account across connector instances.
+  const cacheKey = `${ctx.connectionId ?? ""}|${brokerId}|${state.login}|${state.server}`;
+  if (!state.accountId) state.accountId = accountIdCache.get(cacheKey) ?? "";
+
   const logCtx = { ...ctx, venue: `mt5:${brokerId}` };
   const label = brokerId === "mt5" || brokerId === "mt4"
     ? "MetaTrader" : `${brokerId.toUpperCase()} · MetaTrader 5`;
@@ -223,12 +297,14 @@ export function createMt5Connector(
         "Missing MT credentials — provide login, password, and server (or an existing MetaApi accountId).",
       );
     }
-    state.accountId = await provisionAccount({
+    state.accountId = await withBackoff(() => provisionAccount({
       token: state.token, brokerId,
       login: state.login, password: state.password,
       server: state.server, region: state.region,
       name: `NeurlX ${brokerId.toUpperCase()} ${state.login}`,
-    });
+    }));
+    // Cache first so concurrent/subsequent orders never re-provision.
+    accountIdCache.set(cacheKey, state.accountId);
     await persistCredentials(ctx, {
       ...credentials,
       metaApiToken: credentials.metaApiToken ?? "", // keep BYO field if user supplied
@@ -243,19 +319,20 @@ export function createMt5Connector(
   async function req<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
     await ensureReady();
     const base = clientBaseFor(state.region);
-    return doRequest<T>({
+    return withBackoff(() => doRequest<T>({
       ctx: logCtx, method, path, url: `${base}${path}`,
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
       params: body as Record<string, unknown> | undefined, signed: true,
-    });
+    }));
   }
 
   // ---- Broker symbol map -------------------------------------------------
   // MetaApi exposes the exact instrument names the connected broker offers
   // (they differ per broker: BTCUSD, BTCUSD.m, BTCUSDT, #BTCUSD ...). We pull
-  // them once per connector instance and resolve every requested symbol
-  // against that list, so nothing unsupported ever reaches MetaApi.
+  // them once per account (cached for 30 min across connector instances) and
+  // resolve every requested symbol against that list, so nothing unsupported
+  // ever reaches MetaApi.
   let symbolMapPromise: Promise<Map<string, string>> | null = null;
 
   async function loadSymbolMap(): Promise<Map<string, string>> {
@@ -269,10 +346,13 @@ export function createMt5Connector(
       }
       map.set(normalizeKey(s), s); // exact name always wins
     }
+    symbolMapCache.set(state.accountId, { at: Date.now(), map });
     return map;
   }
 
   async function getSymbolMap(): Promise<Map<string, string>> {
+    const cached = symbolMapCache.get(state.accountId);
+    if (cached && Date.now() - cached.at < SYMBOL_TTL_MS) return cached.map;
     if (!symbolMapPromise) {
       symbolMapPromise = loadSymbolMap().catch((e) => {
         symbolMapPromise = null;
@@ -289,8 +369,19 @@ export function createMt5Connector(
       const hit = map.get(candidate);
       if (hit) return hit;
     }
+    // Last resort: base+quote prefix match (covers BTCUSD.pro, CRVUSDm, ...).
+    const pair = splitPair(symbol);
+    if (pair) {
+      const quotes = pair.quote.startsWith("USD") ? ["USD", "USDT", "USDC"] : [pair.quote];
+      for (const [key, name] of map) {
+        if (key.startsWith(pair.base) && quotes.some(q => key.slice(pair.base.length).startsWith(q))) {
+          return name;
+        }
+      }
+    }
     throw new UnsupportedSymbolError(symbol, label);
   }
+
 
   return {
     id: brokerId, displayName: label,

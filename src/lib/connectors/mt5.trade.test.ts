@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildTradeRequest, resolveTradeAction, sanitizeClientId, MT_CLIENT_ID_PATTERN, MT_ACTIONS } from "./mt5.server";
+import {
+  buildTradeRequest, resolveTradeAction, sanitizeClientId, splitPair, candidatesFor,
+  MT_CLIENT_ID_PATTERN, MT_CLIENT_ID_MAX_LEN, MT_ACTIONS,
+} from "./mt5.server";
 import type { PlaceOrderInput } from "./types";
 
 const base: PlaceOrderInput = {
@@ -50,12 +53,12 @@ describe("buildTradeRequest", () => {
     const body = buildTradeRequest(base, "BTCUSD");
     expect(body.actionType).toBeDefined();
   });
-  it("sanitizes clientId to MetaApi's pattern", () => {
+  it("emits a MetaApi-compliant clientId", () => {
     const body = buildTradeRequest(
-      { ...base, clientOrderId: "hlx_d7c4be3c525a4a7dae692d48c551" }, "BTCUSD",
+      { ...base, clientOrderId: "hlx_23e5a02f91ba44c1948b" }, "BTCUSD",
     );
     expect(String(body.clientId)).toMatch(MT_CLIENT_ID_PATTERN);
-    expect(String(body.clientId).length).toBeLessThanOrEqual(24);
+    expect(String(body.clientId).length).toBeLessThanOrEqual(MT_CLIENT_ID_MAX_LEN);
   });
   it("omits clientId when nothing valid remains", () => {
     expect(buildTradeRequest({ ...base, clientOrderId: "!!!---" }, "BTCUSD"))
@@ -65,14 +68,33 @@ describe("buildTradeRequest", () => {
 });
 
 describe("sanitizeClientId", () => {
-  it("keeps valid ids untouched", () => {
-    expect(sanitizeClientId("abc_123")).toBe("abc_123");
+  it("keeps already-compliant three-part ids", () => {
+    expect(sanitizeClientId("RF_EURUSD_GjCy5lk")).toBe("RF_EURUSD_GjCy5lk");
   });
-  it("strips separators and truncates", () => {
-    expect(sanitizeClientId("hlx-d7c4be3c-525a-4a7d-ae69-2d48c551")).toBe("hlxd7c4be3c525a4a7dae692");
+  it("rewrites internal ids into strategy_position_order form", () => {
+    const id = sanitizeClientId("hlx_23e5a02f91ba44c1948b");
+    expect(id).toMatch(MT_CLIENT_ID_PATTERN);
+    expect((id ?? "").length).toBeLessThanOrEqual(MT_CLIENT_ID_MAX_LEN);
   });
   it("returns undefined for empty input", () => {
     expect(sanitizeClientId(undefined)).toBeUndefined();
     expect(sanitizeClientId("###")).toBeUndefined();
+  });
+});
+
+describe("symbol aliasing", () => {
+  it("splits AI pairs", () => {
+    expect(splitPair("CRV-USD")).toEqual({ base: "CRV", quote: "USD" });
+    expect(splitPair("EUR/USD")).toEqual({ base: "EUR", quote: "USD" });
+    expect(splitPair("BTCUSDT")).toEqual({ base: "BTC", quote: "USDT" });
+  });
+  it("offers USD/USDT/USDC aliases for crypto", () => {
+    const c = candidatesFor("LTC-USD");
+    expect(c).toContain("LTCUSD");
+    expect(c).toContain("LTCUSDT");
+    expect(c).toContain("LTCUSDC");
+  });
+  it("maps forex pairs to broker form", () => {
+    expect(candidatesFor("EUR/USD")).toContain("EURUSD");
   });
 });
