@@ -180,6 +180,74 @@ export function buildTradeRequest(
 }
 
 
+/** Subset of MetaApi's symbol specification we care about for sizing. */
+export interface MtSymbolSpec {
+  volumeMin?: number;
+  volumeMax?: number;
+  volumeStep?: number;
+  contractSize?: number;
+  digits?: number;
+}
+
+export class InvalidVolumeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidVolumeError";
+  }
+}
+
+function decimalsOf(step: number): number {
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i === -1 ? 0 : Math.min(8, s.length - i - 1);
+}
+
+/**
+ * Round the requested volume to the broker's volumeStep and clamp it between
+ * volumeMin and volumeMax. Volumes below the minimum are raised to the minimum
+ * lot (never silently submitted as-is, which is what produced
+ * TRADE_RETCODE_INVALID_VOLUME 10014).
+ */
+export function normalizeVolume(
+  requested: number,
+  spec: MtSymbolSpec,
+): { volume: number; adjusted: boolean; note?: string } {
+  const min = Number(spec.volumeMin) > 0 ? Number(spec.volumeMin) : 0.01;
+  const max = Number(spec.volumeMax) > 0 ? Number(spec.volumeMax) : Number.POSITIVE_INFINITY;
+  const step = Number(spec.volumeStep) > 0 ? Number(spec.volumeStep) : min;
+
+  if (!(Number(requested) > 0)) {
+    throw new InvalidVolumeError(`Requested volume ${requested} is not a positive number`);
+  }
+  if (min > max) {
+    throw new InvalidVolumeError(`Broker volume limits are inconsistent (min ${min} > max ${max})`);
+  }
+
+  const d = Math.max(decimalsOf(step), decimalsOf(min));
+  const round = (v: number) => Number(v.toFixed(d));
+
+  // Snap to the step grid, anchored at volumeMin.
+  let volume = round(min + Math.round((requested - min) / step) * step);
+  let note: string | undefined;
+
+  if (volume < min) {
+    volume = round(min);
+    note = `raised to broker minimum lot ${min}`;
+  }
+  if (volume > max) {
+    volume = round(min + Math.floor((max - min) / step) * step);
+    note = `clamped to broker maximum lot ${max}`;
+  }
+  if (!(volume > 0)) {
+    throw new InvalidVolumeError(
+      `Cannot build a valid volume for this symbol (min ${min}, max ${max}, step ${step})`,
+    );
+  }
+  const adjusted = round(requested) !== volume;
+  if (adjusted && !note) note = `rounded to step ${step}`;
+  return { volume, adjusted, note };
+}
+
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
   updated: Record<string, string>,
