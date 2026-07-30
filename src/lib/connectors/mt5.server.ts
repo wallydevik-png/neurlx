@@ -196,6 +196,19 @@ export class InvalidVolumeError extends Error {
   }
 }
 
+/** Thrown when the broker cannot fund the order — the trade is skipped, not failed. */
+export class InsufficientMarginError extends Error {
+  readonly required: number;
+  readonly available: number;
+  constructor(required: number, available: number) {
+    super(`Skipped: insufficient free margin (required ${required.toFixed(2)}, available ${available.toFixed(2)}).`);
+    this.name = "InsufficientMarginError";
+    this.required = required;
+    this.available = available;
+  }
+}
+
+
 function decimalsOf(step: number): number {
   const s = String(step);
   const i = s.indexOf(".");
