@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTradeRequest, resolveTradeAction, MT_ACTIONS } from "./mt5.server";
+import { buildTradeRequest, resolveTradeAction, sanitizeClientId, MT_CLIENT_ID_PATTERN, MT_ACTIONS } from "./mt5.server";
 import type { PlaceOrderInput } from "./types";
 
 const base: PlaceOrderInput = {
@@ -49,5 +49,30 @@ describe("buildTradeRequest", () => {
   it("never emits an undefined action", () => {
     const body = buildTradeRequest(base, "BTCUSD");
     expect(body.actionType).toBeDefined();
+  });
+  it("sanitizes clientId to MetaApi's pattern", () => {
+    const body = buildTradeRequest(
+      { ...base, clientOrderId: "hlx_d7c4be3c525a4a7dae692d48c551" }, "BTCUSD",
+    );
+    expect(String(body.clientId)).toMatch(MT_CLIENT_ID_PATTERN);
+    expect(String(body.clientId).length).toBeLessThanOrEqual(24);
+  });
+  it("omits clientId when nothing valid remains", () => {
+    expect(buildTradeRequest({ ...base, clientOrderId: "!!!---" }, "BTCUSD"))
+      .not.toHaveProperty("clientId");
+    expect(buildTradeRequest(base, "BTCUSD")).not.toHaveProperty("clientId");
+  });
+});
+
+describe("sanitizeClientId", () => {
+  it("keeps valid ids untouched", () => {
+    expect(sanitizeClientId("abc_123")).toBe("abc_123");
+  });
+  it("strips separators and truncates", () => {
+    expect(sanitizeClientId("hlx-d7c4be3c-525a-4a7d-ae69-2d48c551")).toBe("hlxd7c4be3c525a4a7dae692");
+  });
+  it("returns undefined for empty input", () => {
+    expect(sanitizeClientId(undefined)).toBeUndefined();
+    expect(sanitizeClientId("###")).toBeUndefined();
   });
 });

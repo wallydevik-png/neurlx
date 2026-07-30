@@ -98,6 +98,22 @@ export function resolveTradeAction(
   return action;
 }
 
+/**
+ * MetaApi validates clientId against ^[a-zA-Z0-9_]+$ with a max length of 24
+ * (the value is forwarded to the terminal comment field). Our internal ids look
+ * like "hlx_d7c4be3c525a4a7dae692d48c551" — too long, so MetaApi rejects them.
+ * We sanitize and truncate; if nothing valid remains we omit the field entirely
+ * (it is optional and MetaApi will generate its own).
+ */
+export const MT_CLIENT_ID_PATTERN = /^[a-zA-Z0-9_]{1,24}$/;
+
+export function sanitizeClientId(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24);
+  if (!cleaned) return undefined;
+  return MT_CLIENT_ID_PATTERN.test(cleaned) ? cleaned : undefined;
+}
+
 /** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
 export function buildTradeRequest(
   input: PlaceOrderInput,
@@ -111,13 +127,14 @@ export function buildTradeRequest(
   if (isPending && !(Number(input.limitPrice) > 0)) {
     throw new Error(`Pending order on ${mtSymbol} requires a positive openPrice`);
   }
+  const clientId = sanitizeClientId(input.clientOrderId);
   return {
     actionType,
     symbol: mtSymbol,
     volume,
     ...(isPending && input.limitPrice ? { openPrice: Number(input.limitPrice) } : {}),
     ...(input.stopPrice ? { stopLoss: Number(input.stopPrice) } : {}),
-    ...(input.clientOrderId ? { clientId: input.clientOrderId.slice(0, 32) } : {}),
+    ...(clientId ? { clientId } : {}),
   };
 }
 
