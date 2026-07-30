@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTradeRequest, resolveTradeAction, sanitizeClientId, splitPair, candidatesFor,
-  MT_CLIENT_ID_PATTERN, MT_CLIENT_ID_MAX_LEN, MT_ACTIONS,
+  MT_CLIENT_ID_PATTERN, MT_CLIENT_ID_MAX_LEN, MT_ACTIONS, normalizeVolume, InvalidVolumeError,
 } from "./mt5.server";
 import type { PlaceOrderInput } from "./types";
 
@@ -96,5 +96,32 @@ describe("symbol aliasing", () => {
   });
   it("maps forex pairs to broker form", () => {
     expect(candidatesFor("EUR/USD")).toContain("EURUSD");
+  });
+});
+
+describe("normalizeVolume", () => {
+  const spec = { volumeMin: 0.01, volumeMax: 100, volumeStep: 0.01 };
+  it("rounds to the broker step", () => {
+    expect(normalizeVolume(0.0345, spec).volume).toBe(0.03);
+    expect(normalizeVolume(1.007, spec).volume).toBe(1.01);
+  });
+  it("raises sub-minimum sizes to the minimum lot", () => {
+    const r = normalizeVolume(0.0001, spec);
+    expect(r.volume).toBe(0.01);
+    expect(r.note).toMatch(/minimum lot/);
+  });
+  it("clamps to the broker maximum", () => {
+    const r = normalizeVolume(5000, spec);
+    expect(r.volume).toBe(100);
+    expect(r.note).toMatch(/maximum lot/);
+  });
+  it("honours coarse steps like 0.1", () => {
+    expect(normalizeVolume(0.44, { volumeMin: 0.1, volumeMax: 50, volumeStep: 0.1 }).volume).toBe(0.4);
+  });
+  it("falls back to sane defaults when the spec is empty", () => {
+    expect(normalizeVolume(0.234, {}).volume).toBe(0.23);
+  });
+  it("throws InvalidVolumeError on non-positive input", () => {
+    expect(() => normalizeVolume(0, spec)).toThrow(InvalidVolumeError);
   });
 });

@@ -180,6 +180,74 @@ export function buildTradeRequest(
 }
 
 
+/** Subset of MetaApi's symbol specification we care about for sizing. */
+export interface MtSymbolSpec {
+  volumeMin?: number;
+  volumeMax?: number;
+  volumeStep?: number;
+  contractSize?: number;
+  digits?: number;
+}
+
+export class InvalidVolumeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidVolumeError";
+  }
+}
+
+function decimalsOf(step: number): number {
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i === -1 ? 0 : Math.min(8, s.length - i - 1);
+}
+
+/**
+ * Round the requested volume to the broker's volumeStep and clamp it between
+ * volumeMin and volumeMax. Volumes below the minimum are raised to the minimum
+ * lot (never silently submitted as-is, which is what produced
+ * TRADE_RETCODE_INVALID_VOLUME 10014).
+ */
+export function normalizeVolume(
+  requested: number,
+  spec: MtSymbolSpec,
+): { volume: number; adjusted: boolean; note?: string } {
+  const min = Number(spec.volumeMin) > 0 ? Number(spec.volumeMin) : 0.01;
+  const max = Number(spec.volumeMax) > 0 ? Number(spec.volumeMax) : Number.POSITIVE_INFINITY;
+  const step = Number(spec.volumeStep) > 0 ? Number(spec.volumeStep) : min;
+
+  if (!(Number(requested) > 0)) {
+    throw new InvalidVolumeError(`Requested volume ${requested} is not a positive number`);
+  }
+  if (min > max) {
+    throw new InvalidVolumeError(`Broker volume limits are inconsistent (min ${min} > max ${max})`);
+  }
+
+  const d = Math.max(decimalsOf(step), decimalsOf(min));
+  const round = (v: number) => Number(v.toFixed(d));
+
+  // Snap to the step grid, anchored at volumeMin.
+  let volume = round(min + Math.round((requested - min) / step) * step);
+  let note: string | undefined;
+
+  if (volume < min) {
+    volume = round(min);
+    note = `raised to broker minimum lot ${min}`;
+  }
+  if (volume > max) {
+    volume = round(min + Math.floor((max - min) / step) * step);
+    note = `clamped to broker maximum lot ${max}`;
+  }
+  if (!(volume > 0)) {
+    throw new InvalidVolumeError(
+      `Cannot build a valid volume for this symbol (min ${min}, max ${max}, step ${step})`,
+    );
+  }
+  const adjusted = round(requested) !== volume;
+  if (adjusted && !note) note = `rounded to step ${step}`;
+  return { volume, adjusted, note };
+}
+
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
   updated: Record<string, string>,
@@ -238,6 +306,7 @@ async function provisionAccount(params: {
 // 429 TooManyRequestsError from MetaApi.
 const accountIdCache = new Map<string, string>();          // credential key -> deployed accountId
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
+const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -382,6 +451,26 @@ export function createMt5Connector(
     throw new UnsupportedSymbolError(symbol, label);
   }
 
+  /** Broker's lot limits for an instrument (cached 30 min). */
+  async function getSymbolSpec(mtSymbol: string): Promise<MtSymbolSpec> {
+    const key = `${state.accountId}|${mtSymbol}`;
+    const cached = specCache.get(key);
+    if (cached && Date.now() - cached.at < SYMBOL_TTL_MS) return cached.spec;
+    try {
+      const spec = await req<MtSymbolSpec>(
+        "GET",
+        `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/specification`,
+      );
+      specCache.set(key, { at: Date.now(), spec: spec ?? {} });
+      return spec ?? {};
+    } catch (e) {
+      console.warn("[MT5] symbol specification unavailable", mtSymbol,
+        e instanceof Error ? e.message : String(e));
+      return {};
+    }
+  }
+
+
 
   return {
     id: brokerId, displayName: label,
@@ -427,15 +516,28 @@ export function createMt5Connector(
       // so the caller skips the trade instead of submitting a bad request.
       const mtSymbol = await resolveSymbol(input.symbol);
 
+      // Broker lot limits decide the final volume — submitting an unrounded or
+      // sub-minimum size is what produced TRADE_RETCODE_INVALID_VOLUME (10014).
+      const spec = await getSymbolSpec(mtSymbol);
+      const sized = normalizeVolume(Number(input.qty), spec);
+
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
-      const body = buildTradeRequest(input, mtSymbol);
+      const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol);
       const actionType = body.actionType as string;
 
-      // Exact request body logged before the call (secrets are not part of it).
+      // Exact request body + broker limits logged before the call.
       console.log("[MT5] trade request", JSON.stringify({
-        accountId: state.accountId, requestedSymbol: input.symbol, body,
+        accountId: state.accountId, requestedSymbol: input.symbol, mtSymbol,
+        requestedVolume: Number(input.qty), finalVolume: sized.volume,
+        volumeNote: sized.note ?? null,
+        brokerLimits: {
+          volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
+          volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
+        },
+        body,
       }));
+
 
       // MetaApi's REST /trade endpoint takes the trade object at the top level.
       const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string }>(
@@ -454,7 +556,16 @@ export function createMt5Connector(
           ? "filled" : "working",
         fees: 0, slippageBps: 0, latencyMs: Date.now() - started,
         // Surfaces the exact broker instrument in the execution log.
-        raw: { mtSymbol, actionType, requestedSymbol: input.symbol, request: body, response: r },
+        raw: {
+          mtSymbol, actionType, requestedSymbol: input.symbol,
+          requestedVolume: Number(input.qty), finalVolume: sized.volume,
+          volumeNote: sized.note ?? null,
+          brokerLimits: {
+            volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
+            volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
+          },
+          request: body, response: r,
+        },
       };
     },
 
