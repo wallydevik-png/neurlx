@@ -16,7 +16,7 @@ export interface DeskAccount {
   error?: string;
 }
 
-export interface DeskPosition extends RichPosition {
+export interface DeskPosition extends Omit<RichPosition, "raw"> {
   connectionId: string;
   accountLabel: string;
   currency: string;
@@ -142,7 +142,7 @@ export async function loadLiveDesk(
       );
       const notional = p.openPrice * p.volume;
       positions.push({
-        ...p,
+        ...p, raw: undefined,
         connectionId: c.id,
         accountLabel: c.label,
         currency,
