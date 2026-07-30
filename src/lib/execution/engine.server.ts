@@ -387,7 +387,7 @@ export async function submitOrder(
 
     // Instrument not offered by the connected broker → skip, don't fail.
     // This must not count as a connectivity failure or trip the breaker.
-    if (e instanceof Error && e.name === "UnsupportedSymbolError") {
+    if (e instanceof Error && (e.name === "UnsupportedSymbolError" || e.name === "InvalidVolumeError")) {
       await supabase.from("orders").update({
         status: "rejected", error_message: msg,
       }).eq("id", orderRow.id);
