@@ -516,15 +516,28 @@ export function createMt5Connector(
       // so the caller skips the trade instead of submitting a bad request.
       const mtSymbol = await resolveSymbol(input.symbol);
 
+      // Broker lot limits decide the final volume — submitting an unrounded or
+      // sub-minimum size is what produced TRADE_RETCODE_INVALID_VOLUME (10014).
+      const spec = await getSymbolSpec(mtSymbol);
+      const sized = normalizeVolume(Number(input.qty), spec);
+
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
-      const body = buildTradeRequest(input, mtSymbol);
+      const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol);
       const actionType = body.actionType as string;
 
-      // Exact request body logged before the call (secrets are not part of it).
+      // Exact request body + broker limits logged before the call.
       console.log("[MT5] trade request", JSON.stringify({
-        accountId: state.accountId, requestedSymbol: input.symbol, body,
+        accountId: state.accountId, requestedSymbol: input.symbol, mtSymbol,
+        requestedVolume: Number(input.qty), finalVolume: sized.volume,
+        volumeNote: sized.note ?? null,
+        brokerLimits: {
+          volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
+          volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
+        },
+        body,
       }));
+
 
       // MetaApi's REST /trade endpoint takes the trade object at the top level.
       const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string }>(
