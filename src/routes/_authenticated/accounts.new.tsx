@@ -48,18 +48,28 @@ function NewAccount() {
       toast.error("NeurlX never accepts withdrawal credentials.");
       return;
     }
-    const missingCredential = broker.credentialFields?.find(f => !f.optional && !(creds[f.key] ?? "").trim());
-    if (missingCredential) {
-      toast.error(`${missingCredential.label} is required for ${broker.displayName}.`);
-      return;
+    const isMt = broker.authMethod === "metatrader";
+    if (isMt) {
+      if (!accountNumber.trim()) { toast.error(`MT login (account number) is required for ${broker.displayName}.`); return; }
+      if (!(creds.password ?? "").trim()) { toast.error("MT password is required."); return; }
+      if (!server.trim()) { toast.error("Broker server is required."); return; }
+    } else {
+      const missingCredential = broker.credentialFields?.find(f => !f.optional && !(creds[f.key] ?? "").trim());
+      if (missingCredential) {
+        toast.error(`${missingCredential.label} is required for ${broker.displayName}.`);
+        return;
+      }
     }
     setBusy(true);
     try {
+      const payload = isMt
+        ? { ...creds, login: accountNumber.trim(), server: server.trim() }
+        : creds;
       await add({
         data: {
           connectorId: broker.id,
           label,
-          credentials: creds,
+          credentials: payload,
           tradingEnabled: broker.id === "paper",
           brokerCategory: broker.category === "crypto" && broker.id === "paper" ? undefined : broker.category,
           authMethod: broker.authMethod,
