@@ -18,8 +18,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
-  ApiPermissionSnapshot, Balance, ConnectionHealth, ConnectorPosition,
-  HistoryEntry, PlaceOrderInput, PlaceOrderResult, Quote, TradingConnector,
+  AccountSummary, ApiPermissionSnapshot, Balance, ClosedDeal, ConnectionHealth,
+  ConnectorPosition, HistoryEntry, MarginEstimate, PlaceOrderInput, PlaceOrderResult,
+  Quote, RichPosition, TradingConnector,
 } from "./types";
 import { doRequest } from "./rest.server";
 
