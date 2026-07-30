@@ -385,6 +385,26 @@ export async function submitOrder(
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown execution error";
 
+    // Broker cannot fund the order → skip cleanly, notify, never trip breaker.
+    if (e instanceof Error && e.name === "InsufficientMarginError") {
+      await supabase.from("orders").update({
+        status: "rejected", error_message: msg,
+      }).eq("id", orderRow.id);
+      await supabase.from("execution_log").insert({
+        user_id: userId, order_id: orderRow.id, event: "order.skipped",
+        severity: "warn", message: msg,
+        payload: { isLive, symbol: req.symbol, reason: "insufficient_margin", venue: connector.displayName },
+      });
+      const { emitNotification } = await import("@/lib/notifications/emit.server");
+      await emitNotification(supabase, userId, {
+        kind: "trade.skipped.margin", severity: "warning",
+        title: `Trade skipped: ${req.symbol}`,
+        message: msg, payload: { orderId: orderRow.id, symbol: req.symbol, live: isLive },
+      });
+      return { orderId: orderRow.id, positionId: null, status: "rejected",
+        filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive, message: msg };
+    }
+
     // Instrument not offered by the connected broker → skip, don't fail.
     // This must not count as a connectivity failure or trip the breaker.
     if (e instanceof Error && (e.name === "UnsupportedSymbolError" || e.name === "InvalidVolumeError")) {
@@ -399,6 +419,7 @@ export async function submitOrder(
       return { orderId: orderRow.id, positionId: null, status: "rejected",
         filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive, message: msg };
     }
+
 
     await supabase.from("orders").update({
       status: "error", error_message: msg,
