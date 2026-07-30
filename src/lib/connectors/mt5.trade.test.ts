@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTradeRequest, resolveTradeAction, MT_ACTIONS } from "./mt5.server";
+import { buildTradeRequest, resolveTradeAction, sanitizeClientId, MT_CLIENT_ID_PATTERN, MT_ACTIONS } from "./mt5.server";
 import type { PlaceOrderInput } from "./types";
 
 const base: PlaceOrderInput = {
