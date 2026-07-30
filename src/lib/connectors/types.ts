@@ -108,6 +108,61 @@ export interface SymbolFilter {
   minNotional: number;
 }
 
+/** Broker-side account state used by the live desk + margin pre-check. */
+export interface AccountSummary {
+  currency: string;
+  balance: number;
+  equity: number;
+  freeMargin: number;
+  usedMargin: number;
+  marginLevel: number | null;
+  leverage?: number | null;
+}
+
+/** Full open-position detail as reported by the broker. */
+export interface RichPosition {
+  ticket: string;
+  symbol: string;
+  side: "long" | "short";
+  volume: number;
+  openPrice: number;
+  currentPrice: number | null;
+  profit: number;
+  swap: number;
+  commission: number;
+  usedMargin: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  openedAt: string;
+  raw?: unknown;
+}
+
+/** A completed broker trade (deal/position closed). */
+export interface ClosedDeal {
+  ticket: string;
+  positionTicket: string | null;
+  symbol: string;
+  side: "long" | "short";
+  volume: number;
+  entryPrice: number | null;
+  exitPrice: number | null;
+  grossProfit: number;
+  commission: number;
+  swap: number;
+  netProfit: number;
+  openedAt: string | null;
+  closedAt: string;
+  comment?: string | null;
+}
+
+export interface MarginEstimate {
+  /** Margin required for the requested volume, in account currency. */
+  margin: number;
+  freeMargin: number;
+  sufficient: boolean;
+}
+
+
 export interface TradingConnector {
   id: string;
   displayName: string;
@@ -130,8 +185,19 @@ export interface TradingConnector {
     symbol: string,
     clientOrderId?: string,
   ): Promise<OrderStatusResult>;
+  /** Live-desk extensions (implemented by MetaTrader today). */
+  getAccountSummary?(): Promise<AccountSummary | null>;
+  getRichPositions?(): Promise<RichPosition[]>;
+  getClosedDeals?(sinceMs?: number): Promise<ClosedDeal[]>;
+  estimateMargin?(
+    symbol: string,
+    side: Side,
+    volume: number,
+    price?: number,
+  ): Promise<MarginEstimate | null>;
   supportsRealExecution?: boolean;
 }
+
 
 export interface ConnectorDescriptor {
   id: string;

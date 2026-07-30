@@ -18,8 +18,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
-  ApiPermissionSnapshot, Balance, ConnectionHealth, ConnectorPosition,
-  HistoryEntry, PlaceOrderInput, PlaceOrderResult, Quote, TradingConnector,
+  AccountSummary, ApiPermissionSnapshot, Balance, ClosedDeal, ConnectionHealth,
+  ConnectorPosition, HistoryEntry, MarginEstimate, PlaceOrderInput, PlaceOrderResult,
+  Quote, RichPosition, TradingConnector,
 } from "./types";
 import { doRequest } from "./rest.server";
 
@@ -195,6 +196,19 @@ export class InvalidVolumeError extends Error {
     this.name = "InvalidVolumeError";
   }
 }
+
+/** Thrown when the broker cannot fund the order — the trade is skipped, not failed. */
+export class InsufficientMarginError extends Error {
+  readonly required: number;
+  readonly available: number;
+  constructor(required: number, available: number) {
+    super(`Skipped: insufficient free margin (required ${required.toFixed(2)}, available ${available.toFixed(2)}).`);
+    this.name = "InsufficientMarginError";
+    this.required = required;
+    this.available = available;
+  }
+}
+
 
 function decimalsOf(step: number): number {
   const s = String(step);
@@ -470,6 +484,43 @@ export function createMt5Connector(
     }
   }
 
+  interface MtAccountInfo {
+    broker?: string; currency?: string; balance?: number; equity?: number;
+    margin?: number; freeMargin?: number; marginLevel?: number; leverage?: number;
+  }
+
+  async function accountInformation(): Promise<MtAccountInfo> {
+    return req<MtAccountInfo>(
+      "GET", `/users/current/accounts/${state.accountId}/accountInformation`,
+    );
+  }
+
+  /** Broker-calculated margin for an order (MetaApi calculate-margin endpoint). */
+  async function calcMargin(
+    mtSymbol: string, actionType: string, volume: number, openPrice: number,
+  ): Promise<number | null> {
+    try {
+      const r = await req<{ margin?: number }>(
+        "POST", `/users/current/accounts/${state.accountId}/calculate-margin`,
+        { symbol: mtSymbol, type: actionType, volume, openPrice },
+      );
+      const m = Number(r?.margin);
+      return Number.isFinite(m) && m > 0 ? m : null;
+    } catch (e) {
+      console.warn("[MT5] margin calculation unavailable", mtSymbol,
+        e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  }
+
+  async function midPrice(mtSymbol: string): Promise<number> {
+    try {
+      const r = await req<{ bid: number; ask: number }>(
+        "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/current-price`,
+      );
+      return (Number(r.bid) + Number(r.ask)) / 2;
+    } catch { return 0; }
+  }
 
 
   return {
@@ -519,18 +570,63 @@ export function createMt5Connector(
       // Broker lot limits decide the final volume — submitting an unrounded or
       // sub-minimum size is what produced TRADE_RETCODE_INVALID_VOLUME (10014).
       const spec = await getSymbolSpec(mtSymbol);
-      const sized = normalizeVolume(Number(input.qty), spec);
+      const requestedVolume = Number(input.qty);
+
+      // ---- Dynamic sizing + margin pre-check --------------------------------
+      // Size from equity/risk/stop distance, then cap by usable free margin so
+      // we never submit a volume the account cannot fund.
+      const info = await accountInformation().catch(() => ({} as MtAccountInfo));
+      const equity = Number(info.equity ?? info.balance ?? 0);
+      const freeMargin = Number(info.freeMargin ?? 0);
+      const probeAction = resolveTradeAction(input.side, input.orderType);
+      const refPrice = Number(input.limitPrice) > 0 ? Number(input.limitPrice) : await midPrice(mtSymbol);
+      const marginPerLot = refPrice > 0 ? await calcMargin(mtSymbol, probeAction, 1, refPrice) : null;
+
+      let sized = normalizeVolume(requestedVolume, spec);
+      const sizingNotes: string[] = sized.note ? [sized.note] : [];
+
+      if (marginPerLot && freeMargin > 0) {
+        const { computePositionSize } = await import("@/lib/execution/sizing");
+        const plan = computePositionSize({
+          equity, freeMargin,
+          riskPct: 0, // risk-based target comes from the caller's qty
+          entryPrice: refPrice,
+          stopLoss: input.stopPrice ?? null,
+          spec: {
+            volumeMin: Number(spec.volumeMin ?? 0.01),
+            volumeMax: Number(spec.volumeMax ?? 100),
+            volumeStep: Number(spec.volumeStep ?? 0.01),
+            contractSize: Number(spec.contractSize ?? 1),
+            marginPerLot,
+          },
+        });
+        // Cap the requested size by what margin allows.
+        const usable = freeMargin * 0.8;
+        const maxByMargin = usable / marginPerLot;
+        if (sized.volume > maxByMargin) {
+          const capped = normalizeVolume(Math.max(maxByMargin, 0.0000001), spec);
+          sizingNotes.push(`capped by free margin to ${capped.volume} lots`);
+          sized = capped;
+        }
+        const required = marginPerLot * sized.volume;
+        if (required > usable) {
+          throw new InsufficientMarginError(required, usable);
+        }
+        sizingNotes.push(...plan.notes.filter(n => n.startsWith("capped")));
+      }
 
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
       const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol);
       const actionType = body.actionType as string;
+      const requiredMargin = marginPerLot ? Number((marginPerLot * sized.volume).toFixed(2)) : null;
 
       // Exact request body + broker limits logged before the call.
       console.log("[MT5] trade request", JSON.stringify({
         accountId: state.accountId, requestedSymbol: input.symbol, mtSymbol,
-        requestedVolume: Number(input.qty), finalVolume: sized.volume,
-        volumeNote: sized.note ?? null,
+        requestedVolume, finalVolume: sized.volume,
+        volumeNote: sizingNotes.join("; ") || null,
+        margin: { perLot: marginPerLot, required: requiredMargin, freeMargin },
         brokerLimits: {
           volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
           volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
@@ -558,8 +654,11 @@ export function createMt5Connector(
         // Surfaces the exact broker instrument in the execution log.
         raw: {
           mtSymbol, actionType, requestedSymbol: input.symbol,
-          requestedVolume: Number(input.qty), finalVolume: sized.volume,
-          volumeNote: sized.note ?? null,
+          requestedVolume, finalVolume: sized.volume,
+          volumeNote: sizingNotes.join("; ") || null,
+          margin: { perLot: marginPerLot, required: requiredMargin, freeMargin },
+          metaApiOrderId: r.orderId ?? null,
+          brokerPositionTicket: r.positionId ?? null,
           brokerLimits: {
             volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
             volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
@@ -568,6 +667,7 @@ export function createMt5Connector(
         },
       };
     },
+
 
 
     async cancelOrder(externalOrderId: string) {
@@ -607,6 +707,113 @@ export function createMt5Connector(
         }));
       } catch { return []; }
     },
+
+    // ---- Live desk -------------------------------------------------------
+    async getAccountSummary(): Promise<AccountSummary | null> {
+      try {
+        const r = await accountInformation();
+        const equity = Number(r.equity ?? r.balance ?? 0);
+        const used = Number(r.margin ?? 0);
+        return {
+          currency: r.currency ?? "USD",
+          balance: Number(r.balance ?? 0),
+          equity,
+          freeMargin: Number(r.freeMargin ?? 0),
+          usedMargin: used,
+          marginLevel: r.marginLevel != null ? Number(r.marginLevel)
+            : used > 0 ? (equity / used) * 100 : null,
+          leverage: r.leverage ?? null,
+        };
+      } catch { return null; }
+    },
+
+    async getRichPositions(): Promise<RichPosition[]> {
+      try {
+        const r = await req<Array<{
+          id: string; symbol: string; type: string; volume: number; openPrice: number;
+          currentPrice?: number; profit?: number; swap?: number; commission?: number;
+          stopLoss?: number; takeProfit?: number; time: string; margin?: number;
+        }>>("GET", `/users/current/accounts/${state.accountId}/positions`);
+        return (r ?? []).map(p => ({
+          ticket: String(p.id),
+          symbol: p.symbol,
+          side: p.type === "POSITION_TYPE_SELL" ? "short" as const : "long" as const,
+          volume: Number(p.volume ?? 0),
+          openPrice: Number(p.openPrice ?? 0),
+          currentPrice: p.currentPrice != null ? Number(p.currentPrice) : null,
+          profit: Number(p.profit ?? 0),
+          swap: Number(p.swap ?? 0),
+          commission: Number(p.commission ?? 0),
+          usedMargin: p.margin != null ? Number(p.margin) : null,
+          stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
+          takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
+          openedAt: p.time,
+          raw: p,
+        }));
+      } catch { return []; }
+    },
+
+    async getClosedDeals(sinceMs = Date.now() - 90 * 24 * 3600 * 1000): Promise<ClosedDeal[]> {
+      try {
+        const end = new Date().toISOString();
+        const start = new Date(sinceMs).toISOString();
+        const deals = await req<Array<{
+          id: string; positionId?: string; symbol?: string; type: string; entryType?: string;
+          volume?: number; price?: number; profit?: number; commission?: number; swap?: number;
+          time: string; comment?: string;
+        }>>("GET", `/users/current/accounts/${state.accountId}/history-deals/time/${start}/${end}`);
+
+        // Pair DEAL_ENTRY_IN with DEAL_ENTRY_OUT on the same broker position.
+        const opens = new Map<string, { price: number; time: string; type: string }>();
+        const out: ClosedDeal[] = [];
+        for (const d of deals ?? []) {
+          if (!d.symbol) continue;
+          const pos = String(d.positionId ?? d.id);
+          if (d.entryType === "DEAL_ENTRY_IN") {
+            opens.set(pos, { price: Number(d.price ?? 0), time: d.time, type: d.type });
+            continue;
+          }
+          if (d.entryType && d.entryType !== "DEAL_ENTRY_OUT" && d.entryType !== "DEAL_ENTRY_OUT_BY") continue;
+          const open = opens.get(pos);
+          const gross = Number(d.profit ?? 0);
+          const commission = Number(d.commission ?? 0);
+          const swap = Number(d.swap ?? 0);
+          out.push({
+            ticket: String(d.id),
+            positionTicket: d.positionId ? String(d.positionId) : null,
+            symbol: d.symbol,
+            // Closing deal side is the inverse of the position direction.
+            side: d.type === "DEAL_TYPE_SELL" ? "long" : "short",
+            volume: Number(d.volume ?? 0),
+            entryPrice: open ? open.price : null,
+            exitPrice: Number(d.price ?? 0),
+            grossProfit: gross,
+            commission,
+            swap,
+            netProfit: Number((gross + commission + swap).toFixed(2)),
+            openedAt: open?.time ?? null,
+            closedAt: d.time,
+            comment: d.comment ?? null,
+          });
+        }
+        return out.sort((a, b) => +new Date(b.closedAt) - +new Date(a.closedAt));
+      } catch { return []; }
+    },
+
+    async estimateMargin(symbol, side, volume, price): Promise<MarginEstimate | null> {
+      try {
+        const mtSymbol = await resolveSymbol(symbol);
+        const action = resolveTradeAction(side, "market");
+        const p = Number(price) > 0 ? Number(price) : await midPrice(mtSymbol);
+        const margin = await calcMargin(mtSymbol, action, volume, p);
+        const info = await accountInformation();
+        const freeMargin = Number(info.freeMargin ?? 0);
+        if (margin == null) return null;
+        return { margin, freeMargin, sufficient: margin <= freeMargin * 0.8 };
+      } catch { return null; }
+    },
+
+
 
     async checkHealth(): Promise<ConnectionHealth> {
       const t0 = Date.now();

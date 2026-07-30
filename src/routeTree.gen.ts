@@ -31,6 +31,7 @@ import { Route as AuthenticatedMultiAssetRouteImport } from './routes/_authentic
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
 import { Route as AuthenticatedMobileRouteImport } from './routes/_authenticated/mobile'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
+import { Route as AuthenticatedLiveDeskRouteImport } from './routes/_authenticated/live-desk'
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
 import { Route as AuthenticatedJournalRouteImport } from './routes/_authenticated/journal'
 import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authenticated/intelligence'
@@ -165,6 +166,11 @@ const AuthenticatedMobileRoute = AuthenticatedMobileRouteImport.update({
 const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
   id: '/market',
   path: '/market',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedLiveDeskRoute = AuthenticatedLiveDeskRouteImport.update({
+  id: '/live-desk',
+  path: '/live-desk',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedLabRoute = AuthenticatedLabRouteImport.update({
@@ -311,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/intelligence': typeof AuthenticatedIntelligenceRoute
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
+  '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
@@ -356,6 +363,7 @@ export interface FileRoutesByTo {
   '/intelligence': typeof AuthenticatedIntelligenceRoute
   '/journal': typeof AuthenticatedJournalRoute
   '/lab': typeof AuthenticatedLabRoute
+  '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
@@ -404,6 +412,7 @@ export interface FileRoutesById {
   '/_authenticated/intelligence': typeof AuthenticatedIntelligenceRoute
   '/_authenticated/journal': typeof AuthenticatedJournalRoute
   '/_authenticated/lab': typeof AuthenticatedLabRoute
+  '/_authenticated/live-desk': typeof AuthenticatedLiveDeskRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
   '/_authenticated/mobile': typeof AuthenticatedMobileRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
@@ -452,6 +461,7 @@ export interface FileRouteTypes {
     | '/intelligence'
     | '/journal'
     | '/lab'
+    | '/live-desk'
     | '/market'
     | '/mobile'
     | '/monitoring'
@@ -497,6 +507,7 @@ export interface FileRouteTypes {
     | '/intelligence'
     | '/journal'
     | '/lab'
+    | '/live-desk'
     | '/market'
     | '/mobile'
     | '/monitoring'
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | '/_authenticated/intelligence'
     | '/_authenticated/journal'
     | '/_authenticated/lab'
+    | '/_authenticated/live-desk'
     | '/_authenticated/market'
     | '/_authenticated/mobile'
     | '/_authenticated/monitoring'
@@ -731,6 +743,13 @@ declare module '@tanstack/react-router' {
       path: '/market'
       fullPath: '/market'
       preLoaderRoute: typeof AuthenticatedMarketRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/live-desk': {
+      id: '/_authenticated/live-desk'
+      path: '/live-desk'
+      fullPath: '/live-desk'
+      preLoaderRoute: typeof AuthenticatedLiveDeskRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/lab': {
@@ -933,6 +952,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
   AuthenticatedJournalRoute: typeof AuthenticatedJournalRoute
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
+  AuthenticatedLiveDeskRoute: typeof AuthenticatedLiveDeskRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
   AuthenticatedMobileRoute: typeof AuthenticatedMobileRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
@@ -973,6 +993,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,
   AuthenticatedJournalRoute: AuthenticatedJournalRoute,
   AuthenticatedLabRoute: AuthenticatedLabRoute,
+  AuthenticatedLiveDeskRoute: AuthenticatedLiveDeskRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
   AuthenticatedMobileRoute: AuthenticatedMobileRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,

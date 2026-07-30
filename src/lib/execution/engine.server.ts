@@ -251,9 +251,31 @@ export async function submitOrder(
     payload: { req: { ...req, live: isLive }, venue, clientOrderId },
   });
 
+  // 4b. Free-margin guard — pause NEW live trades while margin is depleted.
+  //     Existing positions keep being managed; trading resumes automatically
+  //     once free margin recovers above the configured threshold.
+  if (isLive && connector.getAccountSummary) {
+    const { checkMarginGuard } = await import("@/lib/execution/marginGuard.server");
+    const guard = await checkMarginGuard(supabase, userId, connector);
+    if (!guard.ok) {
+      await supabase.from("orders").update({
+        status: "rejected", error_message: guard.reason,
+      }).eq("id", orderRow.id);
+      await supabase.from("execution_log").insert({
+        user_id: userId, order_id: orderRow.id, event: "order.skipped",
+        severity: "warn", message: guard.reason!,
+        payload: { reason: "margin_guard", symbol: req.symbol, ...guard.detail },
+      });
+      return { orderId: orderRow.id, positionId: null, status: "rejected",
+        filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive: true,
+        message: guard.reason };
+    }
+  }
+
   // 5. Live pre-trade check (skipped for paper — riskGate already ran)
   if (isLive) {
     let pre: { ok: boolean; reason?: string; adjustments?: { qty?: number } };
+
     try {
       let estPrice: number;
       try {
@@ -358,6 +380,37 @@ export async function submitOrder(
       },
     });
 
+    // 7b. Cache the broker ticket so NeurlX can reconcile this trade after a
+    //     reconnect or server restart.
+    if (isLive && result.externalOrderId) {
+      const raw = result.raw as {
+        mtSymbol?: string; metaApiOrderId?: string; brokerPositionTicket?: string;
+        margin?: { required?: number | null };
+      } | undefined;
+      await supabase.from("broker_trade_tickets").upsert({
+        user_id: userId,
+        connection_id: req.connectionId ?? null,
+        order_id: orderRow.id,
+        venue: connector.id,
+        broker_symbol: venueSymbol,
+        requested_symbol: req.symbol,
+        side: req.side,
+        volume: filledQty,
+        metaapi_order_id: raw?.metaApiOrderId ?? result.externalOrderId,
+        broker_position_ticket: raw?.brokerPositionTicket ?? result.externalOrderId,
+        client_order_id: clientOrderId,
+        state: "open",
+        detail: {
+          filledPrice: result.filledPrice ?? null,
+          requiredMargin: raw?.margin?.required ?? null,
+          latencyMs: result.latencyMs ?? null,
+        },
+      }, { onConflict: "user_id,venue,broker_position_ticket" }).then(
+        () => undefined,
+        (e: unknown) => console.warn("[engine] ticket cache failed", e),
+      );
+    }
+
 
     // 8. Reconciliation for live
     if (isLive && connector.getOrderStatus && result.externalOrderId) {
@@ -385,6 +438,26 @@ export async function submitOrder(
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown execution error";
 
+    // Broker cannot fund the order → skip cleanly, notify, never trip breaker.
+    if (e instanceof Error && e.name === "InsufficientMarginError") {
+      await supabase.from("orders").update({
+        status: "rejected", error_message: msg,
+      }).eq("id", orderRow.id);
+      await supabase.from("execution_log").insert({
+        user_id: userId, order_id: orderRow.id, event: "order.skipped",
+        severity: "warn", message: msg,
+        payload: { isLive, symbol: req.symbol, reason: "insufficient_margin", venue: connector.displayName },
+      });
+      const { emitNotification } = await import("@/lib/notifications/emit.server");
+      await emitNotification(supabase, userId, {
+        kind: "trade.skipped.margin", severity: "warning",
+        title: `Trade skipped: ${req.symbol}`,
+        message: msg, payload: { orderId: orderRow.id, symbol: req.symbol, live: isLive },
+      });
+      return { orderId: orderRow.id, positionId: null, status: "rejected",
+        filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive, message: msg };
+    }
+
     // Instrument not offered by the connected broker → skip, don't fail.
     // This must not count as a connectivity failure or trip the breaker.
     if (e instanceof Error && (e.name === "UnsupportedSymbolError" || e.name === "InvalidVolumeError")) {
@@ -399,6 +472,7 @@ export async function submitOrder(
       return { orderId: orderRow.id, positionId: null, status: "rejected",
         filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive, message: msg };
     }
+
 
     await supabase.from("orders").update({
       status: "error", error_message: msg,
