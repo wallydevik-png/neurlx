@@ -569,18 +569,63 @@ export function createMt5Connector(
       // Broker lot limits decide the final volume — submitting an unrounded or
       // sub-minimum size is what produced TRADE_RETCODE_INVALID_VOLUME (10014).
       const spec = await getSymbolSpec(mtSymbol);
-      const sized = normalizeVolume(Number(input.qty), spec);
+      const requestedVolume = Number(input.qty);
+
+      // ---- Dynamic sizing + margin pre-check --------------------------------
+      // Size from equity/risk/stop distance, then cap by usable free margin so
+      // we never submit a volume the account cannot fund.
+      const info = await accountInformation().catch(() => ({} as MtAccountInfo));
+      const equity = Number(info.equity ?? info.balance ?? 0);
+      const freeMargin = Number(info.freeMargin ?? 0);
+      const probeAction = resolveTradeAction(input.side, input.orderType);
+      const refPrice = Number(input.limitPrice) > 0 ? Number(input.limitPrice) : await midPrice(mtSymbol);
+      const marginPerLot = refPrice > 0 ? await calcMargin(mtSymbol, probeAction, 1, refPrice) : null;
+
+      let sized = normalizeVolume(requestedVolume, spec);
+      const sizingNotes: string[] = sized.note ? [sized.note] : [];
+
+      if (marginPerLot && freeMargin > 0) {
+        const { computePositionSize } = await import("@/lib/execution/sizing");
+        const plan = computePositionSize({
+          equity, freeMargin,
+          riskPct: 0, // risk-based target comes from the caller's qty
+          entryPrice: refPrice,
+          stopLoss: input.stopPrice ?? null,
+          spec: {
+            volumeMin: Number(spec.volumeMin ?? 0.01),
+            volumeMax: Number(spec.volumeMax ?? 100),
+            volumeStep: Number(spec.volumeStep ?? 0.01),
+            contractSize: Number(spec.contractSize ?? 1),
+            marginPerLot,
+          },
+        });
+        // Cap the requested size by what margin allows.
+        const usable = freeMargin * 0.8;
+        const maxByMargin = usable / marginPerLot;
+        if (sized.volume > maxByMargin) {
+          const capped = normalizeVolume(Math.max(maxByMargin, 0.0000001), spec);
+          sizingNotes.push(`capped by free margin to ${capped.volume} lots`);
+          sized = capped;
+        }
+        const required = marginPerLot * sized.volume;
+        if (required > usable) {
+          throw new InsufficientMarginError(required, usable);
+        }
+        sizingNotes.push(...plan.notes.filter(n => n.startsWith("capped")));
+      }
 
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
       const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol);
       const actionType = body.actionType as string;
+      const requiredMargin = marginPerLot ? Number((marginPerLot * sized.volume).toFixed(2)) : null;
 
       // Exact request body + broker limits logged before the call.
       console.log("[MT5] trade request", JSON.stringify({
         accountId: state.accountId, requestedSymbol: input.symbol, mtSymbol,
-        requestedVolume: Number(input.qty), finalVolume: sized.volume,
-        volumeNote: sized.note ?? null,
+        requestedVolume, finalVolume: sized.volume,
+        volumeNote: sizingNotes.join("; ") || null,
+        margin: { perLot: marginPerLot, required: requiredMargin, freeMargin },
         brokerLimits: {
           volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
           volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
@@ -608,8 +653,11 @@ export function createMt5Connector(
         // Surfaces the exact broker instrument in the execution log.
         raw: {
           mtSymbol, actionType, requestedSymbol: input.symbol,
-          requestedVolume: Number(input.qty), finalVolume: sized.volume,
-          volumeNote: sized.note ?? null,
+          requestedVolume, finalVolume: sized.volume,
+          volumeNote: sizingNotes.join("; ") || null,
+          margin: { perLot: marginPerLot, required: requiredMargin, freeMargin },
+          metaApiOrderId: r.orderId ?? null,
+          brokerPositionTicket: r.positionId ?? null,
           brokerLimits: {
             volumeMin: spec.volumeMin ?? null, volumeMax: spec.volumeMax ?? null,
             volumeStep: spec.volumeStep ?? null, contractSize: spec.contractSize ?? null,
@@ -618,6 +666,7 @@ export function createMt5Connector(
         },
       };
     },
+
 
 
     async cancelOrder(externalOrderId: string) {
