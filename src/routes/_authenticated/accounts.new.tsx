@@ -49,32 +49,27 @@ function NewAccount() {
       return;
     }
     const isMt = broker.authMethod === "metatrader";
-    if (isMt) {
-      if (!accountNumber.trim()) { toast.error(`MT login (account number) is required for ${broker.displayName}.`); return; }
-      if (!(creds.password ?? "").trim()) { toast.error("MT password is required."); return; }
-      if (!server.trim()) { toast.error("Broker server is required."); return; }
-    } else {
-      const missingCredential = broker.credentialFields?.find(f => !f.optional && !(creds[f.key] ?? "").trim());
-      if (missingCredential) {
-        toast.error(`${missingCredential.label} is required for ${broker.displayName}.`);
-        return;
-      }
+    // Single source of truth: dedicated MT inputs are merged into the credential
+    // map *before* validation, so `login`/`server` can never be reported missing
+    // while visibly filled in the form.
+    const values = buildCredentialValues({ creds, accountNumber, server, isMt });
+    const missing = findMissingCredential(broker, values);
+    if (missing) {
+      toast.error(`${missing.label} is required for ${broker.displayName}.`);
+      return;
     }
     setBusy(true);
     try {
-      const payload = isMt
-        ? { ...creds, login: accountNumber.trim(), server: server.trim() }
-        : creds;
       await add({
         data: {
           connectorId: broker.id,
           label,
-          credentials: payload,
+          credentials: values,
           tradingEnabled: broker.id === "paper",
           brokerCategory: broker.category === "crypto" && broker.id === "paper" ? undefined : broker.category,
           authMethod: broker.authMethod,
-          brokerServer: server || undefined,
-          accountNumber: accountNumber || undefined,
+          brokerServer: values.server || undefined,
+          accountNumber: values.login || undefined,
         },
       });
       toast.success(broker.implemented ? "Connected" : `${broker.displayName} added — awaiting first-class connector.`);
@@ -84,6 +79,7 @@ function NewAccount() {
       toast.error(message === "Failed" ? "Connection failed. Please check the key fields and try again." : message);
     } finally { setBusy(false); }
   }
+
 
   return (
     <AppShell>
