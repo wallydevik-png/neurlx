@@ -306,6 +306,7 @@ async function provisionAccount(params: {
 // 429 TooManyRequestsError from MetaApi.
 const accountIdCache = new Map<string, string>();          // credential key -> deployed accountId
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
+const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
