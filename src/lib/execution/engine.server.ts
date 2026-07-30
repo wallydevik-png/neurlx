@@ -380,6 +380,37 @@ export async function submitOrder(
       },
     });
 
+    // 7b. Cache the broker ticket so NeurlX can reconcile this trade after a
+    //     reconnect or server restart.
+    if (isLive && result.externalOrderId) {
+      const raw = result.raw as {
+        mtSymbol?: string; metaApiOrderId?: string; brokerPositionTicket?: string;
+        margin?: { required?: number | null };
+      } | undefined;
+      await supabase.from("broker_trade_tickets").upsert({
+        user_id: userId,
+        connection_id: req.connectionId ?? null,
+        order_id: orderRow.id,
+        venue: connector.id,
+        broker_symbol: venueSymbol,
+        requested_symbol: req.symbol,
+        side: req.side,
+        volume: filledQty,
+        metaapi_order_id: raw?.metaApiOrderId ?? result.externalOrderId,
+        broker_position_ticket: raw?.brokerPositionTicket ?? result.externalOrderId,
+        client_order_id: clientOrderId,
+        state: "open",
+        detail: {
+          filledPrice: result.filledPrice ?? null,
+          requiredMargin: raw?.margin?.required ?? null,
+          latencyMs: result.latencyMs ?? null,
+        },
+      }, { onConflict: "user_id,venue,broker_position_ticket" }).then(
+        () => undefined,
+        (e: unknown) => console.warn("[engine] ticket cache failed", e),
+      );
+    }
+
 
     // 8. Reconciliation for live
     if (isLive && connector.getOrderStatus && result.externalOrderId) {
