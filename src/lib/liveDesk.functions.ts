@@ -39,7 +39,7 @@ export const updateMarginSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { minFreeMarginPct?: number; dailyProfitTarget?: number }) => d)
   .handler(async ({ data, context }) => {
-    const patch: Record<string, number> = {};
+    const patch: { min_free_margin_pct?: number; daily_profit_target?: number } = {};
     if (data.minFreeMarginPct != null) {
       patch.min_free_margin_pct = Math.min(90, Math.max(0, Number(data.minFreeMarginPct)));
     }
