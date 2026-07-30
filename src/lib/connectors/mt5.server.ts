@@ -28,12 +28,38 @@ function clientBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-client-api-v1.${r}.agiliumtrade.ai`;
 }
-function toMt(symbol: string): string {
-  return symbol.toUpperCase().replace("-", "");
+/** Strip separators/case so "BTC-USD", "btc/usd" and "BTCUSD" compare equal. */
+function normalizeKey(symbol: string): string {
+  return symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+/** Broker suffixes/prefixes seen in the wild: BTCUSD.m, BTCUSD_raw, #BTCUSD, BTCUSDm */
+function stripDecorations(mtSymbol: string): string[] {
+  const base = normalizeKey(mtSymbol);
+  const out = new Set<string>([base]);
+  out.add(base.replace(/(MICRO|CASH|RAW|ECN|PRO|STP|SB|M|C|Z|I|E|R)$/, ""));
+  out.add(base.replace(/^(FX|CFD)/, ""));
+  return [...out].filter(Boolean);
+}
+/** Quote-currency aliases: many venues list USDT/USD interchangeably. */
+function candidatesFor(symbol: string): string[] {
+  const k = normalizeKey(symbol);
+  const c = new Set<string>([k]);
+  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k.slice(0, -3) + "USDT"); }
+  if (k.endsWith("USDT")) c.add(k.slice(0, -1));
+  return [...c];
+}
+export class UnsupportedSymbolError extends Error {
+  readonly unsupportedSymbol: string;
+  constructor(symbol: string, venue: string) {
+    super(`Symbol ${symbol} is not available on ${venue} — trade skipped.`);
+    this.name = "UnsupportedSymbolError";
+    this.unsupportedSymbol = symbol;
+  }
 }
 function isMt4(brokerId: string): boolean {
   return brokerId === "mt4";
 }
+
 
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
