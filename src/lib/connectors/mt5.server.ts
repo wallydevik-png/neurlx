@@ -28,12 +28,38 @@ function clientBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-client-api-v1.${r}.agiliumtrade.ai`;
 }
-function toMt(symbol: string): string {
-  return symbol.toUpperCase().replace("-", "");
+/** Strip separators/case so "BTC-USD", "btc/usd" and "BTCUSD" compare equal. */
+function normalizeKey(symbol: string): string {
+  return symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+/** Broker suffixes/prefixes seen in the wild: BTCUSD.m, BTCUSD_raw, #BTCUSD, BTCUSDm */
+function stripDecorations(mtSymbol: string): string[] {
+  const base = normalizeKey(mtSymbol);
+  const out = new Set<string>([base]);
+  out.add(base.replace(/(MICRO|CASH|RAW|ECN|PRO|STP|SB|M|C|Z|I|E|R)$/, ""));
+  out.add(base.replace(/^(FX|CFD)/, ""));
+  return [...out].filter(Boolean);
+}
+/** Quote-currency aliases: many venues list USDT/USD interchangeably. */
+function candidatesFor(symbol: string): string[] {
+  const k = normalizeKey(symbol);
+  const c = new Set<string>([k]);
+  if (k.endsWith("USD")) { c.add(k + "T"); c.add(k.slice(0, -3) + "USDT"); }
+  if (k.endsWith("USDT")) c.add(k.slice(0, -1));
+  return [...c];
+}
+export class UnsupportedSymbolError extends Error {
+  readonly unsupportedSymbol: string;
+  constructor(symbol: string, venue: string) {
+    super(`Symbol ${symbol} is not available on ${venue} — trade skipped.`);
+    this.name = "UnsupportedSymbolError";
+    this.unsupportedSymbol = symbol;
+  }
 }
 function isMt4(brokerId: string): boolean {
   return brokerId === "mt4";
 }
+
 
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
@@ -147,6 +173,47 @@ export function createMt5Connector(
     });
   }
 
+  // ---- Broker symbol map -------------------------------------------------
+  // MetaApi exposes the exact instrument names the connected broker offers
+  // (they differ per broker: BTCUSD, BTCUSD.m, BTCUSDT, #BTCUSD ...). We pull
+  // them once per connector instance and resolve every requested symbol
+  // against that list, so nothing unsupported ever reaches MetaApi.
+  let symbolMapPromise: Promise<Map<string, string>> | null = null;
+
+  async function loadSymbolMap(): Promise<Map<string, string>> {
+    const list = await req<string[]>(
+      "GET", `/users/current/accounts/${state.accountId}/symbols`,
+    );
+    const map = new Map<string, string>();
+    for (const s of list ?? []) {
+      for (const key of stripDecorations(s)) {
+        if (!map.has(key)) map.set(key, s);
+      }
+      map.set(normalizeKey(s), s); // exact name always wins
+    }
+    return map;
+  }
+
+  async function getSymbolMap(): Promise<Map<string, string>> {
+    if (!symbolMapPromise) {
+      symbolMapPromise = loadSymbolMap().catch((e) => {
+        symbolMapPromise = null;
+        throw e;
+      });
+    }
+    return symbolMapPromise;
+  }
+
+  /** Returns the broker's exact instrument name, or throws UnsupportedSymbolError. */
+  async function resolveSymbol(symbol: string): Promise<string> {
+    const map = await getSymbolMap();
+    for (const candidate of candidatesFor(symbol)) {
+      const hit = map.get(candidate);
+      if (hit) return hit;
+    }
+    throw new UnsupportedSymbolError(symbol, label);
+  }
+
   return {
     id: brokerId, displayName: label,
     supportsRealExecution: canProvision() || isReady(),
@@ -178,21 +245,41 @@ export function createMt5Connector(
     },
 
     async getQuote(symbol: string): Promise<Quote> {
-      const s = toMt(symbol);
+      const s = await resolveSymbol(symbol);
       const r = await req<{ bid: number; ask: number }>(
-        "GET", `/users/current/accounts/${state.accountId}/symbols/${s}/current-price`,
+        "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(s)}/current-price`,
       );
       return { symbol, bid: r.bid, ask: r.ask, mid: (r.bid + r.ask) / 2, ts: Date.now() };
     },
 
     async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
       const started = Date.now();
+      // Throws UnsupportedSymbolError for instruments the broker doesn't list,
+      // so the caller skips the trade instead of submitting a bad request.
+      const mtSymbol = await resolveSymbol(input.symbol);
+
       const actionType = input.orderType === "market"
         ? (input.side === "buy" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL")
         : (input.side === "buy" ? "ORDER_TYPE_BUY_LIMIT" : "ORDER_TYPE_SELL_LIMIT");
+      const VALID_ACTIONS = new Set([
+        "ORDER_TYPE_BUY", "ORDER_TYPE_SELL",
+        "ORDER_TYPE_BUY_LIMIT", "ORDER_TYPE_SELL_LIMIT",
+      ]);
+
+      // Pre-flight validation — never let a malformed request reach MetaApi.
+      if (!VALID_ACTIONS.has(actionType)) {
+        throw new Error(`Invalid MT trade action "${actionType}" for ${mtSymbol}`);
+      }
+      if (!(Number(input.qty) > 0)) {
+        throw new Error(`Invalid MT volume ${input.qty} for ${mtSymbol}`);
+      }
+      if (input.orderType !== "market" && !(Number(input.limitPrice) > 0)) {
+        throw new Error(`Limit order on ${mtSymbol} requires a positive openPrice`);
+      }
+
       const body: Record<string, unknown> = {
         actionType,
-        symbol: toMt(input.symbol),
+        symbol: mtSymbol,
         volume: input.qty,
         ...(input.limitPrice ? { openPrice: input.limitPrice } : {}),
         ...(input.stopPrice ? { stopLoss: input.stopPrice } : {}),
@@ -202,14 +289,21 @@ export function createMt5Connector(
         "POST", `/users/current/accounts/${state.accountId}/trade`, { trade: body },
       );
       const success = r.stringCode === "TRADE_RETCODE_DONE" || r.numericCode === 10009;
-      if (!success) throw new Error(`MT trade rejected: ${r.stringCode ?? "unknown"} (${r.numericCode ?? "?"})${r.message ? " — " + r.message : ""}`);
+      if (!success) {
+        throw new Error(
+          `MT trade rejected on ${mtSymbol}: ${r.stringCode ?? "unknown"} (${r.numericCode ?? "?"})${r.message ? " — " + r.message : ""}`,
+        );
+      }
       return {
         externalOrderId: r.positionId ?? r.orderId,
         clientOrderId: input.clientOrderId,
         status: input.orderType === "market" ? "filled" : "working",
         fees: 0, slippageBps: 0, latencyMs: Date.now() - started,
+        // Surfaces the exact broker instrument in the execution log.
+        raw: { mtSymbol, actionType, requestedSymbol: input.symbol, response: r },
       };
     },
+
 
     async cancelOrder(externalOrderId: string) {
       try {

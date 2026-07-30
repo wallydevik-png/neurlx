@@ -312,7 +312,7 @@ export async function runAutonomousCycleFor(
       const watchlist = new Set<string>(settings.allowed_assets ?? []);
       const universe = Array.from(new Set([
         ...(settings.allowed_assets ?? []),
-        ...listSupportedSymbols().slice(0, 8),
+        ...listSupportedSymbols().slice(0, 16),
       ]));
       const verdicts = await runCommittee(supabase, universe);
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
