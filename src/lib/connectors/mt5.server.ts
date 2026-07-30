@@ -451,6 +451,26 @@ export function createMt5Connector(
     throw new UnsupportedSymbolError(symbol, label);
   }
 
+  /** Broker's lot limits for an instrument (cached 30 min). */
+  async function getSymbolSpec(mtSymbol: string): Promise<MtSymbolSpec> {
+    const key = `${state.accountId}|${mtSymbol}`;
+    const cached = specCache.get(key);
+    if (cached && Date.now() - cached.at < SYMBOL_TTL_MS) return cached.spec;
+    try {
+      const spec = await req<MtSymbolSpec>(
+        "GET",
+        `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/specification`,
+      );
+      specCache.set(key, { at: Date.now(), spec: spec ?? {} });
+      return spec ?? {};
+    } catch (e) {
+      console.warn("[MT5] symbol specification unavailable", mtSymbol,
+        e instanceof Error ? e.message : String(e));
+      return {};
+    }
+  }
+
+
 
   return {
     id: brokerId, displayName: label,
