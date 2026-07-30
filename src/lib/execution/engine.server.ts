@@ -251,9 +251,31 @@ export async function submitOrder(
     payload: { req: { ...req, live: isLive }, venue, clientOrderId },
   });
 
+  // 4b. Free-margin guard — pause NEW live trades while margin is depleted.
+  //     Existing positions keep being managed; trading resumes automatically
+  //     once free margin recovers above the configured threshold.
+  if (isLive && connector.getAccountSummary) {
+    const { checkMarginGuard } = await import("@/lib/execution/marginGuard.server");
+    const guard = await checkMarginGuard(supabase, userId, connector);
+    if (!guard.ok) {
+      await supabase.from("orders").update({
+        status: "rejected", error_message: guard.reason,
+      }).eq("id", orderRow.id);
+      await supabase.from("execution_log").insert({
+        user_id: userId, order_id: orderRow.id, event: "order.skipped",
+        severity: "warn", message: guard.reason!,
+        payload: { reason: "margin_guard", symbol: req.symbol, ...guard.detail },
+      });
+      return { orderId: orderRow.id, positionId: null, status: "rejected",
+        filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive: true,
+        message: guard.reason };
+    }
+  }
+
   // 5. Live pre-trade check (skipped for paper — riskGate already ran)
   if (isLive) {
     let pre: { ok: boolean; reason?: string; adjustments?: { qty?: number } };
+
     try {
       let estPrice: number;
       try {
