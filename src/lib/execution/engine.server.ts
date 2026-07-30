@@ -384,6 +384,22 @@ export async function submitOrder(
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown execution error";
+
+    // Instrument not offered by the connected broker → skip, don't fail.
+    // This must not count as a connectivity failure or trip the breaker.
+    if (e instanceof Error && e.name === "UnsupportedSymbolError") {
+      await supabase.from("orders").update({
+        status: "rejected", error_message: msg,
+      }).eq("id", orderRow.id);
+      await supabase.from("execution_log").insert({
+        user_id: userId, order_id: orderRow.id, event: "order.skipped",
+        severity: "warn", message: msg,
+        payload: { isLive, symbol: req.symbol, reason: "symbol_unsupported", venue: connector.displayName },
+      });
+      return { orderId: orderRow.id, positionId: null, status: "rejected",
+        filledPrice: null, filledQty: 0, fees: 0, slippageBps: 0, isLive, message: msg };
+    }
+
     await supabase.from("orders").update({
       status: "error", error_message: msg,
     }).eq("id", orderRow.id);
