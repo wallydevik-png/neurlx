@@ -319,35 +319,19 @@ export function createMt5Connector(
       // so the caller skips the trade instead of submitting a bad request.
       const mtSymbol = await resolveSymbol(input.symbol);
 
-      const actionType = input.orderType === "market"
-        ? (input.side === "buy" ? "ORDER_TYPE_BUY" : "ORDER_TYPE_SELL")
-        : (input.side === "buy" ? "ORDER_TYPE_BUY_LIMIT" : "ORDER_TYPE_SELL_LIMIT");
-      const VALID_ACTIONS = new Set([
-        "ORDER_TYPE_BUY", "ORDER_TYPE_SELL",
-        "ORDER_TYPE_BUY_LIMIT", "ORDER_TYPE_SELL_LIMIT",
-      ]);
+      // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
+      // into a valid MetaApi action and validates before submitting.
+      const body = buildTradeRequest(input, mtSymbol);
+      const actionType = body.actionType as string;
 
-      // Pre-flight validation — never let a malformed request reach MetaApi.
-      if (!VALID_ACTIONS.has(actionType)) {
-        throw new Error(`Invalid MT trade action "${actionType}" for ${mtSymbol}`);
-      }
-      if (!(Number(input.qty) > 0)) {
-        throw new Error(`Invalid MT volume ${input.qty} for ${mtSymbol}`);
-      }
-      if (input.orderType !== "market" && !(Number(input.limitPrice) > 0)) {
-        throw new Error(`Limit order on ${mtSymbol} requires a positive openPrice`);
-      }
+      // Exact request body logged before the call (secrets are not part of it).
+      console.log("[MT5] trade request", JSON.stringify({
+        accountId: state.accountId, requestedSymbol: input.symbol, body,
+      }));
 
-      const body: Record<string, unknown> = {
-        actionType,
-        symbol: mtSymbol,
-        volume: input.qty,
-        ...(input.limitPrice ? { openPrice: input.limitPrice } : {}),
-        ...(input.stopPrice ? { stopLoss: input.stopPrice } : {}),
-        ...(input.clientOrderId ? { clientId: input.clientOrderId.slice(0, 32) } : {}),
-      };
+      // MetaApi's REST /trade endpoint takes the trade object at the top level.
       const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string }>(
-        "POST", `/users/current/accounts/${state.accountId}/trade`, { trade: body },
+        "POST", `/users/current/accounts/${state.accountId}/trade`, body,
       );
       const success = r.stringCode === "TRADE_RETCODE_DONE" || r.numericCode === 10009;
       if (!success) {
@@ -358,10 +342,11 @@ export function createMt5Connector(
       return {
         externalOrderId: r.positionId ?? r.orderId,
         clientOrderId: input.clientOrderId,
-        status: input.orderType === "market" ? "filled" : "working",
+        status: actionType === MT_ACTIONS.buy_market || actionType === MT_ACTIONS.sell_market
+          ? "filled" : "working",
         fees: 0, slippageBps: 0, latencyMs: Date.now() - started,
         // Surfaces the exact broker instrument in the execution log.
-        raw: { mtSymbol, actionType, requestedSymbol: input.symbol, response: r },
+        raw: { mtSymbol, actionType, requestedSymbol: input.symbol, request: body, response: r },
       };
     },
 
@@ -369,7 +354,7 @@ export function createMt5Connector(
     async cancelOrder(externalOrderId: string) {
       try {
         await req<void>("POST", `/users/current/accounts/${state.accountId}/trade`, {
-          trade: { actionType: "POSITION_CLOSE_ID", positionId: externalOrderId },
+          actionType: "POSITION_CLOSE_ID", positionId: externalOrderId,
         });
         return { ok: true };
       } catch { return { ok: false }; }
