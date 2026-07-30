@@ -141,8 +141,10 @@ export async function loadLiveDesk(
           && (d.side === "long") === (p.side === "long")),
       );
       const notional = p.openPrice * p.volume;
+      const { raw: _raw, ...plain } = p;
+      void _raw;
       positions.push({
-        ...p, raw: undefined,
+        ...plain,
         connectionId: c.id,
         accountLabel: c.label,
         currency,
