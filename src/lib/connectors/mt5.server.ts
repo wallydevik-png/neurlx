@@ -483,6 +483,43 @@ export function createMt5Connector(
     }
   }
 
+  interface MtAccountInfo {
+    broker?: string; currency?: string; balance?: number; equity?: number;
+    margin?: number; freeMargin?: number; marginLevel?: number; leverage?: number;
+  }
+
+  async function accountInformation(): Promise<MtAccountInfo> {
+    return req<MtAccountInfo>(
+      "GET", `/users/current/accounts/${state.accountId}/accountInformation`,
+    );
+  }
+
+  /** Broker-calculated margin for an order (MetaApi calculate-margin endpoint). */
+  async function calcMargin(
+    mtSymbol: string, actionType: string, volume: number, openPrice: number,
+  ): Promise<number | null> {
+    try {
+      const r = await req<{ margin?: number }>(
+        "POST", `/users/current/accounts/${state.accountId}/calculate-margin`,
+        { symbol: mtSymbol, type: actionType, volume, openPrice },
+      );
+      const m = Number(r?.margin);
+      return Number.isFinite(m) && m > 0 ? m : null;
+    } catch (e) {
+      console.warn("[MT5] margin calculation unavailable", mtSymbol,
+        e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  }
+
+  async function midPrice(mtSymbol: string): Promise<number> {
+    try {
+      const r = await req<{ bid: number; ask: number }>(
+        "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/current-price`,
+      );
+      return (Number(r.bid) + Number(r.ask)) / 2;
+    } catch { return 0; }
+  }
 
 
   return {
