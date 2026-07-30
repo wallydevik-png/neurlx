@@ -346,16 +346,18 @@ export async function submitOrder(
       qty: filledQty,
     }).eq("id", orderRow.id);
 
+    const venueSymbol = (result.raw as { mtSymbol?: string } | undefined)?.mtSymbol ?? req.symbol;
     await supabase.from("execution_log").insert({
       user_id: userId, order_id: orderRow.id, event: `order.${status}`,
       severity: "info",
-      message: `${status === "filled" ? "Filled" : status === "partially_filled" ? "Partial fill" : "Working"} ${filledQty}@${result.filledPrice}`,
+      message: `${status === "filled" ? "Filled" : status === "partially_filled" ? "Partial fill" : "Working"} ${filledQty} ${venueSymbol}@${result.filledPrice} via ${connector.displayName}`,
       payload: {
         filledPrice: result.filledPrice, fees, slippageBps: result.slippageBps,
         requestedQty: req.qty, filledQty, externalOrderId: result.externalOrderId,
-        latencyMs: result.latencyMs,
+        latencyMs: result.latencyMs, symbol: req.symbol, venueSymbol,
       },
     });
+
 
     // 8. Reconciliation for live
     if (isLive && connector.getOrderStatus && result.externalOrderId) {
