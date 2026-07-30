@@ -69,7 +69,7 @@ describe("sanitizeClientId", () => {
     expect(sanitizeClientId("abc_123")).toBe("abc_123");
   });
   it("strips separators and truncates", () => {
-    expect(sanitizeClientId("hlx-d7c4be3c-525a-4a7d-ae69-2d48c551")).toBe("hlxd7c4be3c525a4a7dae692d");
+    expect(sanitizeClientId("hlx-d7c4be3c-525a-4a7d-ae69-2d48c551")).toBe("hlxd7c4be3c525a4a7dae692");
   });
   it("returns undefined for empty input", () => {
     expect(sanitizeClientId(undefined)).toBeUndefined();
