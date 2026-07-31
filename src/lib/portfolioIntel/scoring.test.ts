@@ -83,8 +83,8 @@ describe("correlation engine", () => {
   });
 
   it("enforces max crypto beta", () => {
-    const book: OpenExposure[] = Array.from({ length: 5 }, (_, i) => ({
-      symbol: `ALT${i}-USD`, side: "long" as const, riskPct: 1.5, notional: 900,
+    const book: OpenExposure[] = ["ETH-USD", "SOL-USD", "AVAX-USD", "LINK-USD", "DOT-USD"].map(sym => ({
+      symbol: sym, side: "long" as const, riskPct: 1.5, notional: 900,
     }));
     const v = correlationVerdict("BTC-USD", "buy", book, { maxCryptoBetaPct: 4, newRiskPct: 1, maxCorrelatedRiskPct: 99 });
     expect(v.blocked).toBe(true);
