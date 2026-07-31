@@ -446,6 +446,24 @@ export async function runAutonomousCycleFor(
     errors.push(`lifecycle: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Portfolio Intelligence layer — health, mode, exposure and the Portfolio
+  // Manager AI that sits above every strategy and above the Risk Engine.
+  const {
+    loadPortfolioContext, evaluateOpportunity, recordDecision, snapshotHealth,
+    gradeClosedTrades, runCapitalEngine,
+  } = await import("@/lib/portfolioIntel/manager.server");
+  let pmCtx: Awaited<ReturnType<typeof loadPortfolioContext>> | null = null;
+  try {
+    pmCtx = await loadPortfolioContext(supabase, userId, live && liveStableUsd > 0 ? liveStableUsd : undefined);
+    await snapshotHealth(supabase, userId, pmCtx);
+    errors.push(`portfolio_health:${pmCtx.health.healthScore}:${pmCtx.mode}`);
+    const capital = await runCapitalEngine(supabase, userId);
+    if (capital.ran) errors.push(`capital_engine:v${capital.version}_shadow`);
+    await gradeClosedTrades(supabase, userId);
+  } catch (e) {
+    errors.push(`portfolio_intel: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   let slots = capacity;
   for (const sig of signals) {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
