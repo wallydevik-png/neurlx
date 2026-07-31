@@ -78,6 +78,7 @@ export const updateInstitutionalSettings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     const patch: Record<string, number | boolean> = {};
+    type SettingsPatch = Parameters<ReturnType<typeof context.supabase.from<"automation_settings">>["update"]>[0];
     if (data.riskPerTradePct != null) patch.risk_per_trade_pct = clamp(data.riskPerTradePct, 0.0025, 0.01);
     if (data.maxDailyDrawdownPct != null) patch.max_daily_drawdown_pct = clamp(data.maxDailyDrawdownPct, 0.5, 10);
     if (data.maxWeeklyDrawdownPct != null) patch.max_weekly_drawdown_pct = clamp(data.maxWeeklyDrawdownPct, 1, 20);
@@ -90,7 +91,7 @@ export const updateInstitutionalSettings = createServerFn({ method: "POST" })
     if (data.newsFilterEnabled != null) patch.news_filter_enabled = data.newsFilterEnabled;
     if (data.mtfConfirmationRequired != null) patch.mtf_confirmation_required = data.mtfConfirmationRequired;
     if (Object.keys(patch).length) {
-      await context.supabase.from("automation_settings").update(patch).eq("user_id", context.userId);
+      await context.supabase.from("automation_settings").update(patch as unknown as SettingsPatch).eq("user_id", context.userId);
     }
     return { ok: true };
   });

@@ -50,7 +50,7 @@ export async function runLearningEvaluation(
   supabase: SupabaseClient,
   userId: string,
   opts: { force?: boolean } = {},
-): Promise<{ ran: boolean; reason?: string; evaluationId?: string; adjustments: unknown[] }> {
+): Promise<{ ran: boolean; reason?: string; evaluationId?: string; adjustments: Array<Record<string, string | number | boolean>> }> {
   const { count } = await supabase.from("positions")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId).eq("status", "closed");
@@ -95,7 +95,7 @@ export async function runLearningEvaluation(
     buckets.get(k)!.push(Number(t.realized_pnl ?? 0));
   }
 
-  const adjustments: Array<Record<string, unknown>> = [];
+  const adjustments: Array<Record<string, string | number | boolean>> = [];
   for (const [strategy, list] of buckets) {
     const s = performanceStats(list);
     const score = scoreStrategy(s.profitFactor, s.winRate, s.expectancy, s.trades);
