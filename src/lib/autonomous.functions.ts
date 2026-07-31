@@ -540,29 +540,13 @@ export async function runAutonomousCycleFor(
       continue;
     }
 
-    const decision = await evaluateRisk(supabase, userId, {
-      symbol: sig.symbol, side, qty: execQty, entry,
-      stopLoss: execStop, takeProfit: execTp,
-      confidence: entryEval?.confidence ?? Number(sig.confidence),
-    });
-    if (!decision.allowed) {
-      bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
-      rejected++;
-      await supabase.from("signals").update({
-        status: "rejected", resolved_at: new Date().toISOString(),
-      }).eq("id", sig.id);
-      await supabase.from("audit_log").insert({
-        user_id: userId, action: "autonomous.reject_by_risk",
-        entity: "signals", entity_id: sig.id,
-        payload: { reason: decision.reason },
-      });
-      continue;
-    }
-
-    // Safety rule: no real order unless a strategy is LIVE, scored ≥80, free
-    // of drift and still profitable in its most recent validation window.
-    // Non-qualifying live signals are recorded as shadow trades instead so the
-    // strategy keeps accumulating evidence without risking capital.
+    // ---------------------------------------------------------------
+    // Stage 2 — Strategy lifecycle gate.
+    // No real order unless a strategy is LIVE, scored ≥80, free of drift and
+    // still profitable in its most recent validation window. Non-qualifying
+    // live signals are recorded as shadow trades so the strategy keeps
+    // accumulating evidence without risking capital.
+    // ---------------------------------------------------------------
     if (live && liveGate && !liveGate.allowed) {
       bump(rejectReasons, `lifecycle_gate:${liveGate.reason}`);
       rejected++;
@@ -580,6 +564,77 @@ export async function runAutonomousCycleFor(
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
+      continue;
+    }
+
+    // ---------------------------------------------------------------
+    // Stage 3 — Portfolio Manager AI.
+    // Scores the opportunity 0-100 across return, expectancy, regime,
+    // correlation, exposure, cost, flow and strategy quality, then allocates
+    // a share of the risk budget. Below the minimum score the trade dies here.
+    // ---------------------------------------------------------------
+    if (pmCtx && settings.pm_enabled !== false) {
+      try {
+        const verdict = await evaluateOpportunity(supabase, userId, pmCtx, {
+          signalId: sig.id,
+          strategyId: liveGate?.strategyId ?? null,
+          symbol: sig.symbol, side, entry,
+          stopLoss: execStop, takeProfit: execTp,
+          confidence: entryEval?.confidence ?? Number(sig.confidence),
+        });
+        await recordDecision(supabase, userId, {
+          signalId: sig.id, strategyId: liveGate?.strategyId ?? null,
+          symbol: sig.symbol, side, entry, stopLoss: execStop, takeProfit: execTp,
+          confidence: entryEval?.confidence ?? Number(sig.confidence),
+        }, verdict);
+        if (!verdict.approved) {
+          bump(rejectReasons, `portfolio_manager:${verdict.rejectReason ?? "rejected"}`);
+          rejected++;
+          await supabase.from("signals").update({
+            status: "rejected", resolved_at: new Date().toISOString(),
+          }).eq("id", sig.id);
+          continue;
+        }
+        // Allocation → position size. Risk % of equity over the stop distance.
+        const stopDist = Math.abs(entry - execStop);
+        if (stopDist > 0 && pmCtx.equity > 0) {
+          const allocQty = (pmCtx.equity * (verdict.riskPct / 100)) / stopDist;
+          if (allocQty > 0 && Number.isFinite(allocQty)) {
+            execQty = +Math.min(execQty, allocQty).toFixed(8);
+          }
+        }
+        errors.push(`pm:${sig.symbol}:score_${verdict.score.toFixed(1)}:alloc_${(verdict.allocation * 100).toFixed(0)}%:${verdict.mode}`);
+        if (!(execQty > 0)) {
+          bump(rejectReasons, "portfolio_manager:zero_size_after_allocation"); rejected++;
+          await supabase.from("signals").update({
+            status: "rejected", resolved_at: new Date().toISOString(),
+          }).eq("id", sig.id);
+          continue;
+        }
+      } catch (e) {
+        errors.push(`portfolio_manager: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Stage 4 — Risk Engine.
+    // ---------------------------------------------------------------
+    const decision = await evaluateRisk(supabase, userId, {
+      symbol: sig.symbol, side, qty: execQty, entry,
+      stopLoss: execStop, takeProfit: execTp,
+      confidence: entryEval?.confidence ?? Number(sig.confidence),
+    });
+    if (!decision.allowed) {
+      bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
+      rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      await supabase.from("audit_log").insert({
+        user_id: userId, action: "autonomous.reject_by_risk",
+        entity: "signals", entity_id: sig.id,
+        payload: { reason: decision.reason },
+      });
       continue;
     }
 
