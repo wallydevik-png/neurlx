@@ -173,8 +173,9 @@ describe("trade quality grading", () => {
   it("grades a clean winner highly", () => {
     const r = gradeTrade({
       plannedEntry: 100, actualEntry: 100.02, plannedStop: 98, plannedTarget: 106, exitPrice: 105.8,
-      side: "long", slippageBps: 2, latencyMs: 200, holdingMinutes: 180,
-      riskPct: 0.6, maxRiskPct: 1, aiConfidence: 0.94, maxAdversePct: 0.004, maxFavourablePct: 0.06,
+      side: "long", slippageBps: 2, latencyMs: 200, holdingMinutes: 180, plannedHoldingMinutes: 200,
+      riskPct: 0.6, plannedRiskPct: 0.6, aiConfidence: 0.94, exitReason: "take_profit",
+      manualInterventions: 0, maxFavourableExcursionR: 3, maxAdverseExcursionR: 0.2,
     });
     expect(["A+", "A"]).toContain(r.grade);
     expect(r.overall).toBeGreaterThan(80);
@@ -183,8 +184,9 @@ describe("trade quality grading", () => {
   it("grades a sloppy loser poorly", () => {
     const r = gradeTrade({
       plannedEntry: 100, actualEntry: 101.5, plannedStop: 98, plannedTarget: 106, exitPrice: 97.5,
-      side: "long", slippageBps: 150, latencyMs: 5000, holdingMinutes: 4000,
-      riskPct: 3, maxRiskPct: 1, aiConfidence: 0.62, maxAdversePct: 0.05, maxFavourablePct: 0.002,
+      side: "long", slippageBps: 150, latencyMs: 5000, holdingMinutes: 4000, plannedHoldingMinutes: 200,
+      riskPct: 3, plannedRiskPct: 1, aiConfidence: 0.62, exitReason: "manual",
+      manualInterventions: 3, maxFavourableExcursionR: 0.05, maxAdverseExcursionR: 1.4,
     });
     expect(["D", "F"]).toContain(r.grade);
   });
@@ -193,12 +195,15 @@ describe("trade quality grading", () => {
 describe("self-learning capital engine", () => {
   it("proposes parameters from closed trades", () => {
     const trades = Array.from({ length: 120 }, (_, i) => ({
+      pnl: i % 3 === 0 ? -80 : 128,
       rMultiple: i % 3 === 0 ? -1 : 1.6,
       riskPct: 0.8,
       holdingMinutes: 120 + (i % 5) * 30,
       stopAtrMult: 1.5,
       tpRMultiple: 2,
-      won: i % 3 !== 0,
+      trailingPct: 0.01,
+      strategyId: `s${i % 3}`,
+      exitReason: i % 3 === 0 ? "stop_loss" : "take_profit",
     }));
     const p = proposeCapitalParams(trades);
     expect(p.optimalAllocationPct).toBeGreaterThan(0);
