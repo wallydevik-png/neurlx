@@ -400,6 +400,25 @@ export async function runAutonomousCycleFor(
   const { evaluateRisk } = await import("@/lib/trading/riskGate.server");
   const { submitOrder } = await import("@/lib/execution/engine.server");
 
+  // ---------------------------------------------------------------------
+  // Institutional gate: capital-protection policy + strict entry filters.
+  // Quality over quantity — a signal must clear EVERY filter to execute.
+  // ---------------------------------------------------------------------
+  const { evaluateEntry } = await import("@/lib/trading/entryFilters.server");
+  const { loadPolicy, dynamicRiskPct } = await import("@/lib/risk/policy.server");
+  const { computePositionSize } = await import("@/lib/execution/sizing");
+  const policy = await loadPolicy(supabase, userId, live ? liveEquityUsd : undefined);
+  if (!policy.tradingAllowed) {
+    for (const b of policy.blocks) bump(rejectReasons, `policy:${b}`);
+    await supabase.from("automation_settings")
+      .update({ autonomous_last_run_at: new Date().toISOString() })
+      .eq("user_id", userId);
+    return finish(policy.blocks[0], live);
+  }
+  const institutionalMinConf = Math.max(
+    Number(settings.autonomous_min_confidence ?? 0.9), 0.9,
+  );
+
   let slots = capacity;
   for (const sig of signals) {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
@@ -430,10 +449,74 @@ export async function runAutonomousCycleFor(
       continue;
     }
 
+    // Institutional entry gate — multi-timeframe, regime, structure, news.
+    let execQty = qty;
+    let execStop = Number(sig.stop_loss);
+    let execTp = Number(sig.take_profit);
+    let entryEval: Awaited<ReturnType<typeof evaluateEntry>> | null = null;
+    try {
+      entryEval = await evaluateEntry(supabase, sig.symbol, side, {
+        minConfidence: institutionalMinConf,
+        minRR: Number(settings.min_risk_reward ?? 2),
+        maxRR: Number(settings.max_risk_reward ?? 4),
+        maxSpreadBps: Number(settings.max_spread_bps ?? 30),
+        requireMtf: settings.mtf_confirmation_required !== false,
+        newsFilterEnabled: settings.news_filter_enabled !== false,
+      });
+    } catch (e) {
+      errors.push(`entry_gate:${sig.symbol}:${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (entryEval && !entryEval.approved) {
+      bump(rejectReasons, `entry_filter:${entryEval.rejections[0] ?? "failed"}`);
+      rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
+    }
+    if (entryEval?.frame) {
+      execStop = entryEval.frame.stopLoss;
+      execTp = entryEval.frame.takeProfit;
+      const { riskPct, notes } = dynamicRiskPct(policy, {
+        confidence: entryEval.confidence,
+        regimeTradable: entryEval.regime.tradable,
+        trendStrength: entryEval.regime.trendStrength,
+      });
+      const sized = computePositionSize({
+        equity: policy.equity > 0 ? policy.equity : notional,
+        freeMargin: policy.equity,
+        riskPct,
+        entryPrice: entry,
+        stopLoss: execStop,
+        spec: { volumeMin: 0, volumeMax: Number.MAX_SAFE_INTEGER, volumeStep: 0, contractSize: 1 },
+        marginBufferPct: 0,
+      });
+      if (sized.volume > 0 && Number.isFinite(sized.volume)) {
+        const capNotional = live
+          ? Math.min(Number(settings.max_trade_size ?? 500), perOrderCap)
+          : Number(settings.max_trade_size ?? 500);
+        execQty = +Math.min(sized.volume, capNotional / entry, qty > 0 ? Math.max(qty, sized.volume) : sized.volume).toFixed(8);
+      }
+      errors.push(`sizing:${sig.symbol}:${(riskPct * 100).toFixed(2)}%:${notes[0] ?? ""}`);
+      await supabase.from("signals").update({
+        stop_loss: execStop, take_profit: execTp, qty: execQty,
+        confidence: entryEval.confidence,
+        reasoning: entryEval.reasoning,
+        market_regime: entryEval.regime.regime,
+      }).eq("id", sig.id);
+    }
+    if (!(execQty > 0)) {
+      bump(rejectReasons, "sizing:zero_volume"); rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
+    }
+
     const decision = await evaluateRisk(supabase, userId, {
-      symbol: sig.symbol, side, qty, entry,
-      stopLoss: Number(sig.stop_loss), takeProfit: Number(sig.take_profit),
-      confidence: Number(sig.confidence),
+      symbol: sig.symbol, side, qty: execQty, entry,
+      stopLoss: execStop, takeProfit: execTp,
+      confidence: entryEval?.confidence ?? Number(sig.confidence),
     });
     if (!decision.allowed) {
       bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
@@ -452,8 +535,8 @@ export async function runAutonomousCycleFor(
     // Execute
     try {
       const result = await submitOrder(supabase, userId, {
-        symbol: sig.symbol, side, qty, orderType: "market",
-        stopLoss: Number(sig.stop_loss), takeProfit: Number(sig.take_profit),
+        symbol: sig.symbol, side, qty: execQty, orderType: "market",
+        stopLoss: execStop, takeProfit: execTp,
         signalId: sig.id,
         connectionId: liveConn?.id ?? null, live,
       });
