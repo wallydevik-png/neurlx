@@ -197,15 +197,34 @@ export async function runProfitProtection(
       }
     }
 
-    // 3. Partial take-profit at 3R (once)
-    if (rMultiple >= 3 && !p.partial_take_profit_pct) {
-      const half = +(Number(p.qty) * 0.5).toFixed(8);
-      if (half > 0) {
-        await reducePosition(supabase, userId, p.id, half);
-        await supabase.from("positions").update({ partial_take_profit_pct: 0.5 }).eq("id", p.id);
-        await logEvent(supabase, userId, p.id, "profit_protect.partial_tp",
-          `Partial TP: closed 50% at 3R`, { rMultiple, closedQty: half });
-        actions++;
+    // 3. Scaled partial exits — 30% at 1.5R, another 30% at 2.5R, the
+    //    remaining 40% rides the trailing stop.
+    const taken = Number(p.partial_take_profit_pct ?? 0);
+    const tiers: Array<{ at: number; cumulative: number }> = [
+      { at: 1.5, cumulative: 0.3 },
+      { at: 2.5, cumulative: 0.6 },
+    ];
+    for (const tier of tiers) {
+      if (rMultiple >= tier.at && taken < tier.cumulative - 1e-9) {
+        const originalQty = Number(p.original_qty ?? p.qty);
+        const targetClosed = originalQty * tier.cumulative;
+        const alreadyClosed = originalQty * taken;
+        const slice = +Math.min(
+          Math.max(targetClosed - alreadyClosed, 0),
+          Number(p.qty) * 0.9,
+        ).toFixed(8);
+        if (slice > 0) {
+          await reducePosition(supabase, userId, p.id, slice);
+          await supabase.from("positions").update({
+            partial_take_profit_pct: tier.cumulative,
+            original_qty: originalQty,
+          }).eq("id", p.id);
+          await logEvent(supabase, userId, p.id, "profit_protect.partial_tp",
+            `Scaled out ${(tier.cumulative * 100).toFixed(0)}% cumulative at ${tier.at}R`,
+            { rMultiple, closedQty: slice, tier: tier.at });
+          actions++;
+        }
+        break;
       }
     }
 

@@ -25,6 +25,7 @@ const NAV = [
   { to: "/community", label: "Community", icon: Trophy },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/live-desk", label: "Live Trading Desk", icon: Wallet },
+  { to: "/risk-engine", label: "Risk Engine", icon: Shield },
   { to: "/monitoring", label: "Live Monitoring", icon: Radar },
   { to: "/intelligence", label: "Live Intelligence", icon: Sparkles },
   { to: "/capital", label: "Capital Growth", icon: Wallet },
