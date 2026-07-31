@@ -331,7 +331,10 @@ export type Database = {
           autonomous_max_consecutive_losses: number
           autonomous_max_open_positions: number
           autonomous_min_confidence: number
+          capital_preservation_active: boolean
           daily_profit_target: number
+          drawdown_lock_active: boolean
+          equity_high_water: number
           kill_switch_active: boolean
           live_consecutive_failures: number
           live_kill_reason: string | null
@@ -340,15 +343,27 @@ export type Database = {
           live_rejected_today: number
           live_trading_enabled: boolean
           margin_pause_active: boolean
+          max_account_drawdown_pct: number
+          max_correlated_risk_pct: number
+          max_daily_drawdown_pct: number
           max_daily_loss: number
+          max_risk_reward: number
+          max_spread_bps: number
           max_trade_size: number
           max_trades_per_day: number
+          max_weekly_drawdown_pct: number
           min_confidence: number
           min_free_margin_pct: number
+          min_risk_reward: number
           mode: string
+          mtf_confirmation_required: boolean
+          news_filter_enabled: boolean
+          recovery_pause_until: string | null
           risk_level: string
+          risk_per_trade_pct: number
           updated_at: string
           user_id: string
+          weekly_lock_active: boolean
         }
         Insert: {
           activation_confirmed_phrase_at?: string | null
@@ -361,7 +376,10 @@ export type Database = {
           autonomous_max_consecutive_losses?: number
           autonomous_max_open_positions?: number
           autonomous_min_confidence?: number
+          capital_preservation_active?: boolean
           daily_profit_target?: number
+          drawdown_lock_active?: boolean
+          equity_high_water?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -370,15 +388,27 @@ export type Database = {
           live_rejected_today?: number
           live_trading_enabled?: boolean
           margin_pause_active?: boolean
+          max_account_drawdown_pct?: number
+          max_correlated_risk_pct?: number
+          max_daily_drawdown_pct?: number
           max_daily_loss?: number
+          max_risk_reward?: number
+          max_spread_bps?: number
           max_trade_size?: number
           max_trades_per_day?: number
+          max_weekly_drawdown_pct?: number
           min_confidence?: number
           min_free_margin_pct?: number
+          min_risk_reward?: number
           mode?: string
+          mtf_confirmation_required?: boolean
+          news_filter_enabled?: boolean
+          recovery_pause_until?: string | null
           risk_level?: string
+          risk_per_trade_pct?: number
           updated_at?: string
           user_id: string
+          weekly_lock_active?: boolean
         }
         Update: {
           activation_confirmed_phrase_at?: string | null
@@ -391,7 +421,10 @@ export type Database = {
           autonomous_max_consecutive_losses?: number
           autonomous_max_open_positions?: number
           autonomous_min_confidence?: number
+          capital_preservation_active?: boolean
           daily_profit_target?: number
+          drawdown_lock_active?: boolean
+          equity_high_water?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -400,15 +433,27 @@ export type Database = {
           live_rejected_today?: number
           live_trading_enabled?: boolean
           margin_pause_active?: boolean
+          max_account_drawdown_pct?: number
+          max_correlated_risk_pct?: number
+          max_daily_drawdown_pct?: number
           max_daily_loss?: number
+          max_risk_reward?: number
+          max_spread_bps?: number
           max_trade_size?: number
           max_trades_per_day?: number
+          max_weekly_drawdown_pct?: number
           min_confidence?: number
           min_free_margin_pct?: number
+          min_risk_reward?: number
           mode?: string
+          mtf_confirmation_required?: boolean
+          news_filter_enabled?: boolean
+          recovery_pause_until?: string | null
           risk_level?: string
+          risk_per_trade_pct?: number
           updated_at?: string
           user_id?: string
+          weekly_lock_active?: boolean
         }
         Relationships: [
           {
@@ -1163,6 +1208,57 @@ export type Database = {
           requested_at?: string
           status?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      learning_evaluations: {
+        Row: {
+          adjustments: Json
+          avg_r: number | null
+          created_at: string
+          expectancy: number | null
+          id: string
+          max_drawdown_pct: number | null
+          profit_factor: number | null
+          sharpe: number | null
+          sortino: number | null
+          trades_evaluated: number
+          user_id: string
+          win_rate: number | null
+          window_end: string | null
+          window_start: string | null
+        }
+        Insert: {
+          adjustments?: Json
+          avg_r?: number | null
+          created_at?: string
+          expectancy?: number | null
+          id?: string
+          max_drawdown_pct?: number | null
+          profit_factor?: number | null
+          sharpe?: number | null
+          sortino?: number | null
+          trades_evaluated: number
+          user_id: string
+          win_rate?: number | null
+          window_end?: string | null
+          window_start?: string | null
+        }
+        Update: {
+          adjustments?: Json
+          avg_r?: number | null
+          created_at?: string
+          expectancy?: number | null
+          id?: string
+          max_drawdown_pct?: number | null
+          profit_factor?: number | null
+          sharpe?: number | null
+          sortino?: number | null
+          trades_evaluated?: number
+          user_id?: string
+          win_rate?: number | null
+          window_end?: string | null
+          window_start?: string | null
         }
         Relationships: []
       }
@@ -2378,6 +2474,48 @@ export type Database = {
           stability?: number | null
           strategy_id?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      strategy_weights: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          expectancy: number | null
+          id: string
+          profit_factor: number | null
+          sample_size: number
+          strategy: string
+          updated_at: string
+          user_id: string
+          weight: number
+          win_rate: number | null
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          expectancy?: number | null
+          id?: string
+          profit_factor?: number | null
+          sample_size?: number
+          strategy: string
+          updated_at?: string
+          user_id: string
+          weight?: number
+          win_rate?: number | null
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          expectancy?: number | null
+          id?: string
+          profit_factor?: number | null
+          sample_size?: number
+          strategy?: string
+          updated_at?: string
+          user_id?: string
+          weight?: number
+          win_rate?: number | null
         }
         Relationships: []
       }
