@@ -160,7 +160,7 @@ export const updatePortfolioIntelSettings = createServerFn({ method: "POST" })
     if (data.overtradingMinScore !== undefined) patch["overtrading_min_score"] = data.overtradingMinScore;
     if (Object.keys(patch).length === 0) return { ok: true };
     const { error } = await context.supabase.from("automation_settings")
-      .update(patch).eq("user_id", context.userId);
+      .update(patch as never).eq("user_id", context.userId);
     if (error) throw error;
     return { ok: true };
   });
