@@ -343,10 +343,10 @@ export async function snapshotHealth(
     await supabase.from("automation_settings").update({ portfolio_mode: h.mode }).eq("user_id", userId);
     const { emitNotification } = await import("@/lib/notifications/emit.server");
     await emitNotification(supabase, userId, {
-      type: h.mode === "defensive" ? "risk_alert" : "system",
+      kind: "portfolio.mode_change",
       severity: h.mode === "defensive" ? "critical" : "info",
       title: `Portfolio mode → ${h.mode}`,
-      body: `Health score ${h.healthScore}. ${h.notes[0] ?? ""}`,
+      message: `Health score ${h.healthScore}. ${h.notes[0] ?? ""}`,
     }).catch(() => undefined);
   }
 }
