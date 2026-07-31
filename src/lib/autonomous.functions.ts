@@ -407,7 +407,7 @@ export async function runAutonomousCycleFor(
   const { evaluateEntry } = await import("@/lib/trading/entryFilters.server");
   const { loadPolicy, dynamicRiskPct } = await import("@/lib/risk/policy.server");
   const { computePositionSize } = await import("@/lib/execution/sizing");
-  const policy = await loadPolicy(supabase, userId, live ? liveEquityUsd : undefined);
+  const policy = await loadPolicy(supabase, userId, live && liveStableUsd > 0 ? liveStableUsd : undefined);
   if (!policy.tradingAllowed) {
     for (const b of policy.blocks) bump(rejectReasons, `policy:${b}`);
     await supabase.from("automation_settings")
