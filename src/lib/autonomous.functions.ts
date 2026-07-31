@@ -429,6 +429,23 @@ export async function runAutonomousCycleFor(
     errors.push(`learning_review: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Strategy lifecycle: re-validate every strategy against recent rolling
+  // performance, run weekend retraining, and resolve the live-trading gate.
+  let liveGate: { allowed: boolean; reason: string; strategyId: string | null; allocationRiskPct: number } | null = null;
+  try {
+    const { evaluateAllStrategies, liveTradingGate, runWeekendRetraining } =
+      await import("@/lib/lifecycle/engine.server");
+    const evals = await evaluateAllStrategies(supabase, userId);
+    const moved = evals.filter(e => e.changed);
+    if (moved.length) errors.push(`lifecycle:${moved.map(m => `${m.name}:${m.previousState}->${m.state}`).join(",")}`);
+    const retrain = await runWeekendRetraining(supabase, userId);
+    if (retrain.ran) errors.push(`retrained:${retrain.version}`);
+    liveGate = await liveTradingGate(supabase, userId);
+    if (!liveGate.allowed) errors.push(`lifecycle_gate:${liveGate.reason}`);
+  } catch (e) {
+    errors.push(`lifecycle: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   let slots = capacity;
   for (const sig of signals) {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
@@ -542,6 +559,30 @@ export async function runAutonomousCycleFor(
       continue;
     }
 
+    // Safety rule: no real order unless a strategy is LIVE, scored ≥80, free
+    // of drift and still profitable in its most recent validation window.
+    // Non-qualifying live signals are recorded as shadow trades instead so the
+    // strategy keeps accumulating evidence without risking capital.
+    if (live && liveGate && !liveGate.allowed) {
+      bump(rejectReasons, `lifecycle_gate:${liveGate.reason}`);
+      rejected++;
+      await supabase.from("shadow_trades").insert({
+        user_id: userId,
+        strategy_id: liveGate.strategyId,
+        symbol: sig.symbol, side,
+        entry_price: entry, stop_loss: execStop, take_profit: execTp,
+        qty: execQty, confidence: entryEval?.confidence ?? Number(sig.confidence),
+        market_regime: entryEval?.regime.regime ?? sig.market_regime,
+        mode: "shadow", status: "open",
+        indicators: (sig.indicators ?? {}) as never,
+        features: { source: "autopilot", gate: liveGate.reason } as never,
+      });
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
+    }
+
     // Execute
     try {
       const result = await submitOrder(supabase, userId, {
@@ -572,6 +613,7 @@ export async function runAutonomousCycleFor(
           trailing_stop_pct: 0.015, status: "open",
           ai_reasoning: sig.reasoning, ai_confidence: sig.confidence,
           ai_regime: sig.market_regime,
+          strategy_id: liveGate?.strategyId ?? null,
         }).select().single();
         await supabase.from("orders").update({ position_id: pos?.id })
           .eq("id", result.orderId);

@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedValidationRouteImport } from './routes/_authenticated/validation'
+import { Route as AuthenticatedStrategyLifecycleRouteImport } from './routes/_authenticated/strategy-lifecycle'
 import { Route as AuthenticatedStrategiesRouteImport } from './routes/_authenticated/strategies'
 import { Route as AuthenticatedSignalsRouteImport } from './routes/_authenticated/signals'
 import { Route as AuthenticatedShadowRouteImport } from './routes/_authenticated/shadow'
@@ -81,6 +82,12 @@ const AuthenticatedValidationRoute = AuthenticatedValidationRouteImport.update({
   path: '/validation',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedStrategyLifecycleRoute =
+  AuthenticatedStrategyLifecycleRouteImport.update({
+    id: '/strategy-lifecycle',
+    path: '/strategy-lifecycle',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedStrategiesRoute = AuthenticatedStrategiesRouteImport.update({
   id: '/strategies',
   path: '/strategies',
@@ -342,6 +349,7 @@ export interface FileRoutesByFullPath {
   '/shadow': typeof AuthenticatedShadowRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/strategies': typeof AuthenticatedStrategiesRoute
+  '/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/validation': typeof AuthenticatedValidationRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
@@ -389,6 +397,7 @@ export interface FileRoutesByTo {
   '/shadow': typeof AuthenticatedShadowRoute
   '/signals': typeof AuthenticatedSignalsRoute
   '/strategies': typeof AuthenticatedStrategiesRoute
+  '/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/validation': typeof AuthenticatedValidationRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
@@ -439,6 +448,7 @@ export interface FileRoutesById {
   '/_authenticated/shadow': typeof AuthenticatedShadowRoute
   '/_authenticated/signals': typeof AuthenticatedSignalsRoute
   '/_authenticated/strategies': typeof AuthenticatedStrategiesRoute
+  '/_authenticated/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/_authenticated/validation': typeof AuthenticatedValidationRoute
   '/_authenticated/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/_authenticated/backtests/$id': typeof AuthenticatedBacktestsIdRoute
@@ -489,6 +499,7 @@ export interface FileRouteTypes {
     | '/shadow'
     | '/signals'
     | '/strategies'
+    | '/strategy-lifecycle'
     | '/validation'
     | '/accounts/new'
     | '/backtests/$id'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/shadow'
     | '/signals'
     | '/strategies'
+    | '/strategy-lifecycle'
     | '/validation'
     | '/accounts/new'
     | '/backtests/$id'
@@ -585,6 +597,7 @@ export interface FileRouteTypes {
     | '/_authenticated/shadow'
     | '/_authenticated/signals'
     | '/_authenticated/strategies'
+    | '/_authenticated/strategy-lifecycle'
     | '/_authenticated/validation'
     | '/_authenticated/accounts/new'
     | '/_authenticated/backtests/$id'
@@ -636,6 +649,13 @@ declare module '@tanstack/react-router' {
       path: '/validation'
       fullPath: '/validation'
       preLoaderRoute: typeof AuthenticatedValidationRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/strategy-lifecycle': {
+      id: '/_authenticated/strategy-lifecycle'
+      path: '/strategy-lifecycle'
+      fullPath: '/strategy-lifecycle'
+      preLoaderRoute: typeof AuthenticatedStrategyLifecycleRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/strategies': {
@@ -990,6 +1010,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedShadowRoute: typeof AuthenticatedShadowRoute
   AuthenticatedSignalsRoute: typeof AuthenticatedSignalsRoute
   AuthenticatedStrategiesRoute: typeof AuthenticatedStrategiesRoute
+  AuthenticatedStrategyLifecycleRoute: typeof AuthenticatedStrategyLifecycleRoute
   AuthenticatedValidationRoute: typeof AuthenticatedValidationRoute
   AuthenticatedBacktestsIdRoute: typeof AuthenticatedBacktestsIdRoute
 }
@@ -1032,6 +1053,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedShadowRoute: AuthenticatedShadowRoute,
   AuthenticatedSignalsRoute: AuthenticatedSignalsRoute,
   AuthenticatedStrategiesRoute: AuthenticatedStrategiesRoute,
+  AuthenticatedStrategyLifecycleRoute: AuthenticatedStrategyLifecycleRoute,
   AuthenticatedValidationRoute: AuthenticatedValidationRoute,
   AuthenticatedBacktestsIdRoute: AuthenticatedBacktestsIdRoute,
 }
