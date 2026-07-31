@@ -322,6 +322,7 @@ export type Database = {
       automation_settings: {
         Row: {
           activation_confirmed_phrase_at: string | null
+          aggressive_mode_enabled: boolean
           allowed_assets: string[]
           autonomous_consecutive_losses: number
           autonomous_cooldown_seconds: number
@@ -345,6 +346,7 @@ export type Database = {
           margin_pause_active: boolean
           max_account_drawdown_pct: number
           max_correlated_risk_pct: number
+          max_crypto_beta: number
           max_daily_drawdown_pct: number
           max_daily_loss: number
           max_risk_reward: number
@@ -358,15 +360,23 @@ export type Database = {
           mode: string
           mtf_confirmation_required: boolean
           news_filter_enabled: boolean
+          overtrading_max_trades: number
+          overtrading_min_score: number
+          overtrading_window_minutes: number
+          pm_enabled: boolean
+          pm_min_score: number
+          portfolio_mode: string
           recovery_pause_until: string | null
           risk_level: string
           risk_per_trade_pct: number
+          sector_limits: Json
           updated_at: string
           user_id: string
           weekly_lock_active: boolean
         }
         Insert: {
           activation_confirmed_phrase_at?: string | null
+          aggressive_mode_enabled?: boolean
           allowed_assets?: string[]
           autonomous_consecutive_losses?: number
           autonomous_cooldown_seconds?: number
@@ -390,6 +400,7 @@ export type Database = {
           margin_pause_active?: boolean
           max_account_drawdown_pct?: number
           max_correlated_risk_pct?: number
+          max_crypto_beta?: number
           max_daily_drawdown_pct?: number
           max_daily_loss?: number
           max_risk_reward?: number
@@ -403,15 +414,23 @@ export type Database = {
           mode?: string
           mtf_confirmation_required?: boolean
           news_filter_enabled?: boolean
+          overtrading_max_trades?: number
+          overtrading_min_score?: number
+          overtrading_window_minutes?: number
+          pm_enabled?: boolean
+          pm_min_score?: number
+          portfolio_mode?: string
           recovery_pause_until?: string | null
           risk_level?: string
           risk_per_trade_pct?: number
+          sector_limits?: Json
           updated_at?: string
           user_id: string
           weekly_lock_active?: boolean
         }
         Update: {
           activation_confirmed_phrase_at?: string | null
+          aggressive_mode_enabled?: boolean
           allowed_assets?: string[]
           autonomous_consecutive_losses?: number
           autonomous_cooldown_seconds?: number
@@ -435,6 +454,7 @@ export type Database = {
           margin_pause_active?: boolean
           max_account_drawdown_pct?: number
           max_correlated_risk_pct?: number
+          max_crypto_beta?: number
           max_daily_drawdown_pct?: number
           max_daily_loss?: number
           max_risk_reward?: number
@@ -448,9 +468,16 @@ export type Database = {
           mode?: string
           mtf_confirmation_required?: boolean
           news_filter_enabled?: boolean
+          overtrading_max_trades?: number
+          overtrading_min_score?: number
+          overtrading_window_minutes?: number
+          pm_enabled?: boolean
+          pm_min_score?: number
+          portfolio_mode?: string
           recovery_pause_until?: string | null
           risk_level?: string
           risk_per_trade_pct?: number
+          sector_limits?: Json
           updated_at?: string
           user_id?: string
           weekly_lock_active?: boolean
@@ -740,6 +767,60 @@ export type Database = {
           target_pct?: number
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      capital_engine_params: {
+        Row: {
+          created_at: string
+          id: string
+          metrics: Json
+          optimal_allocation_pct: number | null
+          optimal_holding_minutes: number | null
+          optimal_stop_atr_mult: number | null
+          optimal_tp_r_multiple: number | null
+          optimal_trailing_pct: number | null
+          status: string
+          strategy_weights: Json
+          trades_evaluated: number
+          updated_at: string
+          user_id: string
+          validated_at: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metrics?: Json
+          optimal_allocation_pct?: number | null
+          optimal_holding_minutes?: number | null
+          optimal_stop_atr_mult?: number | null
+          optimal_tp_r_multiple?: number | null
+          optimal_trailing_pct?: number | null
+          status?: string
+          strategy_weights?: Json
+          trades_evaluated?: number
+          updated_at?: string
+          user_id: string
+          validated_at?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metrics?: Json
+          optimal_allocation_pct?: number | null
+          optimal_holding_minutes?: number | null
+          optimal_stop_atr_mult?: number | null
+          optimal_tp_r_multiple?: number | null
+          optimal_trailing_pct?: number | null
+          status?: string
+          strategy_weights?: Json
+          trades_evaluated?: number
+          updated_at?: string
+          user_id?: string
+          validated_at?: string | null
+          version?: number
         }
         Relationships: []
       }
@@ -1340,6 +1421,42 @@ export type Database = {
         }
         Relationships: []
       }
+      market_regime_snapshots: {
+        Row: {
+          confidence: number
+          created_at: string
+          id: string
+          label: string | null
+          metrics: Json
+          regime: string
+          symbol: string
+          tradable: boolean
+          user_id: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          id?: string
+          label?: string | null
+          metrics?: Json
+          regime: string
+          symbol: string
+          tradable?: boolean
+          user_id: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          id?: string
+          label?: string | null
+          metrics?: Json
+          regime?: string
+          symbol?: string
+          tradable?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       model_drift_snapshots: {
         Row: {
           accuracy: number | null
@@ -1775,6 +1892,132 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      portfolio_decisions: {
+        Row: {
+          allocation_pct: number
+          approved: boolean
+          components: Json
+          created_at: string
+          health_score: number | null
+          id: string
+          notes: Json
+          portfolio_mode: string
+          regime: string | null
+          reject_reason: string | null
+          risk_pct: number
+          score: number
+          side: string
+          signal_id: string | null
+          stage: string
+          strategy_id: string | null
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          allocation_pct?: number
+          approved?: boolean
+          components?: Json
+          created_at?: string
+          health_score?: number | null
+          id?: string
+          notes?: Json
+          portfolio_mode?: string
+          regime?: string | null
+          reject_reason?: string | null
+          risk_pct?: number
+          score?: number
+          side: string
+          signal_id?: string | null
+          stage?: string
+          strategy_id?: string | null
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          allocation_pct?: number
+          approved?: boolean
+          components?: Json
+          created_at?: string
+          health_score?: number | null
+          id?: string
+          notes?: Json
+          portfolio_mode?: string
+          regime?: string | null
+          reject_reason?: string | null
+          risk_pct?: number
+          score?: number
+          side?: string
+          signal_id?: string | null
+          stage?: string
+          strategy_id?: string | null
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      portfolio_health_snapshots: {
+        Row: {
+          capital_utilization: number
+          correlation_score: number
+          created_at: string
+          detail: Json
+          diversification_score: number
+          expected_drawdown: number
+          expected_monthly_return: number
+          health_score: number
+          heat: number
+          id: string
+          portfolio_mode: string
+          recovery_factor: number
+          regime: string | null
+          risk_concentration: number
+          sector_exposure: Json
+          user_id: string
+          volatility: number
+          worst_case_projection: number
+        }
+        Insert: {
+          capital_utilization?: number
+          correlation_score?: number
+          created_at?: string
+          detail?: Json
+          diversification_score?: number
+          expected_drawdown?: number
+          expected_monthly_return?: number
+          health_score?: number
+          heat?: number
+          id?: string
+          portfolio_mode?: string
+          recovery_factor?: number
+          regime?: string | null
+          risk_concentration?: number
+          sector_exposure?: Json
+          user_id: string
+          volatility?: number
+          worst_case_projection?: number
+        }
+        Update: {
+          capital_utilization?: number
+          correlation_score?: number
+          created_at?: string
+          detail?: Json
+          diversification_score?: number
+          expected_drawdown?: number
+          expected_monthly_return?: number
+          health_score?: number
+          heat?: number
+          id?: string
+          portfolio_mode?: string
+          recovery_factor?: number
+          regime?: string | null
+          risk_concentration?: number
+          sector_exposure?: Json
+          user_id?: string
+          volatility?: number
+          worst_case_projection?: number
+        }
+        Relationships: []
       }
       positions: {
         Row: {
@@ -2922,6 +3165,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      trade_quality_scores: {
+        Row: {
+          ai_confidence: number
+          created_at: string
+          detail: Json
+          entry_timing: number
+          execution_quality: number
+          exit_timing: number
+          grade: string
+          id: string
+          overall: number
+          position_id: string | null
+          psychology: number
+          risk_quality: number
+          size_quality: number
+          strategy_id: string | null
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          ai_confidence?: number
+          created_at?: string
+          detail?: Json
+          entry_timing?: number
+          execution_quality?: number
+          exit_timing?: number
+          grade?: string
+          id?: string
+          overall?: number
+          position_id?: string | null
+          psychology?: number
+          risk_quality?: number
+          size_quality?: number
+          strategy_id?: string | null
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          ai_confidence?: number
+          created_at?: string
+          detail?: Json
+          entry_timing?: number
+          execution_quality?: number
+          exit_timing?: number
+          grade?: string
+          id?: string
+          overall?: number
+          position_id?: string | null
+          psychology?: number
+          risk_quality?: number
+          size_quality?: number
+          strategy_id?: string | null
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       trade_reviews: {
         Row: {
