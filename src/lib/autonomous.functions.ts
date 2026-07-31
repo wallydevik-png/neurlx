@@ -419,6 +419,16 @@ export async function runAutonomousCycleFor(
     Number(settings.autonomous_min_confidence ?? 0.9), 0.9,
   );
 
+  // Self-learning: automatically review performance every 100 closed trades
+  // and re-weight strategies. Best-effort — never blocks execution.
+  try {
+    const { runLearningEvaluation } = await import("@/lib/learning/evaluator.server");
+    const review = await runLearningEvaluation(supabase, userId);
+    if (review.ran) errors.push(`learning_review:${review.adjustments.length}_strategies_rescored`);
+  } catch (e) {
+    errors.push(`learning_review: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   let slots = capacity;
   for (const sig of signals) {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
