@@ -24,6 +24,7 @@ import { Route as AuthenticatedResearchRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedReliabilityRouteImport } from './routes/_authenticated/reliability'
 import { Route as AuthenticatedReadinessRouteImport } from './routes/_authenticated/readiness'
 import { Route as AuthenticatedPositionsRouteImport } from './routes/_authenticated/positions'
+import { Route as AuthenticatedPortfolioIntelRouteImport } from './routes/_authenticated/portfolio-intel'
 import { Route as AuthenticatedPortfolioRouteImport } from './routes/_authenticated/portfolio'
 import { Route as AuthenticatedPerformanceRouteImport } from './routes/_authenticated/performance'
 import { Route as AuthenticatedOptimizerRouteImport } from './routes/_authenticated/optimizer'
@@ -134,6 +135,12 @@ const AuthenticatedPositionsRoute = AuthenticatedPositionsRouteImport.update({
   path: '/positions',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPortfolioIntelRoute =
+  AuthenticatedPortfolioIntelRouteImport.update({
+    id: '/portfolio-intel',
+    path: '/portfolio-intel',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPortfolioRoute = AuthenticatedPortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -340,6 +347,7 @@ export interface FileRoutesByFullPath {
   '/optimizer': typeof AuthenticatedOptimizerRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
+  '/portfolio-intel': typeof AuthenticatedPortfolioIntelRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
   '/reliability': typeof AuthenticatedReliabilityRoute
@@ -388,6 +396,7 @@ export interface FileRoutesByTo {
   '/optimizer': typeof AuthenticatedOptimizerRoute
   '/performance': typeof AuthenticatedPerformanceRoute
   '/portfolio': typeof AuthenticatedPortfolioRoute
+  '/portfolio-intel': typeof AuthenticatedPortfolioIntelRoute
   '/positions': typeof AuthenticatedPositionsRoute
   '/readiness': typeof AuthenticatedReadinessRoute
   '/reliability': typeof AuthenticatedReliabilityRoute
@@ -439,6 +448,7 @@ export interface FileRoutesById {
   '/_authenticated/optimizer': typeof AuthenticatedOptimizerRoute
   '/_authenticated/performance': typeof AuthenticatedPerformanceRoute
   '/_authenticated/portfolio': typeof AuthenticatedPortfolioRoute
+  '/_authenticated/portfolio-intel': typeof AuthenticatedPortfolioIntelRoute
   '/_authenticated/positions': typeof AuthenticatedPositionsRoute
   '/_authenticated/readiness': typeof AuthenticatedReadinessRoute
   '/_authenticated/reliability': typeof AuthenticatedReliabilityRoute
@@ -490,6 +500,7 @@ export interface FileRouteTypes {
     | '/optimizer'
     | '/performance'
     | '/portfolio'
+    | '/portfolio-intel'
     | '/positions'
     | '/readiness'
     | '/reliability'
@@ -538,6 +549,7 @@ export interface FileRouteTypes {
     | '/optimizer'
     | '/performance'
     | '/portfolio'
+    | '/portfolio-intel'
     | '/positions'
     | '/readiness'
     | '/reliability'
@@ -588,6 +600,7 @@ export interface FileRouteTypes {
     | '/_authenticated/optimizer'
     | '/_authenticated/performance'
     | '/_authenticated/portfolio'
+    | '/_authenticated/portfolio-intel'
     | '/_authenticated/positions'
     | '/_authenticated/readiness'
     | '/_authenticated/reliability'
@@ -719,6 +732,13 @@ declare module '@tanstack/react-router' {
       path: '/positions'
       fullPath: '/positions'
       preLoaderRoute: typeof AuthenticatedPositionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/portfolio-intel': {
+      id: '/_authenticated/portfolio-intel'
+      path: '/portfolio-intel'
+      fullPath: '/portfolio-intel'
+      preLoaderRoute: typeof AuthenticatedPortfolioIntelRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/portfolio': {
@@ -1001,6 +1021,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOptimizerRoute: typeof AuthenticatedOptimizerRoute
   AuthenticatedPerformanceRoute: typeof AuthenticatedPerformanceRoute
   AuthenticatedPortfolioRoute: typeof AuthenticatedPortfolioRoute
+  AuthenticatedPortfolioIntelRoute: typeof AuthenticatedPortfolioIntelRoute
   AuthenticatedPositionsRoute: typeof AuthenticatedPositionsRoute
   AuthenticatedReadinessRoute: typeof AuthenticatedReadinessRoute
   AuthenticatedReliabilityRoute: typeof AuthenticatedReliabilityRoute
@@ -1044,6 +1065,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOptimizerRoute: AuthenticatedOptimizerRoute,
   AuthenticatedPerformanceRoute: AuthenticatedPerformanceRoute,
   AuthenticatedPortfolioRoute: AuthenticatedPortfolioRoute,
+  AuthenticatedPortfolioIntelRoute: AuthenticatedPortfolioIntelRoute,
   AuthenticatedPositionsRoute: AuthenticatedPositionsRoute,
   AuthenticatedReadinessRoute: AuthenticatedReadinessRoute,
   AuthenticatedReliabilityRoute: AuthenticatedReliabilityRoute,
@@ -1071,3 +1093,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
