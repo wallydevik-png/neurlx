@@ -82,7 +82,7 @@ function RiskEnginePage() {
     <AppShell>
       <PageHeader
         title="Institutional Risk Engine"
-        description="Capital preservation first: drawdown circuit breakers, conviction-scaled position risk, correlation budgets and a self-learning strategy review."
+        subtitle="Capital preservation first: drawdown circuit breakers, conviction-scaled position risk, correlation budgets and a self-learning strategy review."
       />
 
       {p && (
