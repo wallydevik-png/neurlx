@@ -1391,6 +1391,56 @@ export type Database = {
         }
         Relationships: []
       }
+      model_versions: {
+        Row: {
+          created_at: string
+          feature_importance: Json
+          id: string
+          is_candidate: boolean
+          state: string
+          strategy_id: string | null
+          training_window: Json
+          updated_at: string
+          user_id: string
+          validation_metrics: Json
+          version: string
+        }
+        Insert: {
+          created_at?: string
+          feature_importance?: Json
+          id?: string
+          is_candidate?: boolean
+          state?: string
+          strategy_id?: string | null
+          training_window?: Json
+          updated_at?: string
+          user_id: string
+          validation_metrics?: Json
+          version: string
+        }
+        Update: {
+          created_at?: string
+          feature_importance?: Json
+          id?: string
+          is_candidate?: boolean
+          state?: string
+          strategy_id?: string | null
+          training_window?: Json
+          updated_at?: string
+          user_id?: string
+          validation_metrics?: Json
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "model_versions_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_preferences: {
         Row: {
           channels: Json
@@ -2193,13 +2243,20 @@ export type Database = {
           entry_price: number
           entry_ts: string
           exit_reason: string | null
+          features: Json
           id: string
           indicators: Json
+          latency_ms: number
           market_regime: string | null
+          mode: string
+          model_version: string | null
           pnl: number | null
           pnl_pct: number | null
           qty: number
+          r_multiple: number | null
           side: string
+          slippage: number
+          spread: number
           status: string
           stop_loss: number
           strategy_id: string | null
@@ -2216,13 +2273,20 @@ export type Database = {
           entry_price: number
           entry_ts?: string
           exit_reason?: string | null
+          features?: Json
           id?: string
           indicators?: Json
+          latency_ms?: number
           market_regime?: string | null
+          mode?: string
+          model_version?: string | null
           pnl?: number | null
           pnl_pct?: number | null
           qty: number
+          r_multiple?: number | null
           side: string
+          slippage?: number
+          spread?: number
           status?: string
           stop_loss: number
           strategy_id?: string | null
@@ -2239,13 +2303,20 @@ export type Database = {
           entry_price?: number
           entry_ts?: string
           exit_reason?: string | null
+          features?: Json
           id?: string
           indicators?: Json
+          latency_ms?: number
           market_regime?: string | null
+          mode?: string
+          model_version?: string | null
           pnl?: number | null
           pnl_pct?: number | null
           qty?: number
+          r_multiple?: number | null
           side?: string
+          slippage?: number
+          spread?: number
           status?: string
           stop_loss?: number
           strategy_id?: string | null
@@ -2371,51 +2442,78 @@ export type Database = {
       }
       strategies: {
         Row: {
+          allocation_risk_pct: number
           capital_allocation_pct: number
+          consecutive_losses: number
           created_at: string
+          drift_at: string | null
+          drift_detected: boolean
           health_notes: string | null
           health_status: string
           id: string
           interval: string
           is_active: boolean
           last_evaluated_at: string | null
+          lifecycle_state: string
+          model_version: string | null
           name: string
           notes: string | null
           params: Json
+          score: number
+          state_changed_at: string
+          state_reason: string | null
           strategy_type: string
           symbol: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          allocation_risk_pct?: number
           capital_allocation_pct?: number
+          consecutive_losses?: number
           created_at?: string
+          drift_at?: string | null
+          drift_detected?: boolean
           health_notes?: string | null
           health_status?: string
           id?: string
           interval?: string
           is_active?: boolean
           last_evaluated_at?: string | null
+          lifecycle_state?: string
+          model_version?: string | null
           name: string
           notes?: string | null
           params?: Json
+          score?: number
+          state_changed_at?: string
+          state_reason?: string | null
           strategy_type?: string
           symbol: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          allocation_risk_pct?: number
           capital_allocation_pct?: number
+          consecutive_losses?: number
           created_at?: string
+          drift_at?: string | null
+          drift_detected?: boolean
           health_notes?: string | null
           health_status?: string
           id?: string
           interval?: string
           is_active?: boolean
           last_evaluated_at?: string | null
+          lifecycle_state?: string
+          model_version?: string | null
           name?: string
           notes?: string | null
           params?: Json
+          score?: number
+          state_changed_at?: string
+          state_reason?: string | null
           strategy_type?: string
           symbol?: string
           updated_at?: string
@@ -2476,6 +2574,147 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      strategy_lifecycle_events: {
+        Row: {
+          created_at: string
+          from_state: string
+          id: string
+          metrics: Json
+          reason: string
+          strategy_id: string | null
+          to_state: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_state: string
+          id?: string
+          metrics?: Json
+          reason: string
+          strategy_id?: string | null
+          to_state: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          from_state?: string
+          id?: string
+          metrics?: Json
+          reason?: string
+          strategy_id?: string | null
+          to_state?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strategy_lifecycle_events_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      strategy_regime_stats: {
+        Row: {
+          created_at: string
+          expectancy: number
+          id: string
+          profit_factor: number
+          regime: string
+          strategy_id: string
+          trades: number
+          updated_at: string
+          user_id: string
+          win_rate: number
+          wins: number
+        }
+        Insert: {
+          created_at?: string
+          expectancy?: number
+          id?: string
+          profit_factor?: number
+          regime: string
+          strategy_id: string
+          trades?: number
+          updated_at?: string
+          user_id: string
+          win_rate?: number
+          wins?: number
+        }
+        Update: {
+          created_at?: string
+          expectancy?: number
+          id?: string
+          profit_factor?: number
+          regime?: string
+          strategy_id?: string
+          trades?: number
+          updated_at?: string
+          user_id?: string
+          win_rate?: number
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strategy_regime_stats_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      strategy_validation_runs: {
+        Row: {
+          created_at: string
+          drift: Json
+          eligibility: Json
+          id: string
+          regime_stats: Json
+          score: number
+          state: string
+          strategy_id: string
+          user_id: string
+          walk_forward: Json
+          windows: Json
+        }
+        Insert: {
+          created_at?: string
+          drift?: Json
+          eligibility?: Json
+          id?: string
+          regime_stats?: Json
+          score?: number
+          state: string
+          strategy_id: string
+          user_id: string
+          walk_forward?: Json
+          windows?: Json
+        }
+        Update: {
+          created_at?: string
+          drift?: Json
+          eligibility?: Json
+          id?: string
+          regime_stats?: Json
+          score?: number
+          state?: string
+          strategy_id?: string
+          user_id?: string
+          walk_forward?: Json
+          windows?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strategy_validation_runs_strategy_id_fkey"
+            columns: ["strategy_id"]
+            isOneToOne: false
+            referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       strategy_weights: {
         Row: {

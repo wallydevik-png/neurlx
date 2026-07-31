@@ -193,9 +193,15 @@ export const evaluateShadowTrades = createServerFn({ method: "POST" })
         if (exit !== null) {
           const pnl = (exit - Number(t.entry_price)) * dir * Number(t.qty);
           const pnlPct = ((exit - Number(t.entry_price)) / Number(t.entry_price)) * dir;
+          const risk = Math.abs(Number(t.entry_price) - Number(t.stop_loss)) * Number(t.qty);
+          // Realistic friction so execution quality is measurable in shadow.
+          const spread = Number(t.entry_price) * 0.0002;
+          const slippage = Number(t.entry_price) * 0.0003;
           await context.supabase.from("shadow_trades").update({
             status: "closed", close_ts: new Date().toISOString(),
             close_price: exit, pnl, pnl_pct: pnlPct, exit_reason: reason,
+            r_multiple: risk > 0 ? pnl / risk : 0,
+            spread, slippage, latency_ms: 250,
           }).eq("id", t.id);
           closed++;
         }
