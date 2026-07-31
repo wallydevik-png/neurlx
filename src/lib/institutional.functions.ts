@@ -77,8 +77,13 @@ export const updateInstitutionalSettings = createServerFn({ method: "POST" })
   }) => d)
   .handler(async ({ data, context }) => {
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-    const patch: Record<string, number | boolean> = {};
-    type SettingsPatch = Parameters<ReturnType<typeof context.supabase.from<"automation_settings">>["update"]>[0];
+    const patch: {
+      risk_per_trade_pct?: number; max_daily_drawdown_pct?: number;
+      max_weekly_drawdown_pct?: number; max_account_drawdown_pct?: number;
+      max_spread_bps?: number; min_risk_reward?: number; max_risk_reward?: number;
+      max_correlated_risk_pct?: number; autonomous_min_confidence?: number;
+      news_filter_enabled?: boolean; mtf_confirmation_required?: boolean;
+    } = {};
     if (data.riskPerTradePct != null) patch.risk_per_trade_pct = clamp(data.riskPerTradePct, 0.0025, 0.01);
     if (data.maxDailyDrawdownPct != null) patch.max_daily_drawdown_pct = clamp(data.maxDailyDrawdownPct, 0.5, 10);
     if (data.maxWeeklyDrawdownPct != null) patch.max_weekly_drawdown_pct = clamp(data.maxWeeklyDrawdownPct, 1, 20);
@@ -91,7 +96,7 @@ export const updateInstitutionalSettings = createServerFn({ method: "POST" })
     if (data.newsFilterEnabled != null) patch.news_filter_enabled = data.newsFilterEnabled;
     if (data.mtfConfirmationRequired != null) patch.mtf_confirmation_required = data.mtfConfirmationRequired;
     if (Object.keys(patch).length) {
-      await context.supabase.from("automation_settings").update(patch as unknown as SettingsPatch).eq("user_id", context.userId);
+      await context.supabase.from("automation_settings").update(patch).eq("user_id", context.userId);
     }
     return { ok: true };
   });
