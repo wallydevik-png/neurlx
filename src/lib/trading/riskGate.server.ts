@@ -25,6 +25,12 @@ export async function evaluateRisk(
     .from("automation_settings").select("*").eq("user_id", userId).maybeSingle();
   if (!settings) return { allowed: false, reason: "Automation settings not initialized." };
 
+  // Institutional capital-protection layer: drawdown circuit breakers,
+  // recovery pauses and concurrent-position caps. Capital preservation first.
+  const { loadPolicy, checkCorrelationBudget } = await import("@/lib/risk/policy.server");
+  const policy = await loadPolicy(supabase, userId);
+  if (!policy.tradingAllowed) return { allowed: false, reason: policy.blocks[0] };
+
   if (settings.kill_switch_active) return { allowed: false, reason: "Emergency kill switch is active." };
   if (!input.stopLoss) return { allowed: false, reason: "Stop-loss is required for every trade." };
   if (!input.takeProfit) return { allowed: false, reason: "Take-profit is required for every trade." };
@@ -59,6 +65,13 @@ export async function evaluateRisk(
   if (dailyPnl < -Number(settings.max_daily_loss)) {
     return { allowed: false, reason: `Daily loss limit ($${settings.max_daily_loss}) breached — trading halted.` };
   }
+
+  // Correlated-cluster exposure budget.
+  const corr = await checkCorrelationBudget(
+    supabase, userId, input.symbol,
+    policy.limits.baseRiskPct, policy.limits.maxCorrelatedRiskPct,
+  );
+  if (!corr.allowed) return { allowed: false, reason: corr.reason };
 
   return { allowed: true };
 }
