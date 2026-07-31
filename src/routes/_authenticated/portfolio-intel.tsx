@@ -57,6 +57,17 @@ function ModeBadge({ mode }: { mode: string }) {
 
 const GRADES = ["A+", "A", "B", "C", "D", "F"];
 
+type PmSettingsPatch = {
+  pmEnabled?: boolean;
+  pmMinScore?: number;
+  maxCryptoBeta?: number;
+  aggressiveEnabled?: boolean;
+  sectorLimits?: Record<string, number>;
+  overtradingWindow?: number;
+  overtradingMax?: number;
+  overtradingMinScore?: number;
+};
+
 function PortfolioIntel() {
   const qc = useQueryClient();
   const intelFn = useServerFn(getPortfolioIntel);
@@ -79,7 +90,7 @@ function PortfolioIntel() {
     onError: e => toast.error(e instanceof Error ? e.message : "Failed"),
   });
   const save = useMutation({
-    mutationFn: (patch: Parameters<typeof saveFn>[0]["data"]) => saveFn({ data: patch }),
+    mutationFn: (patch: PmSettingsPatch) => saveFn({ data: patch }),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["portfolio-intel"] }); },
     onError: e => toast.error(e instanceof Error ? e.message : "Failed"),
   });
