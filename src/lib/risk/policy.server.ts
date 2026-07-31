@@ -257,14 +257,8 @@ export async function checkCorrelationBudget(
     const rho = correlation(mine, other);
     maxCorr = Math.max(maxCorr, rho);
     if (rho > 0.7) {
-      // Approximate the open position's risk share as its stop distance × qty.
-      for (const p of open.filter(x => x.symbol === s)) {
-        const stop = Number(p.stop_loss ?? 0);
-        const entry = Number(p.avg_entry ?? 0);
-        const риск = stop > 0 ? Math.abs(entry - stop) * Math.abs(Number(p.qty)) : 0;
-        clusterRiskPct += риск > 0 ? 0 : 0; // notional risk added below
-      }
-      clusterRiskPct += newRiskPct * 100; // each correlated leg counts as a full unit of risk
+      // Each highly correlated open leg counts as a full unit of risk.
+      clusterRiskPct += newRiskPct * 100 * open.filter(x => x.symbol === s).length;
     }
   }
 
