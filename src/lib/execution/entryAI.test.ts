@@ -72,10 +72,13 @@ describe("sessions", () => {
 
 describe("volatility engine", () => {
   it("marks a flat market as untradeable", () => {
-    const flat = series(new Array(120).fill(100));
+    const flat: Candle[] = Array.from({ length: 120 }, (_, i) => ({
+      ts: i * 60_000, open: 100, high: 100, low: 100, close: 100, volume: 1000,
+    }));
     const v = volatilityEngine(flat, null);
     expect(v === null || v.tradable === false).toBe(true);
   });
+
   it("rejects spreads over budget", () => {
     const v = volatilityEngine(uptrend, 80, 30)!;
     expect(v.spreadOk).toBe(false);
