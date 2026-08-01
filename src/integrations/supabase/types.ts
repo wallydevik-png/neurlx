@@ -336,6 +336,10 @@ export type Database = {
           daily_profit_target: number
           drawdown_lock_active: boolean
           equity_high_water: number
+          exec_intel_enabled: boolean
+          exec_min_confidence: number
+          exec_model_version: number
+          exec_session_filter_enabled: boolean
           kill_switch_active: boolean
           live_consecutive_failures: number
           live_kill_reason: string | null
@@ -390,6 +394,10 @@ export type Database = {
           daily_profit_target?: number
           drawdown_lock_active?: boolean
           equity_high_water?: number
+          exec_intel_enabled?: boolean
+          exec_min_confidence?: number
+          exec_model_version?: number
+          exec_session_filter_enabled?: boolean
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -444,6 +452,10 @@ export type Database = {
           daily_profit_target?: number
           drawdown_lock_active?: boolean
           equity_high_water?: number
+          exec_intel_enabled?: boolean
+          exec_min_confidence?: number
+          exec_model_version?: number
+          exec_session_filter_enabled?: boolean
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -1193,6 +1205,132 @@ export type Database = {
         }
         Relationships: []
       }
+      execution_backtests: {
+        Row: {
+          baseline: Json
+          candidate: Json
+          confidence: number | null
+          created_at: string
+          id: string
+          p_value: number | null
+          promoted: boolean
+          summary: string | null
+          user_id: string
+        }
+        Insert: {
+          baseline?: Json
+          candidate?: Json
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          p_value?: number | null
+          promoted?: boolean
+          summary?: string | null
+          user_id: string
+        }
+        Update: {
+          baseline?: Json
+          candidate?: Json
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          p_value?: number | null
+          promoted?: boolean
+          summary?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      execution_decisions: {
+        Row: {
+          action: string
+          approved: boolean
+          components: Json
+          confidence: number
+          created_at: string
+          entry_score: number
+          expected_value: number | null
+          grade: string
+          id: string
+          limit_price: number | null
+          liquidity: Json
+          mtf: Json
+          order_type: string
+          rejections: Json
+          risk_reward: number | null
+          session: string | null
+          session_score: number | null
+          shadow_only: boolean
+          side: string
+          signal_id: string | null
+          stop_loss: number | null
+          strategy_id: string | null
+          symbol: string
+          take_profit: number | null
+          user_id: string
+          volatility_state: string | null
+          win_probability: number | null
+        }
+        Insert: {
+          action?: string
+          approved?: boolean
+          components?: Json
+          confidence?: number
+          created_at?: string
+          entry_score?: number
+          expected_value?: number | null
+          grade?: string
+          id?: string
+          limit_price?: number | null
+          liquidity?: Json
+          mtf?: Json
+          order_type?: string
+          rejections?: Json
+          risk_reward?: number | null
+          session?: string | null
+          session_score?: number | null
+          shadow_only?: boolean
+          side: string
+          signal_id?: string | null
+          stop_loss?: number | null
+          strategy_id?: string | null
+          symbol: string
+          take_profit?: number | null
+          user_id: string
+          volatility_state?: string | null
+          win_probability?: number | null
+        }
+        Update: {
+          action?: string
+          approved?: boolean
+          components?: Json
+          confidence?: number
+          created_at?: string
+          entry_score?: number
+          expected_value?: number | null
+          grade?: string
+          id?: string
+          limit_price?: number | null
+          liquidity?: Json
+          mtf?: Json
+          order_type?: string
+          rejections?: Json
+          risk_reward?: number | null
+          session?: string | null
+          session_score?: number | null
+          shadow_only?: boolean
+          side?: string
+          signal_id?: string | null
+          stop_loss?: number | null
+          strategy_id?: string | null
+          symbol?: string
+          take_profit?: number | null
+          user_id?: string
+          volatility_state?: string | null
+          win_probability?: number | null
+        }
+        Relationships: []
+      }
       execution_log: {
         Row: {
           created_at: string
@@ -1243,6 +1381,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      execution_model_params: {
+        Row: {
+          active: boolean
+          created_at: string
+          early_entries: number
+          id: string
+          late_entries: number
+          notes: string | null
+          params: Json
+          perfect_entries: number
+          trades_evaluated: number
+          user_id: string
+          version: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          early_entries?: number
+          id?: string
+          late_entries?: number
+          notes?: string | null
+          params?: Json
+          perfect_entries?: number
+          trades_evaluated?: number
+          user_id: string
+          version?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          early_entries?: number
+          id?: string
+          late_entries?: number
+          notes?: string | null
+          params?: Json
+          perfect_entries?: number
+          trades_evaluated?: number
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
       }
       follows: {
         Row: {
@@ -2032,6 +2212,7 @@ export type Database = {
           commission: number
           connection_id: string | null
           duration_seconds: number | null
+          entry_score: number | null
           exit_price: number | null
           exit_reason: string | null
           external_position_id: string | null
@@ -2044,12 +2225,14 @@ export type Database = {
           qty: number
           realized_pnl: number | null
           side: string
+          sl_tp_mode: string
           status: string
           stop_loss: number | null
           strategy_id: string | null
           swap: number
           symbol: string
           take_profit: number | null
+          trade_grade: string | null
           trailing_activated_at: string | null
           trailing_high_water: number | null
           trailing_stop_pct: number | null
@@ -2068,6 +2251,7 @@ export type Database = {
           commission?: number
           connection_id?: string | null
           duration_seconds?: number | null
+          entry_score?: number | null
           exit_price?: number | null
           exit_reason?: string | null
           external_position_id?: string | null
@@ -2080,12 +2264,14 @@ export type Database = {
           qty: number
           realized_pnl?: number | null
           side: string
+          sl_tp_mode?: string
           status?: string
           stop_loss?: number | null
           strategy_id?: string | null
           swap?: number
           symbol: string
           take_profit?: number | null
+          trade_grade?: string | null
           trailing_activated_at?: string | null
           trailing_high_water?: number | null
           trailing_stop_pct?: number | null
@@ -2104,6 +2290,7 @@ export type Database = {
           commission?: number
           connection_id?: string | null
           duration_seconds?: number | null
+          entry_score?: number | null
           exit_price?: number | null
           exit_reason?: string | null
           external_position_id?: string | null
@@ -2116,12 +2303,14 @@ export type Database = {
           qty?: number
           realized_pnl?: number | null
           side?: string
+          sl_tp_mode?: string
           status?: string
           stop_loss?: number | null
           strategy_id?: string | null
           swap?: number
           symbol?: string
           take_profit?: number | null
+          trade_grade?: string | null
           trailing_activated_at?: string | null
           trailing_high_water?: number | null
           trailing_stop_pct?: number | null
@@ -3165,6 +3354,78 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      trade_memory: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          decision_id: string | null
+          entry_score: number | null
+          entry_timing: string | null
+          grade: string | null
+          hold_seconds: number | null
+          id: string
+          indicators: Json
+          market_condition: Json
+          max_adverse_excursion: number | null
+          max_favorable_excursion: number | null
+          outcome: string | null
+          position_id: string | null
+          profit: number | null
+          r_multiple: number | null
+          regime: string | null
+          session: string | null
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          decision_id?: string | null
+          entry_score?: number | null
+          entry_timing?: string | null
+          grade?: string | null
+          hold_seconds?: number | null
+          id?: string
+          indicators?: Json
+          market_condition?: Json
+          max_adverse_excursion?: number | null
+          max_favorable_excursion?: number | null
+          outcome?: string | null
+          position_id?: string | null
+          profit?: number | null
+          r_multiple?: number | null
+          regime?: string | null
+          session?: string | null
+          side: string
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          decision_id?: string | null
+          entry_score?: number | null
+          entry_timing?: string | null
+          grade?: string | null
+          hold_seconds?: number | null
+          id?: string
+          indicators?: Json
+          market_condition?: Json
+          max_adverse_excursion?: number | null
+          max_favorable_excursion?: number | null
+          outcome?: string | null
+          position_id?: string | null
+          profit?: number | null
+          r_multiple?: number | null
+          regime?: string | null
+          session?: string | null
+          side?: string
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       trade_quality_scores: {
         Row: {
