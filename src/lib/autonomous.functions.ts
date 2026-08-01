@@ -656,14 +656,71 @@ export async function runAutonomousCycleFor(
       continue;
     }
 
+    // ---------------------------------------------------------------
+    // Stage 5 — Execution Intelligence (final decision maker).
+    // Entry timing, multi-timeframe confirmation, order flow, volatility,
+    // session quality, smart order type and dynamic SL/TP. Anything below the
+    // confidence floor is downgraded to a shadow trade instead of an order.
+    // ---------------------------------------------------------------
+    let execOrderType: "market" | "limit" | "stop" = "market";
+    let execLimitPrice: number | null = null;
+    let execGrade: string | null = null;
+    let execScore: number | null = null;
+    try {
+      const { evaluateExecution } = await import("@/lib/execution/executionIntel.server");
+      const xi = await evaluateExecution(supabase, userId, {
+        symbol: sig.symbol, side, entry,
+        signalId: sig.id, strategyId: liveGate?.strategyId ?? null,
+      });
+      if (!xi.approved) {
+        bump(rejectReasons, `execution_intel:${xi.rejections[0] ?? xi.action}`);
+        rejected++;
+        if (xi.shadowOnly) {
+          await supabase.from("shadow_trades").insert({
+            user_id: userId, strategy_id: liveGate?.strategyId ?? null,
+            symbol: sig.symbol, side,
+            entry_price: entry, stop_loss: xi.stopLoss ?? execStop,
+            take_profit: xi.takeProfit ?? execTp,
+            qty: execQty, confidence: xi.confidence,
+            market_regime: entryEval?.regime.regime ?? sig.market_regime,
+            mode: "shadow", status: "open",
+            indicators: (sig.indicators ?? {}) as never,
+            features: { source: "execution_intel", grade: xi.grade, score: xi.score } as never,
+          });
+        }
+        await supabase.from("signals").update({
+          status: "rejected", resolved_at: new Date().toISOString(),
+        }).eq("id", sig.id);
+        continue;
+      }
+      if (xi.stopLoss != null && xi.takeProfit != null) {
+        execStop = xi.stopLoss;
+        execTp = xi.takeProfit;
+      }
+      execOrderType = xi.orderType;
+      execLimitPrice = xi.limitPrice;
+      execGrade = xi.grade;
+      execScore = xi.score;
+      errors.push(`exec_intel:${sig.symbol}:${xi.grade}:${xi.score.toFixed(1)}:${xi.orderType}`);
+      await supabase.from("signals").update({
+        stop_loss: execStop, take_profit: execTp,
+        reasoning: xi.reasoning, confidence: xi.confidence,
+      }).eq("id", sig.id);
+    } catch (e) {
+      errors.push(`execution_intel: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     // Execute
     try {
       const result = await submitOrder(supabase, userId, {
-        symbol: sig.symbol, side, qty: execQty, orderType: "market",
+        symbol: sig.symbol, side, qty: execQty,
+        orderType: execOrderType === "market" ? "market" : "limit",
+        limitPrice: execLimitPrice ?? undefined,
         stopLoss: execStop, takeProfit: execTp,
         signalId: sig.id,
         connectionId: liveConn?.id ?? null, live,
       });
+
       if (result.status === "rejected" || result.status === "error") {
         bump(rejectReasons, `exec:${result.message ?? result.status}`);
         rejected++;
