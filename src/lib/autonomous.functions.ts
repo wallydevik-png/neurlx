@@ -306,15 +306,19 @@ export async function runAutonomousCycleFor(
   if ((!signals || signals.length === 0) && capacity > 0) {
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
-      const { listSupportedSymbols } = await import("@/lib/marketdata/service.server");
+      const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
       // Always scan a broad universe so we surface *something*, then intersect
-      // with allowed_assets at the execution stage.
+      // with allowed_assets at the execution stage. When the user has a
+      // MetaTrader account connected, this pulls the broker's real tradable
+      // list (forex/indices/stocks/crypto) instead of the fixed 39-symbol
+      // static set, so autopilot can research pairs beyond crypto.
       const watchlist = new Set<string>(settings.allowed_assets ?? []);
+      const tradable = await listTradableSymbols(supabase, userId);
       const universe = Array.from(new Set([
         ...(settings.allowed_assets ?? []),
-        ...listSupportedSymbols().slice(0, 16),
+        ...tradable.slice(0, 24),
       ]));
-      const verdicts = await runCommittee(supabase, universe);
+      const verdicts = await runCommittee(supabase, universe, userId);
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
@@ -507,7 +511,7 @@ export async function runAutonomousCycleFor(
         maxSpreadBps: Number(settings.max_spread_bps ?? 30),
         requireMtf: settings.mtf_confirmation_required !== false,
         newsFilterEnabled: settings.news_filter_enabled !== false,
-      });
+      }, userId);
     } catch (e) {
       errors.push(`entry_gate:${sig.symbol}:${e instanceof Error ? e.message : String(e)}`);
     }
