@@ -5,7 +5,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCandles } from "@/lib/marketdata/service.server";
 import { scanMarket, type AiSignal } from "@/lib/trading/aiEngine.server";
-import { listSupportedSymbols } from "@/lib/marketdata/service.server";
 
 export type RiskProfile = "conservative" | "balanced" | "aggressive";
 
@@ -69,10 +68,12 @@ export async function buildPortfolioRecommendation(
     profile: RiskProfile;
     allowedAssets?: string[];
   },
+  userId?: string | null,
 ): Promise<PortfolioRecommendation> {
   const env = RISK_ENVELOPE[args.profile];
-  const universe = args.allowedAssets?.length ? args.allowedAssets : listSupportedSymbols();
-  const signals = await scanMarket(supabase, universe);
+  const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
+  const universe = args.allowedAssets?.length ? args.allowedAssets : await listTradableSymbols(supabase, userId);
+  const signals = await scanMarket(supabase, universe, userId);
 
   // Value holdings at current signal price (or entry as fallback)
   const priceBySym = new Map<string, number>(signals.map(s => [s.symbol, s.entry]));
@@ -91,7 +92,7 @@ export async function buildPortfolioRecommendation(
   const buys = signals.filter(s => s.direction === "buy" && s.confidence >= env.minConfidence);
   const candles = await Promise.all(buys.slice(0, env.maxAssets).map(async s => ({
     sym: s.symbol,
-    closes: (await fetchCandles(supabase, s.symbol, "1h", 120)).map(c => c.close),
+    closes: (await fetchCandles(supabase, s.symbol, "1h", 120, userId)).map(c => c.close),
   })));
   const correlationWarnings: string[] = [];
   for (let i = 0; i < candles.length; i++) {
