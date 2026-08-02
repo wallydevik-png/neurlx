@@ -66,11 +66,12 @@ export async function getMacroRegime(
   supabase: SupabaseClient | null,
   symbol: string,
   interval: "1h" | "4h" = "1h",
+  userId?: string | null,
 ): Promise<MacroRegimeReport> {
   const key = `${symbol}:${interval}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit;
-  const candles = await fetchCandles(supabase, symbol, interval, 250);
+  const candles = await fetchCandles(supabase, symbol, interval, 250, userId);
   const report = classifyMacroRegime(symbol, candles);
   cache.set(key, report);
   return report;
