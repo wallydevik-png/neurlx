@@ -50,13 +50,14 @@ export async function runOptimization(
   supabase: SupabaseClient | null,
   base: BacktestParams,
   grid: OptimizationGrid,
+  userId?: string | null,
 ): Promise<OptimizationResult> {
   const combos = cross(grid).slice(0, 40); // safety cap
   const candidates: OptimizationCandidate[] = [];
   for (const combo of combos) {
     const merged: BacktestParams = { ...base, ...combo };
     try {
-      const r = await runBacktest(supabase, merged);
+      const r = await runBacktest(supabase, merged, userId);
       const m = {
         totalReturn: r.metrics.totalReturn,
         sharpe: r.metrics.sharpe,
