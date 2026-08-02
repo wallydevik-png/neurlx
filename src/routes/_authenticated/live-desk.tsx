@@ -347,6 +347,87 @@ function LiveDesk() {
   );
 }
 
+type DeskPositionRow = Awaited<ReturnType<typeof getLiveDesk>>["positions"][number];
+
+/**
+ * Stop/target cell. The AI's calculated levels stay visible at all times; the
+ * user can override them and hand control back with one click.
+ */
+function TargetsCell({ position }: { position: DeskPositionRow }) {
+  const qc = useQueryClient();
+  const saveTargets = useServerFn(setPositionTargets);
+  const [open, setOpen] = useState(false);
+  const [sl, setSl] = useState(String(position.stopLoss ?? position.aiStopLoss ?? ""));
+  const [tp, setTp] = useState(String(position.takeProfit ?? position.aiTakeProfit ?? ""));
+
+  const mutate = useMutation({
+    mutationFn: (vars: { mode: "ai" | "manual" }) =>
+      saveTargets({
+        data: {
+          positionId: position.neurlxPositionId!,
+          mode: vars.mode,
+          stopLoss: vars.mode === "manual" && sl !== "" ? Number(sl) : null,
+          takeProfit: vars.mode === "manual" && tp !== "" ? Number(tp) : null,
+        },
+      }),
+    onSuccess: (_r, vars) => {
+      toast.success(vars.mode === "manual" ? "Manual stop / target applied" : "Levels handed back to the AI");
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["live-desk"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const manual = position.slTpMode === "manual";
+
+  return (
+    <div className="text-xs">
+      <div className="font-mono whitespace-nowrap">
+        SL {position.stopLoss != null ? fmtNum(position.stopLoss, 5) : "—"}
+        {" / "}
+        TP {position.takeProfit != null ? fmtNum(position.takeProfit, 5) : "—"}
+      </div>
+      <div className="mt-0.5 flex items-center gap-2">
+        <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded ${
+          manual ? "bg-warning/15 text-warning" : "bg-primary/15 text-primary"
+        }`}>{manual ? "manual" : "ai"}</span>
+        {position.neurlxPositionId && (
+          <button onClick={() => setOpen(v => !v)} className="text-[10px] underline text-muted-foreground">
+            {open ? "close" : "override"}
+          </button>
+        )}
+      </div>
+      {(position.aiStopLoss != null || position.aiTakeProfit != null) && (
+        <div className="mt-0.5 text-[10px] text-muted-foreground font-mono">
+          AI: {position.aiStopLoss != null ? fmtNum(position.aiStopLoss, 5) : "—"}
+          {" / "}
+          {position.aiTakeProfit != null ? fmtNum(position.aiTakeProfit, 5) : "—"}
+        </div>
+      )}
+      {open && position.neurlxPositionId && (
+        <div className="mt-2 space-y-1.5 rounded-md border border-border p-2 bg-card">
+          <input value={sl} onChange={e => setSl(e.target.value)} placeholder="Stop loss"
+            className="w-28 px-2 py-1 rounded bg-input border border-border font-mono text-xs" />
+          <input value={tp} onChange={e => setTp(e.target.value)} placeholder="Take profit"
+            className="w-28 px-2 py-1 rounded bg-input border border-border font-mono text-xs" />
+          <div className="flex gap-1.5 pt-0.5">
+            <button disabled={mutate.isPending} onClick={() => mutate.mutate({ mode: "manual" })}
+              className="rounded bg-primary px-2 py-1 text-[10px] font-mono uppercase text-primary-foreground">
+              Apply
+            </button>
+            <button disabled={mutate.isPending || !manual} onClick={() => mutate.mutate({ mode: "ai" })}
+              className="rounded border border-border px-2 py-1 text-[10px] font-mono uppercase disabled:opacity-40">
+              Back to AI
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
 function fmtDuration(seconds: number | null): string {
   if (seconds == null) return "—";
   if (seconds < 60) return `${seconds}s`;
