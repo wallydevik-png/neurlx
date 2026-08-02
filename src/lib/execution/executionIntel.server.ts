@@ -145,7 +145,7 @@ export async function evaluateExecution(
 
   const timeframes: Timeframe[] = [...MTF_ORDER];
   const series = await Promise.all(timeframes.map(tf =>
-    fetchCandles(supabase, args.symbol, tf, tf === "5m" ? 260 : 220).catch(() => [] as Candle[])));
+    fetchCandles(supabase, args.symbol, tf, tf === "5m" ? 260 : 220, userId).catch(() => [] as Candle[])));
   const byTf = new Map<Timeframe, Candle[]>();
   timeframes.forEach((tf, i) => byTf.set(tf, series[i]));
 
