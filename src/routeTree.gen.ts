@@ -40,6 +40,7 @@ import { Route as AuthenticatedJournalRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedIntelligenceRouteImport } from './routes/_authenticated/intelligence'
 import { Route as AuthenticatedIntelRouteImport } from './routes/_authenticated/intel'
 import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
+import { Route as AuthenticatedExecutionIntelRouteImport } from './routes/_authenticated/execution-intel'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedComplianceRouteImport } from './routes/_authenticated/compliance'
 import { Route as AuthenticatedCommunityRouteImport } from './routes/_authenticated/community'
@@ -219,6 +220,12 @@ const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedExecutionIntelRoute =
+  AuthenticatedExecutionIntelRouteImport.update({
+    id: '/execution-intel',
+    path: '/execution-intel',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -332,6 +339,7 @@ export interface FileRoutesByFullPath {
   '/community': typeof AuthenticatedCommunityRoute
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/execution-intel': typeof AuthenticatedExecutionIntelRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/intel': typeof AuthenticatedIntelRoute
   '/intelligence': typeof AuthenticatedIntelligenceRoute
@@ -381,6 +389,7 @@ export interface FileRoutesByTo {
   '/community': typeof AuthenticatedCommunityRoute
   '/compliance': typeof AuthenticatedComplianceRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/execution-intel': typeof AuthenticatedExecutionIntelRoute
   '/history': typeof AuthenticatedHistoryRoute
   '/intel': typeof AuthenticatedIntelRoute
   '/intelligence': typeof AuthenticatedIntelligenceRoute
@@ -433,6 +442,7 @@ export interface FileRoutesById {
   '/_authenticated/community': typeof AuthenticatedCommunityRoute
   '/_authenticated/compliance': typeof AuthenticatedComplianceRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/execution-intel': typeof AuthenticatedExecutionIntelRoute
   '/_authenticated/history': typeof AuthenticatedHistoryRoute
   '/_authenticated/intel': typeof AuthenticatedIntelRoute
   '/_authenticated/intelligence': typeof AuthenticatedIntelligenceRoute
@@ -485,6 +495,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/compliance'
     | '/dashboard'
+    | '/execution-intel'
     | '/history'
     | '/intel'
     | '/intelligence'
@@ -534,6 +545,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/compliance'
     | '/dashboard'
+    | '/execution-intel'
     | '/history'
     | '/intel'
     | '/intelligence'
@@ -585,6 +597,7 @@ export interface FileRouteTypes {
     | '/_authenticated/community'
     | '/_authenticated/compliance'
     | '/_authenticated/dashboard'
+    | '/_authenticated/execution-intel'
     | '/_authenticated/history'
     | '/_authenticated/intel'
     | '/_authenticated/intelligence'
@@ -846,6 +859,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedHistoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/execution-intel': {
+      id: '/_authenticated/execution-intel'
+      path: '/execution-intel'
+      fullPath: '/execution-intel'
+      preLoaderRoute: typeof AuthenticatedExecutionIntelRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -1006,6 +1026,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCommunityRoute: typeof AuthenticatedCommunityRoute
   AuthenticatedComplianceRoute: typeof AuthenticatedComplianceRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedExecutionIntelRoute: typeof AuthenticatedExecutionIntelRoute
   AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
   AuthenticatedIntelRoute: typeof AuthenticatedIntelRoute
   AuthenticatedIntelligenceRoute: typeof AuthenticatedIntelligenceRoute
@@ -1050,6 +1071,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCommunityRoute: AuthenticatedCommunityRoute,
   AuthenticatedComplianceRoute: AuthenticatedComplianceRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedExecutionIntelRoute: AuthenticatedExecutionIntelRoute,
   AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
   AuthenticatedIntelRoute: AuthenticatedIntelRoute,
   AuthenticatedIntelligenceRoute: AuthenticatedIntelligenceRoute,

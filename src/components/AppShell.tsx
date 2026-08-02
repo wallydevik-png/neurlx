@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   TerminalSquare, LayoutDashboard, Plug, Signal, CheckSquare, Activity, LineChart,
   History, Sliders, BarChart3, Power, LogOut, FlaskConical, Target, Brain,
-  Layers, Layers3, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp,
+  Layers, Layers3, SlidersHorizontal, EyeOff, Menu, X, Gauge, Radar, BookOpen, TrendingUp, Crosshair,
   Sparkles, Wallet, Bot, Bell, Rocket, ScrollText, Smartphone, Fingerprint, WifiOff,
   Sun, Moon, Shield, ShieldCheck, HeartPulse, Banknote, Globe, Trophy, Download,
 } from "lucide-react";
@@ -26,7 +26,9 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/live-desk", label: "Live Trading Desk", icon: Wallet },
   { to: "/portfolio-intel", label: "Portfolio Intelligence", icon: Brain },
+  { to: "/execution-intel", label: "Execution Intelligence", icon: Crosshair },
   { to: "/risk-engine", label: "Risk Engine", icon: Shield },
+
   { to: "/monitoring", label: "Live Monitoring", icon: Radar },
   { to: "/intelligence", label: "Live Intelligence", icon: Sparkles },
   { to: "/capital", label: "Capital Growth", icon: Wallet },

@@ -24,7 +24,13 @@ export interface DeskPosition extends Omit<RichPosition, "raw"> {
   aiConfidence: number | null;
   strategy: string | null;
   neurlxPositionId: string | null;
+  /** "ai" while the profit-protection engine owns the levels, "manual" after an override. */
+  slTpMode: "ai" | "manual";
+  /** Levels the AI calculated — kept visible even when the user overrides them. */
+  aiStopLoss: number | null;
+  aiTakeProfit: number | null;
 }
+
 
 export interface DeskClosedTrade extends ClosedDeal {
   connectionId: string;
@@ -152,7 +158,11 @@ export async function loadLiveDesk(
         aiConfidence: match?.ai_confidence != null ? Number(match.ai_confidence) : null,
         strategy: match?.strategy_id ? strategyName.get(match.strategy_id) ?? "AI committee" : "AI committee",
         neurlxPositionId: match?.id ?? null,
+        slTpMode: (match?.sl_tp_mode as "ai" | "manual" | undefined) ?? "ai",
+        aiStopLoss: match?.stop_loss != null ? Number(match.stop_loss) : null,
+        aiTakeProfit: match?.take_profit != null ? Number(match.take_profit) : null,
       });
+
     }
 
     for (const d of deals) {
