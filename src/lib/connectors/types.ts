@@ -196,6 +196,10 @@ export interface TradingConnector {
     price?: number,
   ): Promise<MarginEstimate | null>;
   supportsRealExecution?: boolean;
+  /** Optional: connector can also serve as a real market-data source
+   *  (candle history + broker symbol list) for signal generation. */
+  getCandles?(symbol: string, interval: ConnectorInterval, limit: number): Promise<ConnectorCandle[]>;
+  listSymbols?(): Promise<string[]>;
 }
 
 
@@ -209,3 +213,28 @@ export interface ConnectorDescriptor {
 }
 
 export type CredentialPayload = Record<string, string>;
+
+/** A single OHLCV bar, used by connectors that can also supply price history. */
+export interface ConnectorCandle {
+  ts: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export type ConnectorInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
+/** Optional capability: connectors that can supply real historical candles
+ *  for signal generation (currently: MetaTrader via MetaApi). If a connector
+ *  does not implement this, the market-data layer falls back to whatever
+ *  other providers are registered (and ultimately synthetic data, flagged as
+ *  such — never silently). */
+export interface MarketDataCapableConnector {
+  getCandles(symbol: string, interval: ConnectorInterval, limit: number): Promise<ConnectorCandle[]>;
+  /** The broker's full tradable instrument list, in NeurlX symbol form where
+   *  resolvable (e.g. "EUR-USD", "BTC-USD"), used to scan beyond the fixed
+   *  hardcoded universe. */
+  listSymbols(): Promise<string[]>;
+}
