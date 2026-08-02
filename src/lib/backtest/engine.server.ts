@@ -58,9 +58,10 @@ const DEFAULTS = {
 export async function runBacktest(
   supabase: SupabaseClient | null,
   params: BacktestParams,
+  userId?: string | null,
 ): Promise<BacktestResult> {
   const p = { ...DEFAULTS, ...params };
-  const all = await fetchCandles(supabase, p.symbol, p.interval, p.bars);
+  const all = await fetchCandles(supabase, p.symbol, p.interval, p.bars, userId);
   const start = Math.max(p.warmup, params.rangeStart ?? p.warmup);
   const end = Math.min(all.length, params.rangeEnd ?? all.length);
 
@@ -179,6 +180,7 @@ export async function runBacktest(
 export async function runWalkForward(
   supabase: SupabaseClient | null,
   params: BacktestParams,
+  userId?: string | null,
 ): Promise<{ train: BacktestResult; validation: BacktestResult; oos: BacktestResult }> {
   const p = { ...DEFAULTS, ...params };
   const total = params.bars;
@@ -188,8 +190,8 @@ export async function runWalkForward(
   const trainEnd = warmup + Math.floor(usable * 0.5);
   const valEnd = warmup + Math.floor(usable * 0.75);
 
-  const train = await runBacktest(supabase, { ...params, rangeStart: warmup, rangeEnd: trainEnd });
-  const validation = await runBacktest(supabase, { ...params, rangeStart: trainEnd, rangeEnd: valEnd });
-  const oos = await runBacktest(supabase, { ...params, rangeStart: valEnd, rangeEnd: total });
+  const train = await runBacktest(supabase, { ...params, rangeStart: warmup, rangeEnd: trainEnd }, userId);
+  const validation = await runBacktest(supabase, { ...params, rangeStart: trainEnd, rangeEnd: valEnd }, userId);
+  const oos = await runBacktest(supabase, { ...params, rangeStart: valEnd, rangeEnd: total }, userId);
   return { train, validation, oos };
 }
