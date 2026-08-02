@@ -24,7 +24,7 @@ export const inspectEntry = createServerFn({ method: "POST" })
       maxSpreadBps: Number(s?.max_spread_bps ?? 30),
       requireMtf: s?.mtf_confirmation_required !== false,
       newsFilterEnabled: s?.news_filter_enabled !== false,
-    });
+    }, context.userId);
   });
 
 /** Self-learning review — auto-runs every 100 closed trades, or on demand. */
