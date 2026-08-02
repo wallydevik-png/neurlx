@@ -137,11 +137,20 @@ function SignalCard({ s, onApprove, onReject }: { s: SignalRow; onApprove: (id: 
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {s.is_synthetic && <SyntheticDataBadge />}
           <RiskChip level={String(s.risk_level ?? "medium")} />
           <OutcomeChip status={s.outcome_status} pnl={s.outcome_pnl_pct} />
           <StatusBadge status={s.status} />
         </div>
       </div>
+
+      {s.is_synthetic && (
+        <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          ⚠ This signal was generated from <strong>synthetic (fabricated) market data</strong> —
+          no live broker feed was available (data source: {String(s.data_source ?? "unknown")}).
+          Treat it as a placeholder, not a real trading signal.
+        </div>
+      )}
 
       <p className="mt-4 text-sm text-muted-foreground italic">"{s.reasoning}"</p>
 
@@ -236,6 +245,14 @@ function Stat({ k, v, tone }: { k: string; v: string; tone?: "pos" }) {
     </div>
   );
 }
+function SyntheticDataBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 text-destructive text-[10px] font-semibold uppercase px-2 py-1">
+      ⚠ Synthetic data
+    </span>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const c = { pending: "bg-warning/15 text-warning", executed: "bg-success/15 text-success", approved: "bg-success/15 text-success", rejected: "bg-destructive/15 text-destructive", expired: "bg-muted text-muted-foreground" }[status] ?? "bg-muted text-muted-foreground";
   return <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded ${c}`}>{status}</span>;
