@@ -148,9 +148,9 @@ export const getLiveEquity = createServerFn({ method: "GET" })
     const accounts: Array<{ id: string; label: string; connector: string; usd: number; error?: string }> = [];
     let totalUsd = 0;
 
-    // Fetch a USDT price map for converting non-stable crypto balances. The
-    // market-data layer rotates Bybit hosts and falls back when edge regions are
-    // blocked, so live equity no longer depends on the primary Bybit hostname.
+    // Fetch a live price map for converting non-stable crypto balances,
+    // preferring the user's connected MetaTrader account's real feed over
+    // the synthetic fallback.
     const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
     const priceMap = new Map<string, number>();
     for (const s of ["USD", "USDT", "USDC", "DAI", "BUSD", "FDUSD"]) priceMap.set(s, 1);
@@ -159,7 +159,7 @@ export const getLiveEquity = createServerFn({ method: "GET" })
       const cur = asset.toUpperCase();
       if (priceMap.has(cur)) return priceMap.get(cur) ?? 0;
       try {
-        const px = await fetchLastPrice(`${cur}-USD`);
+        const px = await fetchLastPrice(`${cur}-USD`, userId, supabase);
         if (px > 0) priceMap.set(cur, px);
         return px > 0 ? px : 0;
       } catch {
@@ -623,14 +623,17 @@ export const generateAndRouteSignal = createServerFn({ method: "POST" })
     if (settings.kill_switch_active) throw new Error("Kill switch is active. Disable it to generate signals.");
 
     const { analyzeSymbol, scanMarket } = await import("@/lib/trading/aiEngine.server");
-    const { listSupportedSymbols } = await import("@/lib/marketdata/service.server");
+    const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
+    // Pulls the user's real MetaTrader symbol list when connected, so
+    // scanning covers forex/indices/stocks too, not just the fixed crypto set.
+    const tradable = await listTradableSymbols(supabase, userId);
     const universe = (settings.allowed_assets && settings.allowed_assets.length
       ? settings.allowed_assets
-      : listSupportedSymbols().slice(0, 6));
+      : tradable.slice(0, 12));
 
     const sig = data.symbol
-      ? await analyzeSymbol(supabase, data.symbol)
-      : (await scanMarket(supabase, universe))[0];
+      ? await analyzeSymbol(supabase, data.symbol, userId)
+      : (await scanMarket(supabase, universe, userId))[0];
     if (!sig) throw new Error("No signal produced");
     if (sig.direction === "wait") {
       throw new Error(`No high-conviction setup on ${sig.symbol} right now (${sig.regimeLabel}). Try another symbol or wait for the market to develop.`);
@@ -648,10 +651,20 @@ export const generateAndRouteSignal = createServerFn({ method: "POST" })
       indicators: sig.indicators as unknown as Record<string, never>,
       contributions: sig.contributions as unknown as Record<string, never>,
       risk_factors: sig.riskFactors as unknown as Record<string, never>,
+      data_source: sig.dataSource,
+      is_synthetic: sig.isSynthetic,
     }).select().single();
     if (error) throw error;
 
-    if (settings.mode === "autonomous" && sig.confidence >= Number(settings.min_confidence)) {
+    if (sig.isSynthetic) {
+      // Never let autopilot risk real money on a signal computed from
+      // fabricated candles — leave it pending for manual review instead.
+      await supabase.from("execution_log").insert({
+        user_id: userId, event: "signal.synthetic_data_blocked", severity: "warn",
+        message: `Signal for ${sig.symbol} was generated on synthetic (fake) data — no live provider was available. Auto-execution skipped.`,
+        payload: { symbol: sig.symbol, dataSource: sig.dataSource },
+      });
+    } else if (settings.mode === "autonomous" && sig.confidence >= Number(settings.min_confidence)) {
       // Best-effort auto-execute; if the risk gate blocks it, keep the signal
       // pending so the user can still review it manually instead of failing
       // the whole generation.
@@ -689,7 +702,7 @@ export const evaluateSignalOutcomes = createServerFn({ method: "POST" })
     let evaluated = 0;
     for (const s of pending ?? []) {
       try {
-        const price = await fetchLastPrice(s.symbol);
+        const price = await fetchLastPrice(s.symbol, userId, supabase);
         const dir = s.side === "buy" ? 1 : -1;
         const pnlPct = ((price - Number(s.entry)) / Number(s.entry)) * dir * 100;
         let status: string;
