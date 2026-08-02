@@ -2,7 +2,7 @@
 // deterministic indicator-driven decision, so every signal carries a full
 // breakdown of the contributing factors. Ready for a future ML model:
 // swap out the score aggregation while keeping the same output contract.
-import { fetchCandles } from "@/lib/marketdata/service.server";
+import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import { atr, bollinger, detectTrend, ema, macd, rsi, sma, volumeStats } from "@/lib/analysis/indicators";
 import { classifyRegime, type MarketRegime } from "@/lib/analysis/regime";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -37,18 +37,36 @@ export interface AiSignal {
   indicators: Record<string, number | string | null>;
   contributions: Contribution[];
   riskFactors: string[];
+  /** Which market-data provider actually supplied the candles this signal is
+   *  based on (e.g. "mt5:mt5", "synthetic"). */
+  dataSource: string;
+  /** True when this signal was computed on synthetic (fabricated) candles,
+   *  because no live provider was available — always surfaced, never hidden. */
+  isSynthetic: boolean;
 }
 
 const HORIZON_BY_INTERVAL = { "5m": "scalp", "15m": "intraday", "1h": "swing" } as const;
 const TARGET_NOTIONAL = 500;
 
-export async function analyzeSymbol(supabase: SupabaseClient | null, symbol: string): Promise<AiSignal> {
-  const candles = await fetchCandles(supabase, symbol, "15m", 200);
-  return analyzeCandles(symbol, candles);
+export async function analyzeSymbol(
+  supabase: SupabaseClient | null,
+  symbol: string,
+  userId?: string | null,
+): Promise<AiSignal> {
+  const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
+  return analyzeCandles(symbol, candles, source, isSynthetic);
 }
 
 // Pure candle-driven analyzer — used by both live scanner and backtests.
-export function analyzeCandles(symbol: string, candles: import("@/lib/analysis/indicators").Candle[]): AiSignal {
+// dataSource/isSynthetic default to an explicit "unknown" marker rather than
+// silently claiming "live" when callers (e.g. backtests replaying stored
+// candles) don't have provenance to pass in.
+export function analyzeCandles(
+  symbol: string,
+  candles: import("@/lib/analysis/indicators").Candle[],
+  dataSource = "unknown",
+  isSynthetic = false,
+): AiSignal {
   const closes = candles.map(c => c.close);
   const last = closes[closes.length - 1];
 
@@ -165,11 +183,17 @@ export function analyzeCandles(symbol: string, candles: import("@/lib/analysis/i
     },
     contributions,
     riskFactors,
+    dataSource,
+    isSynthetic,
   };
 }
 
-export async function scanMarket(supabase: SupabaseClient | null, symbols: string[]): Promise<AiSignal[]> {
-  const results = await Promise.all(symbols.map(s => analyzeSymbol(supabase, s).catch(() => null)));
+export async function scanMarket(
+  supabase: SupabaseClient | null,
+  symbols: string[],
+  userId?: string | null,
+): Promise<AiSignal[]> {
+  const results = await Promise.all(symbols.map(s => analyzeSymbol(supabase, s, userId).catch(() => null)));
   return results.filter((s): s is AiSignal => s !== null)
     .sort((a, b) => b.confidenceScore - a.confidenceScore);
 }
