@@ -287,7 +287,7 @@ export async function submitOrder(
           throw quoteError;
         }
         const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
-        const mid = await fetchLastPrice(req.symbol);
+        const mid = await fetchLastPrice(req.symbol, userId, supabase);
         estPrice = req.side === "buy" ? mid * 1.001 : mid * 0.999;
       }
       const { runPreTradeCheck } = await import("@/lib/execution/preTradeCheck.server");
