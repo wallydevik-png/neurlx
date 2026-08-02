@@ -167,6 +167,7 @@ function LiveDesk() {
                   <th className="text-right">Current</th><th className="text-right">Floating</th>
                   <th className="text-right">Margin</th><th className="text-right">Swap</th>
                   <th className="text-right">Comm.</th><th className="text-right">Conf.</th>
+                  <th className="text-left pl-3">Stop / target</th>
                   <th className="text-left pl-3">Strategy</th><th className="text-left pl-3">Opened</th>
                 </tr>
               </thead>
@@ -189,6 +190,7 @@ function LiveDesk() {
                     <td className="text-right font-mono text-primary">
                       {p.aiConfidence != null ? `${(p.aiConfidence * 100).toFixed(0)}%` : "—"}
                     </td>
+                    <td className="pl-3"><TargetsCell position={p} /></td>
                     <td className="pl-3 text-xs text-muted-foreground">{p.strategy ?? "—"}</td>
                     <td className="pl-3 text-xs text-muted-foreground">{new Date(p.openedAt).toLocaleString()}</td>
                   </tr>
@@ -198,6 +200,7 @@ function LiveDesk() {
           )}
         </div>
       )}
+
 
       {tab === "history" && (
         <div className="panel p-4 mt-4 overflow-x-auto">
