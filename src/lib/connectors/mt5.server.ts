@@ -74,6 +74,32 @@ export function candidatesFor(symbol: string): string[] {
   return [...c].filter(Boolean);
 }
 
+/** MetaApi timeframe strings for the historical-market-data endpoint. Matches
+ *  our internal Interval values 1:1 except we spell it out defensively in
+ *  case MetaApi's format ever diverges. */
+const MT_TIMEFRAME: Record<string, string> = {
+  "1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d",
+};
+
+/** Inverse of splitPair-style logic: turn a raw broker instrument name
+ *  ("EURUSD", "BTCUSDm", "XAUUSD.raw") into our "BASE-QUOTE" symbol form
+ *  ("EUR-USD", "BTC-USD", "XAU-USD") where a known quote currency can be
+ *  identified. Falls back to the cleaned raw name (e.g. "US30") for
+ *  instruments that aren't currency/crypto pairs, so indices and other
+ *  CFDs still come through instead of being dropped.
+ */
+export function brokerSymbolToNeurlx(mtSymbol: string): string {
+  const cleaned = stripDecorations(mtSymbol)[0] ?? normalizeKey(mtSymbol);
+  for (const q of QUOTES) {
+    if (cleaned.length > q.length && cleaned.endsWith(q)) {
+      const base = cleaned.slice(0, -q.length);
+      const quote = q === "USDT" || q === "USDC" ? "USD" : q; // normalize stablecoins to USD form
+      return `${base}-${quote}`;
+    }
+  }
+  return cleaned;
+}
+
 export class UnsupportedSymbolError extends Error {
   readonly unsupportedSymbol: string;
   constructor(symbol: string, venue: string) {
@@ -559,6 +585,50 @@ export function createMt5Connector(
         "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(s)}/current-price`,
       );
       return { symbol, bid: r.bid, ask: r.ask, mid: (r.bid + r.ask) / 2, ts: Date.now() };
+    },
+
+    // ---- Market data (real candle history for signal generation) ---------
+    // Powers the AI engine directly off this account's live broker feed,
+    // instead of the synthetic/paper fallback.
+    async getCandles(symbol: string, interval: string, limit: number) {
+      const s = await resolveSymbol(symbol);
+      const timeframe = MT_TIMEFRAME[interval] ?? interval;
+      const endTime = new Date().toISOString();
+      // req()/doRequest do not serialize a `params` object into the URL for
+      // GET requests (params there is log-only) — build the query string
+      // into the path ourselves, the same way bybit.server.ts did.
+      const qs = new URLSearchParams({
+        limit: String(Math.min(limit, 1000)),
+        startTime: endTime,
+      }).toString();
+      const r = await req<Array<{
+        time: string; open: number; high: number; low: number; close: number;
+        tickVolume?: number; volume?: number;
+      }>>(
+        "GET",
+        `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`,
+      );
+      return (r ?? [])
+        .map(c => ({
+          ts: new Date(c.time).getTime(),
+          open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close),
+          volume: Number(c.volume ?? c.tickVolume ?? 0),
+        }))
+        .filter(c => Number.isFinite(c.ts) && Number.isFinite(c.close))
+        .sort((a, b) => a.ts - b.ts)
+        .slice(-limit);
+    },
+
+    /** The broker's actual tradable instrument list, translated to NeurlX
+     *  "BASE-QUOTE" symbol form so the scanner can research pairs beyond the
+     *  fixed hardcoded universe (forex, metals, indices — not just crypto). */
+    async listSymbols(): Promise<string[]> {
+      const map = await getSymbolMap();
+      const out = new Set<string>();
+      for (const mtName of new Set(map.values())) {
+        out.add(brokerSymbolToNeurlx(mtName));
+      }
+      return [...out];
     },
 
     async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
