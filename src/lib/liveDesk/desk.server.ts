@@ -158,7 +158,11 @@ export async function loadLiveDesk(
         aiConfidence: match?.ai_confidence != null ? Number(match.ai_confidence) : null,
         strategy: match?.strategy_id ? strategyName.get(match.strategy_id) ?? "AI committee" : "AI committee",
         neurlxPositionId: match?.id ?? null,
+        slTpMode: (match?.sl_tp_mode as "ai" | "manual" | undefined) ?? "ai",
+        aiStopLoss: match?.stop_loss != null ? Number(match.stop_loss) : null,
+        aiTakeProfit: match?.take_profit != null ? Number(match.take_profit) : null,
       });
+
     }
 
     for (const d of deals) {
