@@ -2772,11 +2772,13 @@ export type Database = {
           confidence: number
           contributions: Json
           created_at: string
+          data_source: string
           entry: number
           evaluated_at: string | null
           expires_at: string | null
           id: string
           indicators: Json
+          is_synthetic: boolean
           market_regime: string | null
           outcome_pnl_pct: number | null
           outcome_status: string | null
@@ -2798,11 +2800,13 @@ export type Database = {
           confidence: number
           contributions?: Json
           created_at?: string
+          data_source?: string
           entry: number
           evaluated_at?: string | null
           expires_at?: string | null
           id?: string
           indicators?: Json
+          is_synthetic?: boolean
           market_regime?: string | null
           outcome_pnl_pct?: number | null
           outcome_status?: string | null
@@ -2824,11 +2828,13 @@ export type Database = {
           confidence?: number
           contributions?: Json
           created_at?: string
+          data_source?: string
           entry?: number
           evaluated_at?: string | null
           expires_at?: string | null
           id?: string
           indicators?: Json
+          is_synthetic?: boolean
           market_regime?: string | null
           outcome_pnl_pct?: number | null
           outcome_status?: string | null
