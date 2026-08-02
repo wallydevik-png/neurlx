@@ -33,7 +33,7 @@ export const getPortfolioRecommendation = createServerFn({ method: "GET" })
     const { buildPortfolioRecommendation } = await import("@/lib/portfolio/manager.server");
     const rec = await buildPortfolioRecommendation(supabase, {
       cash, holdings, profile, allowedAssets: allowed,
-    });
+    }, userId);
 
     return {
       profile,
@@ -65,7 +65,7 @@ export const runOptimizationFn = createServerFn({ method: "POST" })
     const { runOptimization } = await import("@/lib/portfolio/optimizer.server");
     const result = await runOptimization(context.supabase, {
       symbol: data.symbol, interval: data.interval, bars: data.bars,
-    }, data.grid);
+    }, data.grid, context.userId);
 
     const { data: row, error } = await context.supabase.from("optimization_runs").insert(asJson({
       user_id: context.userId,
@@ -183,7 +183,7 @@ export const evaluateShadowTrades = createServerFn({ method: "POST" })
     let closed = 0;
     for (const t of open ?? []) {
       try {
-        const price = await fetchLastPrice(t.symbol);
+        const price = await fetchLastPrice(t.symbol, context.userId, context.supabase);
         const dir = t.side === "buy" ? 1 : -1;
         let exit: number | null = null; let reason: string | null = null;
         if (dir * (price - Number(t.take_profit)) >= 0) { exit = Number(t.take_profit); reason = "take_profit"; }
