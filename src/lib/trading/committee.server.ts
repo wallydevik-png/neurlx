@@ -5,7 +5,7 @@
 // direction + weighted-average confidence, then pairs are ranked so
 // autopilot always trades the best available opportunity across the
 // entire watchlist rather than whatever came first.
-import { fetchCandles } from "@/lib/marketdata/service.server";
+import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import { analyzeCandles, type AiSignal, type Direction } from "@/lib/trading/aiEngine.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -75,12 +75,13 @@ function consensus(votes: AnalystVote[]): { direction: Direction; confidence: nu
 export async function runCommittee(
   supabase: SupabaseClient | null,
   symbols: string[],
+  userId?: string | null,
 ): Promise<CommitteeVerdict[]> {
   const results = await Promise.all(symbols.map(async (symbol) => {
     try {
-      const candles = await fetchCandles(supabase, symbol, "15m", 200);
+      const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
       if (!candles || candles.length < 60) return null;
-      const base = analyzeCandles(symbol, candles);
+      const base = analyzeCandles(symbol, candles, source, isSynthetic);
       const votes = voteFor(base);
       const c = consensus(votes);
       // Ranking: consensus confidence × agreement × base regime multiplier
