@@ -69,7 +69,7 @@ export const getRiskDashboard = createServerFn({ method: "GET" })
     }));
 
     const { computePortfolioRisk } = await import("@/lib/risk/portfolioRisk.server");
-    const report = await computePortfolioRisk(supabase, { equity, holdings });
+    const report = await computePortfolioRisk(supabase, { equity, holdings }, userId);
 
     // Persist snapshot for the equity curve of risk history.
     await supabase.from("risk_snapshots").insert({
@@ -123,6 +123,6 @@ export const suggestPositionSize = createServerFn({ method: "POST" })
       confidence: data.confidence,
       targetDailyVolPct: Number(settings.target_daily_vol_pct),
       kellyFraction: Number(settings.kelly_fraction),
-    });
+    }, userId);
     return asJson({ equity, result });
   });
