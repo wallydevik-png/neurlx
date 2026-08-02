@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell, PageHeader, Metric, fmtUsd, fmtNum } from "@/components/AppShell";
@@ -8,6 +8,8 @@ import {
   getLiveDesk, getStrategyAnalytics, getPortfolioOverview,
   updateMarginSettings, checkDailyTargets,
 } from "@/lib/liveDesk.functions";
+import { setPositionTargets } from "@/lib/executionIntel.functions";
+
 import {
   Activity, AlertTriangle, BarChart3, PieChart, RefreshCw, Shield, Wallet,
 } from "lucide-react";
