@@ -61,6 +61,7 @@ export async function evaluateEntry(
   symbol: string,
   side: "buy" | "sell",
   cfg: EntryFilterConfig = {},
+  userId?: string | null,
 ): Promise<EntryEvaluation> {
   const minConfidence = cfg.minConfidence ?? 0.9;
   const requireMtf = cfg.requireMtf ?? true;
@@ -68,10 +69,10 @@ export async function evaluateEntry(
   const maxSpreadBps = cfg.maxSpreadBps ?? 30;
 
   const [d1, h4, h1, m15] = await Promise.all([
-    fetchCandles(supabase, symbol, "1d", 220).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "4h", 220).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "1h", 220).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "15m", 220).catch(() => [] as Candle[]),
+    fetchCandles(supabase, symbol, "1d", 220, userId).catch(() => [] as Candle[]),
+    fetchCandles(supabase, symbol, "4h", 220, userId).catch(() => [] as Candle[]),
+    fetchCandles(supabase, symbol, "1h", 220, userId).catch(() => [] as Candle[]),
+    fetchCandles(supabase, symbol, "15m", 220, userId).catch(() => [] as Candle[]),
   ]);
 
   const entryCandles = m15.length >= 60 ? m15 : h1;
