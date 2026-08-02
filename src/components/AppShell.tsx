@@ -26,7 +26,9 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/live-desk", label: "Live Trading Desk", icon: Wallet },
   { to: "/portfolio-intel", label: "Portfolio Intelligence", icon: Brain },
+  { to: "/execution-intel", label: "Execution Intelligence", icon: Crosshair },
   { to: "/risk-engine", label: "Risk Engine", icon: Shield },
+
   { to: "/monitoring", label: "Live Monitoring", icon: Radar },
   { to: "/intelligence", label: "Live Intelligence", icon: Sparkles },
   { to: "/capital", label: "Capital Growth", icon: Wallet },
