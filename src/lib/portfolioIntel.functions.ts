@@ -184,7 +184,7 @@ export const refreshPortfolioIntel = createServerFn({ method: "POST" })
     const regimes: { symbol: string; regime: string; label: string }[] = [];
     for (const s of list) {
       try {
-        const r = await getMacroRegime(supabase, s);
+        const r = await getMacroRegime(supabase, s, "1h", userId);
         await recordRegime(supabase, userId, r);
         regimes.push({ symbol: s, regime: r.regime, label: r.label });
       } catch { /* skip unavailable market */ }
