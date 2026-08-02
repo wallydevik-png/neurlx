@@ -61,9 +61,10 @@ export interface HypothesisRun {
 export async function runHypothesis(
   supabase: SupabaseClient,
   params: { symbol: string; interval: "5m" | "15m" | "1h" | "4h" | "1d"; bars?: number; dsl: HypothesisDSL },
+  userId?: string | null,
 ): Promise<HypothesisRun> {
   const bars = Math.min(Math.max(params.bars ?? 300, 100), 1000);
-  const candles = await fetchCandles(supabase, params.symbol, params.interval, bars);
+  const candles = await fetchCandles(supabase, params.symbol, params.interval, bars, userId);
   if (candles.length < 80) throw new Error("Not enough market data");
 
   const warmup = 60;
