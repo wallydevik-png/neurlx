@@ -52,6 +52,7 @@ function pearson(a: number[], b: number[]): number {
 export async function computePortfolioRisk(
   supabase: SupabaseClient | null,
   args: { equity: number; holdings: HoldingRow[] },
+  userId?: string | null,
 ): Promise<PortfolioRiskReport> {
   const equity = Math.max(1, args.equity);
   const holdings = args.holdings.filter(h => h.qty > 0);
@@ -68,7 +69,7 @@ export async function computePortfolioRisk(
   const seriesBySym = new Map<string, { closes: number[]; rets: number[] }>();
   await Promise.all(holdings.map(async h => {
     try {
-      const c = await fetchCandles(supabase, h.symbol, "1d", 120);
+      const c = await fetchCandles(supabase, h.symbol, "1d", 120, userId);
       const closes = c.map(x => x.close);
       seriesBySym.set(h.symbol, { closes, rets: logReturns(closes) });
     } catch { seriesBySym.set(h.symbol, { closes: [], rets: [] }); }
@@ -179,9 +180,10 @@ export interface SizingResult {
 export async function sizePosition(
   supabase: SupabaseClient | null,
   input: SizingInput,
+  userId?: string | null,
 ): Promise<SizingResult> {
   const notes: string[] = [];
-  const candles = await fetchCandles(supabase, input.symbol, "1d", 90).catch(() => []);
+  const candles = await fetchCandles(supabase, input.symbol, "1d", 90, userId).catch(() => []);
   const closes = candles.map(c => c.close);
   const rets = logReturns(closes);
   const volDaily = stdev(rets);
