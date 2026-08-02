@@ -243,7 +243,7 @@ export async function checkCorrelationBudget(
   if (!open?.length) return { allowed: true, clusterRiskPct: newRiskPct * 100, maxCorrelation: 0 };
 
   const series = async (s: string) =>
-    (await fetchCandles(supabase, s, "1h", 120).catch(() => [])).map(c => c.close);
+    (await fetchCandles(supabase, s, "1h", 120, userId).catch(() => [])).map(c => c.close);
 
   const mine = await series(symbol);
   if (mine.length < 20) return { allowed: true, clusterRiskPct: newRiskPct * 100, maxCorrelation: 0 };
