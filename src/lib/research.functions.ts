@@ -130,7 +130,7 @@ export const evaluateHypothesis = createServerFn({ method: "POST" })
       interval: row.interval as any,
       bars: data.bars ?? 400,
       dsl: v.dsl,
-    });
+    }, context.userId);
     // Persist compact summary
     const summary = {
       trades: run.trades, winRate: run.winRate, totalReturnPct: run.totalReturnPct,
