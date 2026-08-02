@@ -29,7 +29,7 @@ export const runBacktestFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => RunSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { runBacktest } = await import("@/lib/backtest/engine.server");
-    const result = await runBacktest(context.supabase, data);
+    const result = await runBacktest(context.supabase, data, context.userId);
     const { data: run, error } = await context.supabase.from("backtest_runs").insert(asJson({
       user_id: context.userId,
       strategy_id: data.strategyId ?? null,
@@ -69,7 +69,7 @@ export const runWalkForwardFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => RunSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { runWalkForward } = await import("@/lib/backtest/engine.server");
-    const { train, validation, oos } = await runWalkForward(context.supabase, data);
+    const { train, validation, oos } = await runWalkForward(context.supabase, data, context.userId);
 
     const { data: parent, error: pErr } = await context.supabase.from("backtest_runs").insert(asJson({
       user_id: context.userId,
