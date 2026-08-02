@@ -24,7 +24,13 @@ export interface DeskPosition extends Omit<RichPosition, "raw"> {
   aiConfidence: number | null;
   strategy: string | null;
   neurlxPositionId: string | null;
+  /** "ai" while the profit-protection engine owns the levels, "manual" after an override. */
+  slTpMode: "ai" | "manual";
+  /** Levels the AI calculated — kept visible even when the user overrides them. */
+  aiStopLoss: number | null;
+  aiTakeProfit: number | null;
 }
+
 
 export interface DeskClosedTrade extends ClosedDeal {
   connectionId: string;
