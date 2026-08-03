@@ -201,7 +201,13 @@ export function buildTradeRequest(
     symbol: mtSymbol,
     volume,
     ...(isPending && input.limitPrice ? { openPrice: Number(input.limitPrice) } : {}),
-    ...(input.stopPrice ? { stopLoss: Number(input.stopPrice) } : {}),
+    // Native broker-side protection. Previously this only fired when
+    // input.stopPrice happened to be set (the *entry* trigger price for
+    // stop/stop-limit orders) — meaning ordinary market-entry trades (the
+    // vast majority) never got a stop-loss or take-profit sent to MT5 at
+    // all. stopLoss/takeProfit are now their own dedicated fields.
+    ...(input.stopLoss ? { stopLoss: Number(input.stopLoss) } : {}),
+    ...(input.takeProfit ? { takeProfit: Number(input.takeProfit) } : {}),
     ...(clientId ? { clientId } : {}),
   };
 }
@@ -747,6 +753,27 @@ export function createMt5Connector(
         });
         return { ok: true };
       } catch { return { ok: false }; }
+    },
+
+    /** Closes (fully, or partially if `volume` is given) an existing broker
+     *  position by its MetaApi/MT5 ticket. Used by the app's profit-protection
+     *  engine and manual close actions — this is the one place a real open
+     *  position actually gets closed on the broker; everything else (the
+     *  app's own `positions` table) is just NeurlX's bookkeeping of this. */
+    async closeLivePosition(brokerPositionId: string, volume?: number) {
+      const body = volume
+        ? { actionType: "POSITION_PARTIAL", positionId: brokerPositionId, volume }
+        : { actionType: "POSITION_CLOSE_ID", positionId: brokerPositionId };
+      const r = await req<{ numericCode: number; stringCode: string; price?: number; message?: string }>(
+        "POST", `/users/current/accounts/${state.accountId}/trade`, body,
+      );
+      const success = r.stringCode === "TRADE_RETCODE_DONE" || r.numericCode === 10009;
+      if (!success) {
+        throw new Error(
+          `MT close rejected for position ${brokerPositionId}: ${r.stringCode ?? "unknown"} (${r.numericCode ?? "?"})${r.message ? " — " + r.message : ""}`,
+        );
+      }
+      return { fillPrice: r.price ?? null };
     },
 
     async getPositions(): Promise<ConnectorPosition[]> {
