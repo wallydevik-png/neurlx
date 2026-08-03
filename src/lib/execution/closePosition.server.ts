@@ -3,6 +3,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPaperConnector } from "@/lib/connectors/paper.server";
 
+/**
+ * Resolves the real, live connector for a specific broker connection (not
+ * "the user's current default" — the exact connection this position was
+ * opened on), so a close targets the right account when a user has more
+ * than one linked.
+ */
+async function resolveLiveConnectorForConnection(
+  supabase: SupabaseClient, userId: string, connectionId: string,
+) {
+  const { data: conn } = await supabase.from("exchange_connections")
+    .select("id,connector_id,status,trading_enabled,credential_ciphertext")
+    .eq("id", connectionId).eq("user_id", userId).maybeSingle();
+  if (!conn || conn.status !== "connected" || !conn.trading_enabled) return null;
+  const { decryptJSON } = await import("@/lib/crypto.server");
+  const { createConnector } = await import("@/lib/connectors/factory.server");
+  const creds = conn.credential_ciphertext
+    ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext)
+    : {};
+  const connector = createConnector(conn.connector_id, creds, { supabase, userId, connectionId: conn.id });
+  return connector.closeLivePosition ? connector : null;
+}
+
 export async function closePositionInternal(
   supabase: SupabaseClient, userId: string, positionId: string, reason: string,
 ) {
@@ -10,9 +32,57 @@ export async function closePositionInternal(
     .eq("id", positionId).eq("user_id", userId).maybeSingle();
   if (!pos || pos.status !== "open") throw new Error("Position not open");
 
-  const paper = createPaperConnector();
-  const quote = await paper.getQuote(pos.symbol);
-  const exitPrice = pos.side === "long" ? quote.bid : quote.ask;
+  // Does this position actually have an open broker-side ticket? If so, this
+  // is a REAL live position and must be closed on the broker itself — not
+  // just marked closed in our own database. Previously this function only
+  // ever did the latter, which meant stop-loss/take-profit/manual-close
+  // never actually touched MT5: the app believed a position was closed while
+  // the real position stayed open on the broker, completely unprotected.
+  const { data: ticket } = await supabase.from("broker_trade_tickets")
+    .select("id,connection_id,broker_position_ticket,metaapi_order_id")
+    .eq("position_id", pos.id).eq("state", "open")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+  let exitPrice: number;
+
+  if (ticket?.connection_id && (ticket.broker_position_ticket || ticket.metaapi_order_id)) {
+    const brokerTicket = String(ticket.broker_position_ticket ?? ticket.metaapi_order_id);
+    try {
+      const connector = await resolveLiveConnectorForConnection(supabase, userId, ticket.connection_id);
+      if (!connector?.closeLivePosition) {
+        throw new Error("Live connector unavailable or does not support closing positions");
+      }
+      const result = await connector.closeLivePosition(brokerTicket);
+      const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
+      // MetaApi's close response doesn't reliably include the exact fill
+      // price synchronously — fall back to the live mark price (still real,
+      // never fabricated) for P&L bookkeeping if it's missing.
+      exitPrice = result.fillPrice ?? await fetchLastPrice(pos.symbol, userId, supabase);
+      await supabase.from("broker_trade_tickets").update({
+        state: "closed", closed_at: new Date().toISOString(),
+      }).eq("id", ticket.id);
+    } catch (e) {
+      // Do NOT silently fall back to marking the position closed in our own
+      // database while the real position is still open on the broker — that
+      // would be worse than doing nothing (false confidence). Surface the
+      // failure so the caller (profit protection, manual close) knows this
+      // position is still genuinely open and unprotected.
+      await supabase.from("execution_log").insert({
+        user_id: userId, position_id: pos.id, event: "position.live_close_failed",
+        severity: "critical",
+        message: `Failed to close LIVE position on broker (${reason}): ${e instanceof Error ? e.message : String(e)}. Position remains open on the broker — retry or close manually in MT5.`,
+        payload: { reason, brokerTicket, error: e instanceof Error ? e.message : String(e) },
+      });
+      throw e instanceof Error ? e : new Error(String(e));
+    }
+  } else {
+    // No broker ticket on record — this is a paper/simulated position, so the
+    // existing simulated-fill behavior is correct and unchanged.
+    const paper = createPaperConnector();
+    const quote = await paper.getQuote(pos.symbol);
+    exitPrice = pos.side === "long" ? quote.bid : quote.ask;
+  }
+
   const dir = pos.side === "long" ? 1 : -1;
   const grossPnl = (exitPrice - Number(pos.avg_entry)) * dir * Number(pos.qty);
   const notional = exitPrice * Number(pos.qty);
@@ -26,7 +96,10 @@ export async function closePositionInternal(
     duration_seconds: durationSec,
   }).eq("id", pos.id);
 
-  // Return cash
+  // Return cash — this only reflects NeurlX's own paper/simulated ledger.
+  // For a live position, the real balance comes straight from the broker
+  // (see the Live Trading Desk, which reads MetaApi's account info directly)
+  // and is unaffected by this; kept for internal consistency/legacy views.
   const { data: acct } = await supabase.from("paper_accounts").select("*")
     .eq("id", pos.account_id).maybeSingle();
   if (acct) {
