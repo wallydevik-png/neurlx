@@ -343,6 +343,7 @@ export async function submitOrder(
       symbol: req.symbol, side: req.side, qty: req.qty,
       orderType: mapOrderType(orderType),
       limitPrice: req.limitPrice, stopPrice: req.stopPrice,
+      stopLoss: req.stopLoss ?? undefined, takeProfit: req.takeProfit ?? undefined,
       clientOrderId,
     };
     const result = await placeOrderWithRetry(connector, placeInput, supabase, userId, orderRow.id);
