@@ -22,6 +22,31 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
         }
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+        // Profit protection must run for EVERY user with an open position,
+        // not just users in autonomous mode — a manual/assisted-mode trader's
+        // stop-loss and take-profit need enforcing too. Previously this only
+        // ever ran when a user manually opened the old Positions page and
+        // tapped a button; wiring it here makes it actually automatic.
+        const protectionResults: Array<{ userId: string; actions: number; skipped: number; error?: string }> = [];
+        const { data: openPositionUsers } = await supabaseAdmin.from("positions")
+          .select("user_id").eq("status", "open");
+        const uniqueUserIds = [...new Set((openPositionUsers ?? []).map(p => p.user_id))];
+        if (uniqueUserIds.length) {
+          const { runProfitProtection } = await import("@/lib/execution/positionManager.server");
+          for (const uid of uniqueUserIds) {
+            try {
+              const r = await runProfitProtection(supabaseAdmin, uid);
+              protectionResults.push({ userId: uid, ...r });
+            } catch (e) {
+              protectionResults.push({
+                userId: uid, actions: 0, skipped: 0,
+                error: e instanceof Error ? e.message : String(e),
+              });
+            }
+          }
+        }
+
         const { data: users, error } = await supabaseAdmin.from("automation_settings")
           .select("user_id,live_kill_until,live_kill_reason")
           .eq("mode", "autonomous")
@@ -51,7 +76,7 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
             });
           }
         }
-        return Response.json({ ok: true, users: results.length, results });
+        return Response.json({ ok: true, users: results.length, results, protection: protectionResults });
       },
     },
   },
