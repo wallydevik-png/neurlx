@@ -37,6 +37,14 @@ export interface PlaceOrderInput {
   orderType: OrderType;
   limitPrice?: number;
   stopPrice?: number;
+  /** Protective stop-loss / take-profit levels to attach natively on the
+   *  broker side, distinct from stopPrice (which is the trigger price for
+   *  stop/stop-limit *entry* orders). Connectors that support native SL/TP
+   *  (e.g. MT5) should send these with the order; connectors that don't can
+   *  ignore them — the app's own profit-protection engine is the fallback,
+   *  not the only line of defense. */
+  stopLoss?: number;
+  takeProfit?: number;
   /** Idempotency key. If supplied, the connector MUST use it as clientOrderId. */
   clientOrderId?: string;
 }
@@ -196,6 +204,12 @@ export interface TradingConnector {
     price?: number,
   ): Promise<MarginEstimate | null>;
   supportsRealExecution?: boolean;
+  /** Optional: closes (fully or partially) an already-open broker-side
+   *  position by its broker ticket/position ID. Distinct from placeOrder,
+   *  which opens new exposure — this targets an existing position directly
+   *  (MT5/MetaApi requires POSITION_CLOSE_ID/POSITION_PARTIAL, not a plain
+   *  opposite-direction market order, to correctly close in hedging mode). */
+  closeLivePosition?(brokerPositionId: string, volume?: number): Promise<{ fillPrice?: number | null }>;
   /** Optional: connector can also serve as a real market-data source
    *  (candle history + broker symbol list) for signal generation. */
   getCandles?(symbol: string, interval: ConnectorInterval, limit: number): Promise<ConnectorCandle[]>;
