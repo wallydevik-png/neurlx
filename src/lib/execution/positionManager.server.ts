@@ -95,36 +95,25 @@ export async function reducePosition(
     throw new Error("Reduce quantity must be > 0 and < position size (use Close for full exit).");
   }
 
-  // Same live-vs-paper split as closePositionInternal: a partial reduce on a
-  // real position must actually reduce it on the broker (POSITION_PARTIAL),
-  // not just shrink the number in our own database while the broker keeps
-  // running the full size.
-  const { data: ticket } = await supabase.from("broker_trade_tickets")
-    .select("id,connection_id,broker_position_ticket,metaapi_order_id,volume")
-    .eq("position_id", pos.id).eq("state", "open")
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  // Same live-vs-paper split as closePositionInternal, and using the same
+  // shared helper: a position can have more than one open broker ticket
+  // (e.g. after a scale-in via addToPosition), so this must reduce across
+  // all of them, not just whichever one happened to be most recent.
+  const { closeLiveTickets } = await import("./closePosition.server");
+  const result = await closeLiveTickets(supabase, userId, pos.id, pos.symbol, reduceQty);
 
   let exitPrice: number;
-  if (ticket?.connection_id && (ticket.broker_position_ticket || ticket.metaapi_order_id)) {
-    const brokerTicket = String(ticket.broker_position_ticket ?? ticket.metaapi_order_id);
-    const { data: conn } = await supabase.from("exchange_connections")
-      .select("id,connector_id,status,trading_enabled,credential_ciphertext")
-      .eq("id", ticket.connection_id).eq("user_id", userId).maybeSingle();
-    if (!conn || conn.status !== "connected" || !conn.trading_enabled) {
-      throw new Error("Live broker connection unavailable — refusing to reduce a real position blind.");
+  let actualReduceQty = reduceQty;
+  if (result.hadLiveTickets) {
+    if (result.closedVolume <= 0) {
+      throw new Error("Could not reduce the live position on the broker — see execution_log for details.");
     }
-    const { decryptJSON } = await import("@/lib/crypto.server");
-    const { createConnector } = await import("@/lib/connectors/factory.server");
-    const creds = conn.credential_ciphertext
-      ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext) : {};
-    const connector = createConnector(conn.connector_id, creds, { supabase, userId, connectionId: conn.id });
-    if (!connector.closeLivePosition) throw new Error("Connector does not support partial position reduction");
-    const result = await connector.closeLivePosition(brokerTicket, reduceQty);
-    const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
-    exitPrice = result.fillPrice ?? await fetchLastPrice(pos.symbol, userId, supabase);
-    await supabase.from("broker_trade_tickets").update({
-      volume: Math.max(0, Number(ticket.volume ?? pos.qty) - reduceQty),
-    }).eq("id", ticket.id);
+    if (!result.allSucceeded || result.closedVolume < reduceQty - 1e-9) {
+      // Partial success: only trust what actually happened on the broker,
+      // don't pretend the full requested amount was reduced.
+      actualReduceQty = result.closedVolume;
+    }
+    exitPrice = result.weightedExitPrice!;
   } else {
     const paper = createPaperConnector();
     const q = await paper.getQuote(pos.symbol);
@@ -132,17 +121,17 @@ export async function reducePosition(
   }
 
   const dir = pos.side === "long" ? 1 : -1;
-  const pnl = (exitPrice - Number(pos.avg_entry)) * dir * reduceQty;
-  const fees = exitPrice * reduceQty * 0.001;
+  const pnl = (exitPrice - Number(pos.avg_entry)) * dir * actualReduceQty;
+  const fees = exitPrice * actualReduceQty * 0.001;
 
   // Record partial-exit order
   await supabase.from("orders").insert({
     user_id: userId, account_id: pos.account_id, position_id: pos.id,
-    symbol: pos.symbol, side: pos.side === "long" ? "sell" : "buy", qty: reduceQty,
+    symbol: pos.symbol, side: pos.side === "long" ? "sell" : "buy", qty: actualReduceQty,
     order_type: "market", status: "filled", filled_price: exitPrice,
     fees, slippage_bps: 5, filled_at: new Date().toISOString(),
   });
-  const newQty = +(Number(pos.qty) - reduceQty).toFixed(8);
+  const newQty = +(Number(pos.qty) - actualReduceQty).toFixed(8);
   await supabase.from("positions").update({ qty: newQty }).eq("id", positionId);
   // Return proceeds to cash — paper/legacy bookkeeping only; a live account's
   // real balance comes straight from the broker, unaffected by this.
@@ -168,23 +157,81 @@ export async function addToPosition(
   if (!pos || pos.status !== "open") throw new Error("Position not open");
   if (addQty <= 0) throw new Error("Add quantity must be positive.");
 
-  // Risk gate: total notional must respect max_trade_size
   const { data: settings } = await supabase.from("automation_settings").select("*")
     .eq("user_id", userId).maybeSingle();
-  const paper = createPaperConnector();
-  const q = await paper.getQuote(pos.symbol);
-  const entry = pos.side === "long" ? q.ask : q.bid;
-  const newTotalNotional = entry * (Number(pos.qty) + addQty);
-  if (settings && newTotalNotional > Number(settings.max_trade_size)) {
-    throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
-  }
-  const fees = entry * addQty * 0.001;
 
-  // Debit cash + record order
+  // Is this a live position? Check for any existing open broker ticket.
+  const { data: existingTicket } = await supabase.from("broker_trade_tickets")
+    .select("id,connection_id").eq("position_id", pos.id).eq("state", "open").limit(1).maybeSingle();
+
+  let entry: number;
+  let fees: number;
+
+  if (existingTicket?.connection_id) {
+    // Live position — this must place a REAL order on the broker to
+    // actually increase exposure, not just edit a number in our database
+    // while the real position stays whatever size it already was.
+    const { data: conn } = await supabase.from("exchange_connections")
+      .select("id,connector_id,status,trading_enabled,credential_ciphertext")
+      .eq("id", existingTicket.connection_id).eq("user_id", userId).maybeSingle();
+    if (!conn || conn.status !== "connected" || !conn.trading_enabled) {
+      throw new Error("Live broker connection unavailable — refusing to add to a real position blind.");
+    }
+    const { decryptJSON } = await import("@/lib/crypto.server");
+    const { createConnector } = await import("@/lib/connectors/factory.server");
+    const creds = conn.credential_ciphertext
+      ? await decryptJSON<Record<string, string>>(conn.credential_ciphertext) : {};
+    const connector = createConnector(conn.connector_id, creds, { supabase, userId, connectionId: conn.id });
+
+    const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
+    const markBeforeOrder = await fetchLastPrice(pos.symbol, userId, supabase);
+    if (settings) {
+      const projectedNotional = markBeforeOrder * (Number(pos.qty) + addQty);
+      if (projectedNotional > Number(settings.max_trade_size)) {
+        throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
+      }
+    }
+
+    const result = await connector.placeOrder({
+      symbol: pos.symbol, side: pos.side === "long" ? "buy" : "sell",
+      qty: addQty, orderType: "market",
+    });
+    if (result.status === "rejected") {
+      throw new Error(`Broker rejected the add-to-position order (${pos.symbol}). See execution_log/order raw response for details.`);
+    }
+    entry = result.filledPrice ?? markBeforeOrder;
+    fees = Number(result.fees ?? entry * addQty * 0.001);
+
+    // This is a separate broker ticket from the original entry (MT5 doesn't
+    // merge fills into one ticket the way our own position record does) —
+    // record it as its own broker_trade_tickets row against the same
+    // NeurlX position, so a future close/reduce finds and closes it too.
+    await supabase.from("broker_trade_tickets").insert({
+      user_id: userId, connection_id: existingTicket.connection_id, position_id: pos.id,
+      venue: "mt5", broker_symbol: pos.symbol, requested_symbol: pos.symbol,
+      side: pos.side === "long" ? "buy" : "sell", volume: addQty,
+      metaapi_order_id: result.externalOrderId, broker_position_ticket: result.externalOrderId,
+      state: "open", detail: { via: "addToPosition" },
+    });
+  } else {
+    // No live ticket — genuine paper position, existing simulated behavior.
+    const paper = createPaperConnector();
+    const q = await paper.getQuote(pos.symbol);
+    entry = pos.side === "long" ? q.ask : q.bid;
+    const newTotalNotional = entry * (Number(pos.qty) + addQty);
+    if (settings && newTotalNotional > Number(settings.max_trade_size)) {
+      throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
+    }
+    fees = entry * addQty * 0.001;
+  }
+
+  // Debit cash + record order — paper/legacy bookkeeping. For a live
+  // position, the real balance comes straight from the broker (Live Trading
+  // Desk reads MetaApi's account info directly) and is unaffected by this.
   const { data: acct } = await supabase.from("paper_accounts").select("*")
     .eq("id", pos.account_id).maybeSingle();
   if (!acct) throw new Error("No account");
-  if (Number(acct.cash_balance) < entry * addQty + fees) {
+  if (!existingTicket?.connection_id && Number(acct.cash_balance) < entry * addQty + fees) {
     throw new Error("Insufficient paper cash for this add.");
   }
   await supabase.from("orders").insert({
