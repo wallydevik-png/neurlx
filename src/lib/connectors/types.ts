@@ -66,6 +66,10 @@ export interface ConnectorPosition {
   symbol: string;
   qty: number;
   avgEntry: number;
+  /** The broker's own position ticket/ID, when the connector can supply it —
+   *  needed to reconcile a specific local position against a specific
+   *  broker position (there can be more than one open position per symbol). */
+  brokerPositionId?: string;
 }
 
 export interface HistoryEntry {
