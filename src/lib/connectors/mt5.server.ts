@@ -778,13 +778,14 @@ export function createMt5Connector(
 
     async getPositions(): Promise<ConnectorPosition[]> {
       try {
-        const r = await req<Array<{ symbol: string; volume: number; type: string; openPrice: number }>>(
+        const r = await req<Array<{ id: string; symbol: string; volume: number; type: string; openPrice: number }>>(
           "GET", `/users/current/accounts/${state.accountId}/positions`,
         );
         return (r ?? []).map(p => ({
           symbol: p.symbol,
           qty: p.type === "POSITION_TYPE_SELL" ? -p.volume : p.volume,
           avgEntry: p.openPrice,
+          brokerPositionId: String(p.id),
         }));
       } catch { return []; }
     },
