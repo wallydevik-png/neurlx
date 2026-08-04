@@ -23,6 +23,29 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+        // Reconciliation runs first: check whether the broker still actually
+        // has each position open (margin call, manual close in MT5, etc. can
+        // happen outside the app) before profit protection tries to manage
+        // positions that may already be gone.
+        const reconcileResults: Array<{ userId: string; checked: number; closed: number; adjusted: number; error?: string }> = [];
+        const { data: liveTicketUsers } = await supabaseAdmin.from("broker_trade_tickets")
+          .select("user_id").eq("state", "open");
+        const liveUserIds = [...new Set((liveTicketUsers ?? []).map(t => t.user_id))];
+        if (liveUserIds.length) {
+          const { reconcileLivePositions } = await import("@/lib/execution/reconcile.server");
+          for (const uid of liveUserIds) {
+            try {
+              const r = await reconcileLivePositions(supabaseAdmin, uid);
+              reconcileResults.push({ userId: uid, ...r });
+            } catch (e) {
+              reconcileResults.push({
+                userId: uid, checked: 0, closed: 0, adjusted: 0,
+                error: e instanceof Error ? e.message : String(e),
+              });
+            }
+          }
+        }
+
         // Profit protection must run for EVERY user with an open position,
         // not just users in autonomous mode — a manual/assisted-mode trader's
         // stop-loss and take-profit need enforcing too. Previously this only
@@ -76,7 +99,10 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
             });
           }
         }
-        return Response.json({ ok: true, users: results.length, results, protection: protectionResults });
+        return Response.json({
+          ok: true, users: results.length, results,
+          reconciliation: reconcileResults, protection: protectionResults,
+        });
       },
     },
   },
