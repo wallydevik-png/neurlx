@@ -18,6 +18,11 @@ dist-ssr
 
 # Wrangler / Cloudflare
 .wrangler/
+
+# Environment secrets — must never be committed
+.env
+.env.*
+!.env.example
 .dev.vars
 
 # Editor directories and files
