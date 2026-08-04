@@ -138,5 +138,3 @@ export async function collectSignals(symbol: string): Promise<IntelSignal[]> {
   const results = await Promise.all(providersFor(symbol).map(p => p.fetch(symbol).catch(() => [])));
   return results.flat();
 }
-
-}
