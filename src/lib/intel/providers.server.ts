@@ -1,9 +1,12 @@
-// Deterministic synthetic Market Intelligence providers.
-// Each returns realistic-looking signals seeded by (symbol, provider, hourly bucket)
-// so results are stable within a refresh window but evolve over time.
-// Replace with real vendors (TipRanks, Benzinga, CryptoPanic, LunarCrush, Santiment)
-// by implementing IntelProvider and adding to REGISTRY.
+// Market Intelligence providers.
+// Each provider first tries a REAL keyless feed (Yahoo Finance, alternative.me,
+// CoinGecko — see realProviders.server.ts). Only if that feed is unavailable
+// does it fall back to the deterministic synthetic generator below, and the
+// fallback is always flagged with `payload.source = "synthetic-fallback"` so
+// the UI never presents simulated data as real.
 import type { IntelProvider, IntelSignal } from "./types";
+import { realTrend, realNews, realSentiment, realSocial } from "./realProviders.server";
+
 
 function seed(str: string): number {
   let h = 2166136261;
