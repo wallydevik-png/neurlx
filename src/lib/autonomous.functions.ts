@@ -87,6 +87,10 @@ export async function runAutonomousCycleFor(
   const rejectReasons: Record<string, number> = {};
   const errors: string[] = [];
   let scanned = 0;
+  // Symbols the connected broker actually lists as tradable. Populated during
+  // signal generation; used to widen the execution allow-list beyond the
+  // static `allowed_assets` watchlist.
+  let brokerSymbols = new Set<string>();
   let executed = 0;
   let rejected = 0;
 
@@ -307,17 +311,21 @@ export async function runAutonomousCycleFor(
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
       const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
-      // Always scan a broad universe so we surface *something*, then intersect
-      // with allowed_assets at the execution stage. When the user has a
-      // MetaTrader account connected, this pulls the broker's real tradable
-      // list (forex/indices/stocks/crypto) instead of the fixed 39-symbol
-      // static set, so autopilot can research pairs beyond crypto.
-      const watchlist = new Set<string>(settings.allowed_assets ?? []);
+      // The scan universe is the UNION of the user's watchlist and the
+      // connected broker's real tradable list (MT5 forex/indices/metals/
+      // crypto). Previously the broker symbols were added to the universe and
+      // then filtered back out by `watchlist.has(...)`, so a non-empty
+      // allowed_assets meant the broker list could never produce a signal.
       const tradable = await listTradableSymbols(supabase, userId);
+      brokerSymbols = new Set(tradable);
       const universe = Array.from(new Set([
         ...(settings.allowed_assets ?? []),
-        ...tradable.slice(0, 24),
+        ...tradable.slice(0, 60),
       ]));
+      // "scanned" now means symbols evaluated by the AI committee — the
+      // honest metric. Signals produced are reported separately below.
+      scanned = universe.length;
+      errors.push(`universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}:broker=${tradable.length}`);
       const verdicts = await runCommittee(supabase, universe, userId);
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
@@ -328,8 +336,7 @@ export async function runAutonomousCycleFor(
         .filter(v => v.consensusDirection !== "wait"
           && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
-          && v.agreement >= 1 / 2
-          && (watchlist.size === 0 || watchlist.has(v.symbol)))
+          && v.agreement >= 1 / 2)
         .slice(0, Math.max(capacity, 3));
 
       // Scale qty so notional fits the user's per-trade cap. The engine
