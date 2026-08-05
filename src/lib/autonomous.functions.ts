@@ -395,7 +395,10 @@ export async function runAutonomousCycleFor(
     }
   }
 
-  scanned = signals?.length ?? 0;
+  // `scanned` is set to the committee universe size during generation. When we
+  // instead worked from pre-existing pending signals, fall back to their count.
+  if (scanned === 0) scanned = signals?.length ?? 0;
+  if (signals?.length) errors.push(`signals_in_play:${signals.length}`);
 
   if (!signals || signals.length === 0) {
     await supabase.from("automation_settings")
@@ -485,7 +488,10 @@ export async function runAutonomousCycleFor(
       }).eq("id", sig.id);
       continue;
     }
-    if (allowedAssets.size > 0 && !allowedAssets.has(sig.symbol)) {
+    // A symbol is permitted if it is on the watchlist OR the connected broker
+    // lists it as tradable — otherwise broker-discovered signals would always
+    // be rejected as "asset_not_allowed".
+    if (allowedAssets.size > 0 && !allowedAssets.has(sig.symbol) && !brokerSymbols.has(sig.symbol)) {
       bump(rejectReasons, "asset_not_allowed"); rejected++;
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
