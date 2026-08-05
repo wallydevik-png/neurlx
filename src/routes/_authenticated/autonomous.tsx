@@ -66,7 +66,7 @@ function AutonomousPage() {
   const runNow = useMutation({
     mutationFn: () => runFn(),
     onSuccess: (r) => {
-      if (r.skipped) toast.warning(`Cycle skipped: ${r.skipped}`);
+      if (r.skipped) toast.warning(`Cycle skipped: ${humanizeSkip(r.skipped)}`);
       else toast.success(`Cycle done. Executed ${r.executed}, rejected ${r.rejected}.`);
       qc.invalidateQueries({ queryKey: ["autonomous-status"] });
     },
