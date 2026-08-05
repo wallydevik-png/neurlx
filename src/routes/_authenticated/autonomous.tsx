@@ -66,7 +66,7 @@ function AutonomousPage() {
   const runNow = useMutation({
     mutationFn: () => runFn(),
     onSuccess: (r) => {
-      if (r.skipped) toast.warning(`Cycle skipped: ${r.skipped}`);
+      if (r.skipped) toast.warning(`Cycle skipped: ${humanizeSkip(r.skipped)}`);
       else toast.success(`Cycle done. Executed ${r.executed}, rejected ${r.rejected}.`);
       qc.invalidateQueries({ queryKey: ["autonomous-status"] });
     },
@@ -210,6 +210,8 @@ function AutonomousPage() {
                 value={data?.settings?.live_kill_until && new Date(data.settings.live_kill_until) > new Date()
                   ? <span className="text-destructive">OPEN — {data.settings.live_kill_reason}</span>
                   : <span className="text-emerald-500">closed</span>} />
+              <Row label="Enforced cooldown"
+                value={`${data?.settings?.autonomous_cooldown_seconds ?? "—"}s (from database)`} />
               <Row label="Last run" value={data?.settings?.autonomous_last_run_at
                 ? new Date(data.settings.autonomous_last_run_at).toLocaleString() : "never"} />
               <Row label="Live enabled"
@@ -262,6 +264,16 @@ function AutonomousPage() {
         </Card>
       </div>
     </AppShell>
+  );
+}
+
+/** Cycle skip reasons carry raw UTC ISO timestamps (e.g.
+ *  `cooldown_until:2026-08-04T22:07:10.137Z`). Render them in the viewer's own
+ *  timezone so a UTC stamp never looks like a multi-hour cooldown. */
+function humanizeSkip(reason: string): string {
+  return reason.replace(
+    /(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/g,
+    iso => new Date(iso).toLocaleTimeString(),
   );
 }
 
