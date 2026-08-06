@@ -13,7 +13,7 @@
 //   8. No high-impact event window
 //   9. Composite confidence >= the configured minimum (default 90%)
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchCandles } from "@/lib/marketdata/service.server";
+import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import type { Candle } from "@/lib/analysis/indicators";
 import { bollinger, ema, macd, rsi, volumeStats } from "@/lib/analysis/indicators";
 import { classifyRegime, type RegimeReport } from "@/lib/analysis/regime";
@@ -68,12 +68,19 @@ export async function evaluateEntry(
   const newsFilterEnabled = cfg.newsFilterEnabled ?? true;
   const maxSpreadBps = cfg.maxSpreadBps ?? 30;
 
-  const [d1, h4, h1, m15] = await Promise.all([
-    fetchCandles(supabase, symbol, "1d", 220, userId).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "4h", 220, userId).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "1h", 220, userId).catch(() => [] as Candle[]),
-    fetchCandles(supabase, symbol, "15m", 220, userId).catch(() => [] as Candle[]),
+  const results = await Promise.all([
+    fetchCandlesWithSource(supabase, symbol, "1d", 220, userId),
+    fetchCandlesWithSource(supabase, symbol, "4h", 220, userId),
+    fetchCandlesWithSource(supabase, symbol, "1h", 220, userId),
+    fetchCandlesWithSource(supabase, symbol, "15m", 220, userId),
   ]);
+  const [d1, h4, h1, m15] = results.map(result => result.candles) as [Candle[], Candle[], Candle[], Candle[]];
+  const syntheticSource = results.find(result => result.isSynthetic);
+  if (syntheticSource) {
+    throw new Error(
+      `Refusing live entry evaluation for ${symbol}: ${syntheticSource.source} candles are not broker data`,
+    );
+  }
 
   const entryCandles = m15.length >= 60 ? m15 : h1;
 
