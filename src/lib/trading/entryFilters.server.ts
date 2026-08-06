@@ -76,8 +76,22 @@ export async function evaluateEntry(
   ]);
 
   const entryCandles = m15.length >= 60 ? m15 : h1;
+
+  // Feed-freshness telemetry. If these timestamps stop advancing across cycles
+  // the indicators below are being computed on a stale bar, not a flat market.
+  const stamp = (cs: Candle[]) => {
+    const last = cs[cs.length - 1];
+    if (!last) return "none";
+    return `${new Date(last.ts).toISOString()}(age ${Math.round((Date.now() - last.ts) / 1000)}s)`;
+  };
+  console.log(
+    `[entryFilter:freshness] ${symbol} ${side} 15m=${stamp(m15)} 1h=${stamp(h1)} ` +
+    `4h=${stamp(h4)} 1d=${stamp(d1)} using=${m15.length >= 60 ? "15m" : "1h"}`,
+  );
+
   const regime = classifyRegime(entryCandles.length ? entryCandles : h1);
   const want = biasFor(side);
+
 
   const htfBias = {
     d1: d1.length ? trendBias(d1.map(c => c.close)) : "neutral",
