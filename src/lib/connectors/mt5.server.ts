@@ -516,6 +516,27 @@ export function createMt5Connector(
     }
   }
 
+  /** Ask the MT terminal to actively watch an instrument so MetaApi keeps its
+   *  historical bars in sync. Best-effort and re-armed every 10 minutes;
+   *  failures never block a candle fetch. */
+  async function ensureMarketDataSubscription(mtSymbol: string): Promise<void> {
+    const key = `${state.accountId}|${mtSymbol}`;
+    const at = subscriptionCache.get(key);
+    if (at && Date.now() - at < SUBSCRIPTION_TTL_MS) return;
+    subscriptionCache.set(key, Date.now());
+    try {
+      await req("POST",
+        `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/subscribe`,
+        { subscriptions: [{ type: "candles", timeframe: "1m", intervalInMilliseconds: 10000 }, { type: "quotes" }] },
+      );
+      console.log(`[mt5:subscribe] watching ${mtSymbol} on terminal for fresh bars`);
+    } catch (e) {
+      console.warn("[mt5:subscribe] failed for", mtSymbol, e instanceof Error ? e.message : String(e));
+    }
+  }
+
+
+
   interface MtAccountInfo {
     broker?: string; currency?: string; balance?: number; equity?: number;
     margin?: number; freeMargin?: number; marginLevel?: number; leverage?: number;
