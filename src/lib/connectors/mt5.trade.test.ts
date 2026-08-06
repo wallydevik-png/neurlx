@@ -36,7 +36,7 @@ describe("buildTradeRequest", () => {
     });
   });
   it("builds a SELL market order with stop loss", () => {
-    expect(buildTradeRequest({ ...base, side: "sell", stopPrice: 71000 }, "BTCUSD")).toEqual({
+    expect(buildTradeRequest({ ...base, side: "sell", stopLoss: 71000 }, "BTCUSD")).toEqual({
       actionType: "ORDER_TYPE_SELL", symbol: "BTCUSD", volume: 0.1, stopLoss: 71000,
     });
   });

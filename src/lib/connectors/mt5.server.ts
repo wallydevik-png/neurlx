@@ -80,6 +80,14 @@ export function candidatesFor(symbol: string): string[] {
 const MT_TIMEFRAME: Record<string, string> = {
   "1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d",
 };
+const MT_TIMEFRAME_MS: Record<string, number> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "4h": 4 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
+};
 
 /** Inverse of splitPair-style logic: turn a raw broker instrument name
  *  ("EURUSD", "BTCUSDm", "XAUUSD.raw") into our "BASE-QUOTE" symbol form
@@ -630,14 +638,17 @@ export function createMt5Connector(
       // made MACD/RSI identical across cycles even after a candle closed.
       await ensureMarketDataSubscription(s);
 
-      // NOTE: do NOT pin `startTime` to "now". MetaApi truncates startTime to
-      // the candle boundary and returns bars strictly *before* it, which made
-      // the freshly closed bar invisible for minutes. Omitting it returns the
-      // most recent available bars.
+      // MetaApi's history endpoint requires an upper-bound startTime and
+      // returns bars before that boundary. Use the *next* timeframe boundary,
+      // not `now`: this includes the broker's current/latest bar while avoiding
+      // the old bug where truncating `now` excluded the newly opened bar.
       // req()/doRequest do not serialize a `params` object into the URL for
       // GET requests (params there is log-only) — build the query string
       // into the path ourselves, the same way bybit.server.ts did.
+      const timeframeMs = MT_TIMEFRAME_MS[timeframe] ?? 15 * 60_000;
+      const nextBoundary = Math.ceil((Date.now() + 1) / timeframeMs) * timeframeMs;
       const qs = new URLSearchParams({
+        startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
       const r = await req<Array<{

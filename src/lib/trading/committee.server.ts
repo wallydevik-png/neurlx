@@ -94,7 +94,11 @@ export async function runCommittee(
         agreement: c.agreement,
         score,
       } as CommitteeVerdict;
-    } catch {
+    } catch (e) {
+      console.warn(
+        `[committee] skipped ${symbol}: live candles unavailable:`,
+        e instanceof Error ? e.message : String(e),
+      );
       return null;
     }
   }));
