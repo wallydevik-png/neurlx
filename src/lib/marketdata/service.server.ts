@@ -55,12 +55,19 @@ async function resolveProvidersFor(
   symbol: string,
 ): Promise<MarketDataProvider[]> {
   const ordered: MarketDataProvider[] = [];
+  let hasLiveBroker = false;
   if (userId) {
     const connector = await resolveUserMt5Connector(supabase, userId);
     const mt5Provider = connector ? createMt5MarketDataProvider(connector) : null;
-    if (mt5Provider) ordered.push(mt5Provider);
+    if (mt5Provider) {
+      ordered.push(mt5Provider);
+      hasLiveBroker = true;
+    }
   }
-  ordered.push(...staticProviders.filter(p => p.supports(symbol)));
+  // Never fabricate candles for an account configured for live MT execution.
+  // A broker-data failure must stop signal generation rather than produce a
+  // plausible-looking signal that can reach a real-money order path.
+  if (!hasLiveBroker) ordered.push(...staticProviders.filter(p => p.supports(symbol)));
   if (!ordered.length) throw new Error(`No market-data provider for ${symbol}`);
   return ordered;
 }
@@ -112,6 +119,10 @@ export async function fetchCandlesWithSource(
       return { candles, source: provider.id, isSynthetic };
     } catch (e) {
       lastError = e;
+      console.warn(
+        `[marketdata] ${provider.id} failed for ${symbol} (${interval}):`,
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
   throw lastError instanceof Error ? lastError : new Error(`No market-data provider succeeded for ${symbol}`);
