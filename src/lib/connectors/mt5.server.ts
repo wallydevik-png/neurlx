@@ -599,13 +599,22 @@ export function createMt5Connector(
     async getCandles(symbol: string, interval: string, limit: number) {
       const s = await resolveSymbol(symbol);
       const timeframe = MT_TIMEFRAME[interval] ?? interval;
-      const endTime = new Date().toISOString();
+
+      // MetaApi only syncs fresh historical bars for instruments the terminal
+      // is actually watching. Without a subscription the REST history endpoint
+      // keeps handing back the last bar it happened to have, which is what
+      // made MACD/RSI identical across cycles even after a candle closed.
+      await ensureMarketDataSubscription(s);
+
+      // NOTE: do NOT pin `startTime` to "now". MetaApi truncates startTime to
+      // the candle boundary and returns bars strictly *before* it, which made
+      // the freshly closed bar invisible for minutes. Omitting it returns the
+      // most recent available bars.
       // req()/doRequest do not serialize a `params` object into the URL for
       // GET requests (params there is log-only) — build the query string
       // into the path ourselves, the same way bybit.server.ts did.
       const qs = new URLSearchParams({
         limit: String(Math.min(limit, 1000)),
-        startTime: endTime,
       }).toString();
       const r = await req<Array<{
         time: string; open: number; high: number; low: number; close: number;
@@ -614,7 +623,7 @@ export function createMt5Connector(
         "GET",
         `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`,
       );
-      return (r ?? [])
+      const candles = (r ?? [])
         .map(c => ({
           ts: new Date(c.time).getTime(),
           open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close),
@@ -623,7 +632,22 @@ export function createMt5Connector(
         .filter(c => Number.isFinite(c.ts) && Number.isFinite(c.close))
         .sort((a, b) => a.ts - b.ts)
         .slice(-limit);
+
+      // Freshness telemetry: prints the timestamp of the newest bar the broker
+      // actually returned, so a stale feed is visible directly in the logs.
+      const last = candles[candles.length - 1];
+      if (last) {
+        const ageSec = Math.round((Date.now() - last.ts) / 1000);
+        console.log(
+          `[mt5:candles] ${symbol}->${s} ${timeframe} n=${candles.length} ` +
+          `last=${new Date(last.ts).toISOString()} age=${ageSec}s close=${last.close}`,
+        );
+      } else {
+        console.warn(`[mt5:candles] ${symbol}->${s} ${timeframe} returned NO candles`);
+      }
+      return candles;
     },
+
 
     /** The broker's actual tradable instrument list, translated to NeurlX
      *  "BASE-QUOTE" symbol form so the scanner can research pairs beyond the
