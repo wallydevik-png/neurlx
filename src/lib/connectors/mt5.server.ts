@@ -354,6 +354,9 @@ const accountIdCache = new Map<string, string>();          // credential key -> 
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
 const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
+const subscriptionCache = new Map<string, number>();       // `${accountId}|${mtSymbol}` -> subscribed at
+const SUBSCRIPTION_TTL_MS = 10 * 60 * 1000;
+
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
