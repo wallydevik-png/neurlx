@@ -77,31 +77,41 @@ export async function runCommittee(
   symbols: string[],
   userId?: string | null,
 ): Promise<CommitteeVerdict[]> {
-  const results = await Promise.all(symbols.map(async (symbol) => {
-    try {
-      const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
-      if (!candles || candles.length < 60) return null;
-      const base = analyzeCandles(symbol, candles, source, isSynthetic);
-      const votes = voteFor(base);
-      const c = consensus(votes);
-      // Ranking: consensus confidence × agreement × base regime multiplier
-      // (base.confidence already includes regime adjustment).
-      const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
-      return {
-        symbol, base, votes,
-        consensusDirection: c.direction,
-        consensusConfidence: c.confidence,
-        agreement: c.agreement,
-        score,
-      } as CommitteeVerdict;
-    } catch (e) {
-      console.warn(
-        `[committee] skipped ${symbol}: live candles unavailable:`,
-        e instanceof Error ? e.message : String(e),
-      );
-      return null;
+  // MetaApi rate-limits large bursts. Scan with a small worker pool instead of
+  // firing the entire broker universe at once; one failed symbol remains
+  // isolated and cannot starve every otherwise valid committee candidate.
+  const results: Array<CommitteeVerdict | null> = new Array(symbols.length).fill(null);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < symbols.length) {
+      const index = nextIndex++;
+      const symbol = symbols[index];
+      if (!symbol) continue;
+      try {
+        const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
+        if (!candles || candles.length < 60) continue;
+        const base = analyzeCandles(symbol, candles, source, isSynthetic);
+        const votes = voteFor(base);
+        const c = consensus(votes);
+        // Ranking: consensus confidence × agreement × base regime multiplier
+        // (base.confidence already includes regime adjustment).
+        const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
+        results[index] = {
+          symbol, base, votes,
+          consensusDirection: c.direction,
+          consensusConfidence: c.confidence,
+          agreement: c.agreement,
+          score,
+        } as CommitteeVerdict;
+      } catch (e) {
+        console.warn(
+          `[committee] skipped ${symbol}: live candles unavailable:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
     }
-  }));
+  };
+  await Promise.all(Array.from({ length: Math.min(5, symbols.length) }, () => worker()));
   return results
     .filter((r): r is CommitteeVerdict => r !== null)
     .sort((a, b) => b.score - a.score);
