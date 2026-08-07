@@ -366,6 +366,39 @@ const accountIdCache = new Map<string, string>();          // credential key -> 
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
 const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * MetaApi hard-caps historical-market-data requests at 5 concurrent per
+ * account ("TooManyRequestsError" / HTTP 429 if exceeded). The app scans up
+ * to ~90 symbols per autonomous cycle via Promise.all with zero throttling,
+ * which blows straight through that cap and returns a wall of 429/504
+ * errors instead of candles — this is what was actually causing entry_gate
+ * failures, not stale data. A simple per-account queue fixes it: callers
+ * still request candles concurrently, but at most MAX_CONCURRENT_HISTORY
+ * actual HTTP requests to this endpoint are ever in flight per account at
+ * once; the rest wait their turn instead of firing all at once.
+ */
+const MAX_CONCURRENT_HISTORY = 4; // stay safely under MetaApi's cap of 5
+const historyQueues = new Map<string, { active: number; queue: Array<() => void> }>();
+
+async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
+  let state = historyQueues.get(accountId);
+  if (!state) {
+    state = { active: 0, queue: [] };
+    historyQueues.set(accountId, state);
+  }
+  if (state.active >= MAX_CONCURRENT_HISTORY) {
+    await new Promise<void>(resolve => state!.queue.push(resolve));
+  }
+  state.active++;
+  try {
+    return await fn();
+  } finally {
+    state.active--;
+    const next = state.queue.shift();
+    if (next) next();
+  }
+}
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Retry 429 / 5xx with exponential backoff + jitter; never retry 4xx validation. */
@@ -635,12 +668,12 @@ export function createMt5Connector(
         startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
-      const r = await marketDataReq<Array<{
+      const r = await withHistoryLimit(state.accountId, () => marketDataReq<Array<{
         time: string; open: number; high: number; low: number; close: number;
         tickVolume?: number; volume?: number;
       }>>(
         `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`,
-      );
+      ));
       const candles = (r ?? [])
         .map(c => ({
           ts: new Date(c.time).getTime(),
