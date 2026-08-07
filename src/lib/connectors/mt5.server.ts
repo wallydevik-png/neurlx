@@ -29,6 +29,10 @@ function clientBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-client-api-v1.${r}.agiliumtrade.ai`;
 }
+function marketDataBaseFor(region: string): string {
+  const r = region || "new-york";
+  return `https://mt-market-data-client-api-v1.${r}.agiliumtrade.ai`;
+}
 /** Strip separators/case so "BTC-USD", "btc/usd" and "BTCUSD" compare equal. */
 function normalizeKey(symbol: string): string {
   return symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -362,10 +366,6 @@ const accountIdCache = new Map<string, string>();          // credential key -> 
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
 const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
-const subscriptionCache = new Map<string, number>();       // `${accountId}|${mtSymbol}` -> subscribed at
-const SUBSCRIPTION_TTL_MS = 10 * 60 * 1000;
-
-
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Retry 429 / 5xx with exponential backoff + jitter; never retry 4xx validation. */
@@ -453,6 +453,18 @@ export function createMt5Connector(
     }));
   }
 
+  async function marketDataReq<T>(path: string): Promise<T> {
+    await ensureReady();
+    return withBackoff(() => doRequest<T>({
+      ctx: logCtx,
+      method: "GET",
+      path,
+      url: `${marketDataBaseFor(state.region)}${path}`,
+      headers: { "auth-token": state.token, "Content-Type": "application/json" },
+      signed: true,
+    }));
+  }
+
   // ---- Broker symbol map -------------------------------------------------
   // MetaApi exposes the exact instrument names the connected broker offers
   // (they differ per broker: BTCUSD, BTCUSD.m, BTCUSDT, #BTCUSD ...). We pull
@@ -526,27 +538,6 @@ export function createMt5Connector(
       return {};
     }
   }
-
-  /** Ask the MT terminal to actively watch an instrument so MetaApi keeps its
-   *  historical bars in sync. Best-effort and re-armed every 10 minutes;
-   *  failures never block a candle fetch. */
-  async function ensureMarketDataSubscription(mtSymbol: string): Promise<void> {
-    const key = `${state.accountId}|${mtSymbol}`;
-    const at = subscriptionCache.get(key);
-    if (at && Date.now() - at < SUBSCRIPTION_TTL_MS) return;
-    subscriptionCache.set(key, Date.now());
-    try {
-      await req("POST",
-        `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/subscribe`,
-        { subscriptions: [{ type: "candles", timeframe: "1m", intervalInMilliseconds: 10000 }, { type: "quotes" }] },
-      );
-      console.log(`[mt5:subscribe] watching ${mtSymbol} on terminal for fresh bars`);
-    } catch (e) {
-      console.warn("[mt5:subscribe] failed for", mtSymbol, e instanceof Error ? e.message : String(e));
-    }
-  }
-
-
 
   interface MtAccountInfo {
     broker?: string; currency?: string; balance?: number; equity?: number;
@@ -632,30 +623,22 @@ export function createMt5Connector(
       const s = await resolveSymbol(symbol);
       const timeframe = MT_TIMEFRAME[interval] ?? interval;
 
-      // MetaApi only syncs fresh historical bars for instruments the terminal
-      // is actually watching. Without a subscription the REST history endpoint
-      // keeps handing back the last bar it happened to have, which is what
-      // made MACD/RSI identical across cycles even after a candle closed.
-      await ensureMarketDataSubscription(s);
-
-      // MetaApi's history endpoint requires an upper-bound startTime and
-      // returns bars before that boundary. Use the *next* timeframe boundary,
-      // not `now`: this includes the broker's current/latest bar while avoiding
-      // the old bug where truncating `now` excluded the newly opened bar.
-      // req()/doRequest do not serialize a `params` object into the URL for
-      // GET requests (params there is log-only) — build the query string
-      // into the path ourselves, the same way bybit.server.ts did.
+      // Historical candles are served by MetaApi's dedicated market-data host,
+      // not the trading/RPC host used by account information and order calls.
+      // Sending this path to mt-client-api-v1 returns a route-level 404 for
+      // every valid symbol, causing the committee to produce no verdicts.
+      // startTime is an exclusive upper bound, so use the next bar boundary to
+      // include the current/latest broker bar.
       const timeframeMs = MT_TIMEFRAME_MS[timeframe] ?? 15 * 60_000;
       const nextBoundary = Math.ceil((Date.now() + 1) / timeframeMs) * timeframeMs;
       const qs = new URLSearchParams({
         startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
-      const r = await req<Array<{
+      const r = await marketDataReq<Array<{
         time: string; open: number; high: number; low: number; close: number;
         tickVolume?: number; volume?: number;
       }>>(
-        "GET",
         `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`,
       );
       const candles = (r ?? [])
