@@ -29,7 +29,7 @@ function clientBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-client-api-v1.${r}.agiliumtrade.ai`;
 }
-function marketDataBaseFor(region: string): string {
+export function marketDataBaseFor(region: string): string {
   const r = region || "new-york";
   return `https://mt-market-data-client-api-v1.${r}.agiliumtrade.ai`;
 }

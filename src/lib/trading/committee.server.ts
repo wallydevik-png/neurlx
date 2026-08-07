@@ -87,28 +87,28 @@ export async function runCommittee(
       const index = nextIndex++;
       const symbol = symbols[index];
       if (!symbol) continue;
-    try {
-      const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
-      if (!candles || candles.length < 60) continue;
-      const base = analyzeCandles(symbol, candles, source, isSynthetic);
-      const votes = voteFor(base);
-      const c = consensus(votes);
-      // Ranking: consensus confidence × agreement × base regime multiplier
-      // (base.confidence already includes regime adjustment).
-      const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
-      results[index] = {
-        symbol, base, votes,
-        consensusDirection: c.direction,
-        consensusConfidence: c.confidence,
-        agreement: c.agreement,
-        score,
-      } as CommitteeVerdict;
-    } catch (e) {
-      console.warn(
-        `[committee] skipped ${symbol}: live candles unavailable:`,
-        e instanceof Error ? e.message : String(e),
-      );
-    }
+      try {
+        const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
+        if (!candles || candles.length < 60) continue;
+        const base = analyzeCandles(symbol, candles, source, isSynthetic);
+        const votes = voteFor(base);
+        const c = consensus(votes);
+        // Ranking: consensus confidence × agreement × base regime multiplier
+        // (base.confidence already includes regime adjustment).
+        const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
+        results[index] = {
+          symbol, base, votes,
+          consensusDirection: c.direction,
+          consensusConfidence: c.confidence,
+          agreement: c.agreement,
+          score,
+        } as CommitteeVerdict;
+      } catch (e) {
+        console.warn(
+          `[committee] skipped ${symbol}: live candles unavailable:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(5, symbols.length) }, () => worker()));

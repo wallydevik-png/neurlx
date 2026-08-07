@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   buildTradeRequest, resolveTradeAction, sanitizeClientId, splitPair, candidatesFor,
   MT_CLIENT_ID_PATTERN, MT_CLIENT_ID_MAX_LEN, MT_ACTIONS, normalizeVolume, InvalidVolumeError,
+  marketDataBaseFor,
 } from "./mt5.server";
 import type { PlaceOrderInput } from "./types";
 
 const base: PlaceOrderInput = {
   symbol: "BTC-USD", side: "buy", qty: 0.1, orderType: "market",
 };
+
+describe("MetaApi routing", () => {
+  it("routes historical candles to the dedicated market-data service", () => {
+    expect(marketDataBaseFor("new-york"))
+      .toBe("https://mt-market-data-client-api-v1.new-york.agiliumtrade.ai");
+  });
+});
 
 describe("resolveTradeAction", () => {
   it("maps buy/sell market", () => {
