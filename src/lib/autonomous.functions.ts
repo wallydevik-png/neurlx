@@ -332,12 +332,22 @@ export async function runAutonomousCycleFor(
         return canFundLiveSignal(symbol, side);
       };
 
+      // Feed the institutional gate a sufficiently broad candidate set. The
+      // previous `capacity`-sized slice stopped after the three highest-ranked
+      // committee ideas, so three compressed/low-volatility instruments could
+      // end a 91-symbol cycle even when tradable setups existed farther down
+      // the ranking. Reject obviously untradable regimes early and inspect up
+      // to four candidates per available slot; the downstream entry, lifecycle,
+      // portfolio, risk and execution gates remain authoritative.
+      const candidateLimit = Math.min(12, Math.max(6, capacity * 4));
       const picks = verdicts
         .filter(v => v.consensusDirection !== "wait"
           && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
-          && v.agreement >= 1 / 2)
-        .slice(0, Math.max(capacity, 3));
+          && v.agreement >= 1 / 2
+          && v.base.regime !== "low_volatility"
+          && v.base.regime !== "extreme_risk")
+        .slice(0, candidateLimit);
 
       // Scale qty so notional fits the user's per-trade cap. The engine
       // targets a $500 notional by default; without this, a $10 cap user
@@ -527,6 +537,17 @@ export async function runAutonomousCycleFor(
       }, userId);
     } catch (e) {
       errors.push(`entry_gate:${sig.symbol}:${e instanceof Error ? e.message : String(e)}`);
+    }
+    // Market-data or entry-analysis failure must fail closed. Previously a
+    // thrown entry evaluation left `entryEval` null and the signal continued
+    // toward the broker without having passed the institutional entry gate.
+    if (!entryEval) {
+      bump(rejectReasons, "entry_filter:evaluation_unavailable");
+      rejected++;
+      await supabase.from("signals").update({
+        status: "rejected", resolved_at: new Date().toISOString(),
+      }).eq("id", sig.id);
+      continue;
     }
     if (entryEval && !entryEval.approved) {
       bump(rejectReasons, `entry_filter:${entryEval.rejections[0] ?? "failed"}`);
