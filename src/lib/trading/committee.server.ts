@@ -8,6 +8,15 @@
 import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import { analyzeCandles, type AiSignal, type Direction } from "@/lib/trading/aiEngine.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { trendBias } from "@/lib/analysis/institutional";
+
+/** Resample a 15m close series into 4h buckets (16 bars each) so we can read
+ *  a higher-timeframe bias without an extra broker request per symbol. */
+function resampleCloses(closes: number[], factor: number): number[] {
+  const out: number[] = [];
+  for (let i = closes.length - 1; i >= 0; i -= factor) out.unshift(closes[i]!);
+  return out;
+}
 
 export interface AnalystVote {
   analyst: "Trend" | "MeanReversion" | "Momentum";
@@ -24,6 +33,10 @@ export interface CommitteeVerdict {
   consensusConfidence: number;     // 0..1
   agreement: number;               // 0..1 — % of analysts agreeing with consensus
   score: number;                   // ranking score
+  /** Cheap higher-timeframe bias derived by resampling the 15m series into
+   *  4h buckets. Used to drop candidates that the strict entry gate would
+   *  reject on "Higher-timeframe alignment" before they consume a slot. */
+  htfBias: "bullish" | "bearish" | "neutral";
 }
 
 // Re-weight a base analysis through an analyst's perspective by looking at
@@ -96,12 +109,17 @@ export async function runCommittee(
         // Ranking: consensus confidence × agreement × base regime multiplier
         // (base.confidence already includes regime adjustment).
         const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
+        const closes = candles.map(k => k.close);
+        const htfBias = trendBias(resampleCloses(closes, 16).length >= 20
+          ? resampleCloses(closes, 16)
+          : closes);
         results[index] = {
           symbol, base, votes,
           consensusDirection: c.direction,
           consensusConfidence: c.confidence,
           agreement: c.agreement,
           score,
+          htfBias,
         } as CommitteeVerdict;
       } catch (e) {
         console.warn(

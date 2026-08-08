@@ -311,21 +311,26 @@ export async function runAutonomousCycleFor(
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
       const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
+      const { filterScanUniverse } = await import("@/lib/marketdata/assetClass");
       // The scan universe is the UNION of the user's watchlist and the
-      // connected broker's real tradable list (MT5 forex/indices/metals/
-      // crypto). Previously the broker symbols were added to the universe and
-      // then filtered back out by `watchlist.has(...)`, so a non-empty
-      // allowed_assets meant the broker list could never produce a signal.
-      const tradable = await listTradableSymbols(supabase, userId);
+      // connected broker's real tradable list, restricted to the instrument
+      // families this engine is calibrated for: crypto, major forex and index
+      // CFDs. Individual equities / international share CFDs (BKNGNAS, AAPL,
+      // SAP.de …) are dropped outright rather than patched name-by-name.
+      const rawTradable = await listTradableSymbols(supabase, userId);
+      const tradable = filterScanUniverse(rawTradable);
       brokerSymbols = new Set(tradable);
       const universe = Array.from(new Set([
-        ...(settings.allowed_assets ?? []),
+        ...filterScanUniverse(settings.allowed_assets ?? []),
         ...tradable.slice(0, 60),
       ]));
       // "scanned" now means symbols evaluated by the AI committee — the
       // honest metric. Signals produced are reported separately below.
       scanned = universe.length;
-      errors.push(`universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}:broker=${tradable.length}`);
+      errors.push(
+        `universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}` +
+        `:broker=${tradable.length}/${rawTradable.length}(non-equity)`,
+      );
       const verdicts = await runCommittee(supabase, universe, userId);
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
@@ -340,14 +345,22 @@ export async function runAutonomousCycleFor(
       // to four candidates per available slot; the downstream entry, lifecycle,
       // portfolio, risk and execution gates remain authoritative.
       const candidateLimit = Math.min(12, Math.max(6, capacity * 4));
-      const picks = verdicts
+      const viable = verdicts
         .filter(v => v.consensusDirection !== "wait"
           && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
           && v.agreement >= 1 / 2
           && v.base.regime !== "low_volatility"
-          && v.base.regime !== "extreme_risk")
-        .slice(0, candidateLimit);
+          && v.base.regime !== "extreme_risk");
+      // Counter-trend candidates are guaranteed to fail the entry gate's
+      // higher-timeframe alignment check, so they must not consume the batch.
+      const wantBias = (d: "buy" | "sell" | "wait") => d === "buy" ? "bullish" : "bearish";
+      const aligned = viable.filter(v => v.htfBias === wantBias(v.consensusDirection));
+      const neutral = viable.filter(v => v.htfBias === "neutral");
+      const picks = [...aligned, ...neutral].slice(0, candidateLimit);
+      if (!picks.length && viable.length) {
+        errors.push(`htf_conflict:${viable.length}_candidates_counter_trend`);
+      }
 
       // Scale qty so notional fits the user's per-trade cap. The engine
       // targets a $500 notional by default; without this, a $10 cap user
