@@ -110,9 +110,12 @@ export async function runCommittee(
         // (base.confidence already includes regime adjustment).
         const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
         const closes = candles.map(k => k.close);
-        const htfBias = trendBias(resampleCloses(closes, 16).length >= 20
-          ? resampleCloses(closes, 16)
-          : closes);
+        // 200 x 15m bars only resample into ~12 4h buckets, which is below the
+        // sample trendBias needs. Report "neutral" instead of silently falling
+        // back to the 15m bias — the real 1D/4H/1H check runs in htfFilter.
+        const resampled = resampleCloses(closes, 16);
+        const htfBias = resampled.length >= 20 ? trendBias(resampled) : "neutral";
+
         results[index] = {
           symbol, base, votes,
           consensusDirection: c.direction,
