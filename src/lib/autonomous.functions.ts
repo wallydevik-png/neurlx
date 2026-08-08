@@ -283,12 +283,19 @@ export async function runAutonomousCycleFor(
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false }).limit(20);
 
+  // Margin venues (MT5, OANDA) can open short positions without holding the
+  // base asset — sizing a sell against a spot base balance made every
+  // short-side idea unfundable, which is why cycles only ever produced BUY
+  // candidates into bearish higher timeframes.
+  const SHORT_CAPABLE = new Set(["mt5", "oanda"]);
+  const marginVenue = live && !!liveConn && SHORT_CAPABLE.has(liveConn.connector_id);
   const canFundLiveSignal = (symbol: string, side: "buy" | "sell") => {
     if (!live) return true;
-    if (side === "buy") return liveStableUsd > 1;
+    if (side === "buy" || marginVenue) return liveStableUsd > 1;
     const base = symbol.includes("-") ? symbol.split("-")[0].toUpperCase() : symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
     return (liveBaseAvailable.get(base) ?? 0) > 0;
   };
+
 
   if (live && signals?.length) {
     const fundable = [];
