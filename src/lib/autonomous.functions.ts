@@ -361,13 +361,25 @@ export async function runAutonomousCycleFor(
           && v.base.regime !== "extreme_risk");
       // Counter-trend candidates are guaranteed to fail the entry gate's
       // higher-timeframe alignment check, so they must not consume the batch.
-      const wantBias = (d: "buy" | "sell" | "wait") => d === "buy" ? "bullish" : "bearish";
-      const aligned = viable.filter(v => v.htfBias === wantBias(v.consensusDirection));
-      const neutral = viable.filter(v => v.htfBias === "neutral");
-      const picks = [...aligned, ...neutral].slice(0, candidateLimit);
+      // This now uses REAL 1D/4H/1H broker candles (the committee's resampled
+      // 15m proxy silently degraded to an entry-timeframe bias and let
+      // counter-trend ideas through).
+      const { filterHtfAligned } = await import("@/lib/trading/htfFilter.server");
+      const htf = await filterHtfAligned(
+        supabase,
+        viable,
+        v => v.consensusDirection as "buy" | "sell",
+        userId,
+        Math.max(candidateLimit * 2, 16),
+      );
+      const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
-        errors.push(`htf_conflict:${viable.length}_candidates_counter_trend`);
+        errors.push(
+          `htf_conflict:${viable.length}_candidates_counter_trend:` +
+          htf.verdicts.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
+        );
       }
+
 
       // Scale qty so notional fits the user's per-trade cap. The engine
       // targets a $500 notional by default; without this, a $10 cap user
