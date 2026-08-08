@@ -24,6 +24,10 @@ export interface CommitteeVerdict {
   consensusConfidence: number;     // 0..1
   agreement: number;               // 0..1 — % of analysts agreeing with consensus
   score: number;                   // ranking score
+  /** Cheap higher-timeframe bias derived by resampling the 15m series into
+   *  4h buckets. Used to drop candidates that the strict entry gate would
+   *  reject on "Higher-timeframe alignment" before they consume a slot. */
+  htfBias: "bullish" | "bearish" | "neutral";
 }
 
 // Re-weight a base analysis through an analyst's perspective by looking at
