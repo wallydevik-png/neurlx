@@ -397,9 +397,16 @@ export async function runAutonomousCycleFor(
           const targetNotional = Math.max(1, Math.min(capForSize * 0.95, liveStableUsd * 0.9));
           scaledQty = +(targetNotional / v.base.entry).toFixed(6);
         } else if (live && v.consensusDirection === "sell") {
-          const base = v.symbol.includes("-") ? v.symbol.split("-")[0].toUpperCase() : v.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
-          const byCap = (capForSize * 0.95) / v.base.entry;
-          scaledQty = +Math.min((liveBaseAvailable.get(base) ?? 0) * 0.95, byCap).toFixed(6);
+          if (marginVenue) {
+            // Short on margin: sized off available margin, not a spot holding.
+            const targetNotional = Math.max(1, Math.min(capForSize * 0.95, liveStableUsd * 0.9));
+            scaledQty = +(targetNotional / v.base.entry).toFixed(6);
+          } else {
+            const base = v.symbol.includes("-") ? v.symbol.split("-")[0].toUpperCase() : v.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
+            const byCap = (capForSize * 0.95) / v.base.entry;
+            scaledQty = +Math.min((liveBaseAvailable.get(base) ?? 0) * 0.95, byCap).toFixed(6);
+          }
+
         } else {
           const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
           scaledQty = +(targetNotional / v.base.entry).toFixed(6);
