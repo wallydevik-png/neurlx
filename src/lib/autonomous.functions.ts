@@ -95,6 +95,47 @@ export async function runAutonomousCycleFor(
   let rejected = 0;
 
   const startedAt = new Date().toISOString();
+  // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
+  // let the next invocation start another scan for the same user while the
+  // current one is still running; overlapping scans exhaust broker quotas and
+  // leave misleading unfinished rows in the activity feed. A genuinely stale
+  // run is closed and recovered automatically.
+  const staleRunCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: unfinishedRuns } = await supabase.from("autonomous_runs")
+    .select("id,started_at")
+    .eq("user_id", userId)
+    .is("finished_at", null)
+    .order("started_at", { ascending: false })
+    .limit(10);
+  const activeRun = (unfinishedRuns ?? []).find(run => run.started_at >= staleRunCutoff);
+  if (activeRun) {
+    const { data: skippedRun } = await supabase.from("autonomous_runs").insert({
+      user_id: userId,
+      started_at: startedAt,
+      finished_at: startedAt,
+      trigger,
+      live: false,
+      errors: [`skipped:cycle_already_running:${activeRun.id}`],
+    }).select("id").single();
+    return {
+      runId: String(skippedRun?.id ?? "overlap-skipped"),
+      scanned: 0,
+      executed: 0,
+      rejected: 0,
+      rejectReasons: {},
+      errors: [`skipped:cycle_already_running:${activeRun.id}`],
+      skipped: "cycle_already_running",
+    };
+  }
+  const staleRunIds = (unfinishedRuns ?? [])
+    .filter(run => run.started_at < staleRunCutoff)
+    .map(run => run.id);
+  if (staleRunIds.length) {
+    await supabase.from("autonomous_runs").update({
+      finished_at: startedAt,
+      errors: ["recovered:stale_unfinished_cycle"],
+    }).in("id", staleRunIds);
+  }
   const { data: runRow } = await supabase.from("autonomous_runs").insert({
     user_id: userId, started_at: startedAt, trigger, live: false,
   }).select().single();
