@@ -99,8 +99,11 @@ export async function runAutonomousCycleFor(
   // let the next invocation start another scan for the same user while the
   // current one is still running; overlapping scans exhaust broker quotas and
   // leave misleading unfinished rows in the activity feed. A genuinely stale
-  // run is closed and recovered automatically.
-  const staleRunCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  // run is closed and recovered automatically. (Shortened from 5 minutes:
+  // every outbound request now has a hard 20s timeout — see rest.server.ts —
+  // so a cycle can no longer hang indefinitely on a single stalled network
+  // call, and doesn't need as generous a grace window to be recognized as stuck.)
+  const staleRunCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
   const { data: unfinishedRuns } = await supabase.from("autonomous_runs")
     .select("id,started_at")
     .eq("user_id", userId)
