@@ -9,6 +9,7 @@ import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import { analyzeCandles, type AiSignal, type Direction } from "@/lib/trading/aiEngine.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { trendBias } from "@/lib/analysis/institutional";
+import { ema, macd, rsi } from "@/lib/analysis/indicators";
 
 /** Resample a 15m close series into 4h buckets (16 bars each) so we can read
  *  a higher-timeframe bias without an extra broker request per symbol. */
@@ -37,6 +38,29 @@ export interface CommitteeVerdict {
    *  4h buckets. Used to drop candidates that the strict entry gate would
    *  reject on "Higher-timeframe alignment" before they consume a slot. */
   htfBias: "bullish" | "bearish" | "neutral";
+  /** Exact 15m confirmation using the same MACD/RSI/EMA rule as the
+   * authoritative institutional entry gate. Keeping this on the verdict lets
+   * autopilot discard stale committee votes before they consume an HTF slot. */
+  entryMomentumConfirmed: boolean;
+  entryMomentumDetail: string;
+}
+
+function entryMomentum(
+  closes: number[],
+  side: Direction,
+): { confirmed: boolean; detail: string } {
+  if (side === "wait") return { confirmed: false, detail: "committee direction is WAIT" };
+  const m = macd(closes, 12, 26, 9);
+  const r = rsi(closes, 14);
+  const e20 = ema(closes, 20);
+  const e50 = ema(closes, 50);
+  const confirmed = side === "buy"
+    ? !!m && m.histogram > 0 && (r ?? 50) > 45 && (r ?? 50) < 78 && (e20 ?? 0) >= (e50 ?? 0)
+    : !!m && m.histogram < 0 && (r ?? 50) < 55 && (r ?? 50) > 22 && (e20 ?? 0) <= (e50 ?? 0);
+  return {
+    confirmed,
+    detail: `MACD ${m?.histogram.toFixed(8) ?? "n/a"}, RSI ${r?.toFixed(1) ?? "n/a"}, EMA20/50 ${e20 != null && e50 != null ? (e20 >= e50 ? "bullish" : "bearish") : "n/a"}`,
+  };
 }
 
 // Re-weight a base analysis through an analyst's perspective by looking at
@@ -110,6 +134,7 @@ export async function runCommittee(
         // (base.confidence already includes regime adjustment).
         const score = c.confidence * c.agreement * (0.5 + base.confidence / 2);
         const closes = candles.map(k => k.close);
+        const momentum = entryMomentum(closes, c.direction);
         // 200 x 15m bars only resample into ~12 4h buckets, which is below the
         // sample trendBias needs. Report "neutral" instead of silently falling
         // back to the 15m bias — the real 1D/4H/1H check runs in htfFilter.
@@ -123,6 +148,8 @@ export async function runCommittee(
           agreement: c.agreement,
           score,
           htfBias,
+          entryMomentumConfirmed: momentum.confirmed,
+          entryMomentumDetail: momentum.detail,
         } as CommitteeVerdict;
       } catch (e) {
         console.warn(

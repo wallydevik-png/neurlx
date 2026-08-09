@@ -95,6 +95,47 @@ export async function runAutonomousCycleFor(
   let rejected = 0;
 
   const startedAt = new Date().toISOString();
+  // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
+  // let the next invocation start another scan for the same user while the
+  // current one is still running; overlapping scans exhaust broker quotas and
+  // leave misleading unfinished rows in the activity feed. A genuinely stale
+  // run is closed and recovered automatically.
+  const staleRunCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: unfinishedRuns } = await supabase.from("autonomous_runs")
+    .select("id,started_at")
+    .eq("user_id", userId)
+    .is("finished_at", null)
+    .order("started_at", { ascending: false })
+    .limit(10);
+  const activeRun = (unfinishedRuns ?? []).find(run => run.started_at >= staleRunCutoff);
+  if (activeRun) {
+    const { data: skippedRun } = await supabase.from("autonomous_runs").insert({
+      user_id: userId,
+      started_at: startedAt,
+      finished_at: startedAt,
+      trigger,
+      live: false,
+      errors: [`skipped:cycle_already_running:${activeRun.id}`],
+    }).select("id").single();
+    return {
+      runId: String(skippedRun?.id ?? "overlap-skipped"),
+      scanned: 0,
+      executed: 0,
+      rejected: 0,
+      rejectReasons: {},
+      errors: [`skipped:cycle_already_running:${activeRun.id}`],
+      skipped: "cycle_already_running",
+    };
+  }
+  const staleRunIds = (unfinishedRuns ?? [])
+    .filter(run => run.started_at < staleRunCutoff)
+    .map(run => run.id);
+  if (staleRunIds.length) {
+    await supabase.from("autonomous_runs").update({
+      finished_at: startedAt,
+      errors: ["recovered:stale_unfinished_cycle"],
+    }).in("id", staleRunIds);
+  }
   const { data: runRow } = await supabase.from("autonomous_runs").insert({
     user_id: userId, started_at: startedAt, trigger, live: false,
   }).select().single();
@@ -357,6 +398,12 @@ export async function runAutonomousCycleFor(
           && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
           && v.agreement >= 1 / 2
+          // The latest production failure promoted a unanimous bearish vote
+          // whose underlying 15m MACD histogram was flat. It was the only HTF
+          // candidate and immediately failed the exact same check in
+          // evaluateEntry. Apply that authoritative momentum rule here so the
+          // search continues to the next instrument instead of starving.
+          && v.entryMomentumConfirmed
           && v.base.regime !== "low_volatility"
           && v.base.regime !== "extreme_risk");
       // Counter-trend candidates are guaranteed to fail the entry gate's
@@ -370,7 +417,10 @@ export async function runAutonomousCycleFor(
         viable,
         v => v.consensusDirection as "buy" | "sell",
         userId,
-        Math.max(candidateLimit * 2, 16),
+        // Search the full momentum-qualified set (bounded to the calibrated
+        // universe) rather than only the first 24 ranked names. A single
+        // market-wide direction conflict must not end a 72-symbol cycle.
+        Math.min(viable.length, 60),
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
@@ -378,6 +428,14 @@ export async function runAutonomousCycleFor(
           `htf_conflict:${viable.length}_candidates_counter_trend:` +
           htf.verdicts.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
         );
+      }
+      if (!viable.length && verdicts.length) {
+        const momentumMisses = verdicts
+          .filter(v => v.consensusDirection !== "wait" && !v.entryMomentumConfirmed)
+          .slice(0, 3)
+          .map(v => `${v.symbol}:${v.consensusDirection}:${v.entryMomentumDetail}`)
+          .join(" | ");
+        errors.push(`entry_momentum_no_candidates:${momentumMisses || "no_directional_consensus"}`);
       }
 
 
