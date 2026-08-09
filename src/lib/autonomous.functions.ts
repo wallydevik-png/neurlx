@@ -357,6 +357,12 @@ export async function runAutonomousCycleFor(
           && canFundVerdict(v.symbol, v.consensusDirection)
           && v.consensusConfidence >= minConfForGen
           && v.agreement >= 1 / 2
+          // The latest production failure promoted a unanimous bearish vote
+          // whose underlying 15m MACD histogram was flat. It was the only HTF
+          // candidate and immediately failed the exact same check in
+          // evaluateEntry. Apply that authoritative momentum rule here so the
+          // search continues to the next instrument instead of starving.
+          && v.entryMomentumConfirmed
           && v.base.regime !== "low_volatility"
           && v.base.regime !== "extreme_risk");
       // Counter-trend candidates are guaranteed to fail the entry gate's
@@ -370,7 +376,10 @@ export async function runAutonomousCycleFor(
         viable,
         v => v.consensusDirection as "buy" | "sell",
         userId,
-        Math.max(candidateLimit * 2, 16),
+        // Search the full momentum-qualified set (bounded to the calibrated
+        // universe) rather than only the first 24 ranked names. A single
+        // market-wide direction conflict must not end a 72-symbol cycle.
+        Math.min(viable.length, 60),
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
@@ -378,6 +387,14 @@ export async function runAutonomousCycleFor(
           `htf_conflict:${viable.length}_candidates_counter_trend:` +
           htf.verdicts.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
         );
+      }
+      if (!viable.length && verdicts.length) {
+        const momentumMisses = verdicts
+          .filter(v => v.consensusDirection !== "wait" && !v.entryMomentumConfirmed)
+          .slice(0, 3)
+          .map(v => `${v.symbol}:${v.consensusDirection}:${v.entryMomentumDetail}`)
+          .join(" | ");
+        errors.push(`entry_momentum_no_candidates:${momentumMisses || "no_directional_consensus"}`);
       }
 
 
