@@ -47,8 +47,17 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
   const started = Date.now();
   let res: Response | undefined;
   let text = "";
+  // Every outbound request previously had no timeout at all — a stalled
+  // connection (no response, no error, just silence) would hang forever,
+  // and since retries only kick in after a promise settles, nothing could
+  // ever recover from it. That's the most likely explanation for a whole
+  // autonomous cycle getting stuck for 7+ minutes with autonomous_runs left
+  // unfinished: one request never resolved, so the cycle never finished.
+  const REQUEST_TIMEOUT_MS = 20_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    res = await fetch(url, { method, headers, body });
+    res = await fetch(url, { method, headers, body, signal: controller.signal });
     text = await res.text();
     if (!res.ok) throw classifyRestError(res.status, text, ctx.venue);
     if (ctx.supabase && ctx.userId) {
@@ -62,16 +71,22 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
     }
     return (text ? JSON.parse(text) : {}) as T;
   } catch (e) {
+    const timedOut = e instanceof Error && e.name === "AbortError";
+    const err = timedOut
+      ? Object.assign(new Error(`Request to ${ctx.venue} timed out after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`), { retryable: true })
+      : e;
     if (ctx.supabase && ctx.userId) {
       await logApiRequest(ctx.supabase, {
         userId: ctx.userId, connectionId: ctx.connectionId ?? null,
         orderId: ctx.orderId ?? null, venue: ctx.venue, method, path,
         statusCode: res?.status ?? null, latencyMs: Date.now() - started,
         params: params ?? {}, responseSnippet: text.slice(0, 500),
-        error: e instanceof Error ? e.message : String(e),
+        error: err instanceof Error ? err.message : String(err),
         isSigned: signed ?? false,
       });
     }
-    throw e;
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
