@@ -322,12 +322,33 @@ async function persistCredentials(
   }
 }
 
+/** These two calls predate the shared doRequest() timeout fix and used plain
+ *  fetch() directly — completely unprotected from a stalled connection.
+ *  Since provisioning only runs on a cold start (when accountIdCache is
+ *  empty), this was an intermittent hang: most cycles hit the cached,
+ *  timeout-protected path, but any cycle that needed to (re-)provision could
+ *  still hang indefinitely on these two calls specifically. */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 20_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(`MetaApi provisioning request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function provisionAccount(params: {
   token: string; brokerId: string; login: string; password: string;
   server: string; region: string; name: string;
 }): Promise<string> {
   const platform = isMt4(params.brokerId) ? "mt4" : "mt5";
-  const res = await fetch(`${PROVISIONING_BASE}/users/current/accounts`, {
+  const res = await fetchWithTimeout(`${PROVISIONING_BASE}/users/current/accounts`, {
     method: "POST",
     headers: { "auth-token": params.token, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -352,7 +373,7 @@ async function provisionAccount(params: {
   try { parsed = JSON.parse(text); } catch { throw new Error("MetaApi provisioning returned non-JSON"); }
   if (!parsed.id) throw new Error("MetaApi provisioning did not return an account id");
   // Best-effort deploy — safe to retry, idempotent server-side.
-  await fetch(`${PROVISIONING_BASE}/users/current/accounts/${parsed.id}/deploy`, {
+  await fetchWithTimeout(`${PROVISIONING_BASE}/users/current/accounts/${parsed.id}/deploy`, {
     method: "POST", headers: { "auth-token": params.token },
   }).catch(() => undefined);
   return parsed.id;
