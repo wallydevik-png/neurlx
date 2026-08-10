@@ -79,7 +79,7 @@ async function markConnectionRegionBlocked(
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
-export async function runAutonomousCycleFor(
+async function runAutonomousCycleCore(
   supabase: SupabaseClient,
   userId: string,
   trigger: "manual" | "cron" | "signal",
@@ -944,6 +944,42 @@ export async function runAutonomousCycleFor(
     .eq("user_id", userId);
 
   return finish(undefined, live);
+}
+
+/** Guaranteed cleanup boundary: no unexpected provider/database exception may
+ * leave an autonomous_runs row open and block every subsequent cron tick. */
+export async function runAutonomousCycleFor(
+  supabase: SupabaseClient,
+  userId: string,
+  trigger: "manual" | "cron" | "signal",
+): Promise<CycleResult> {
+  try {
+    return await runAutonomousCycleCore(supabase, userId, trigger);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const finishedAt = new Date().toISOString();
+    const { data: settings } = await supabase.from("automation_settings")
+      .select("autonomous_live_enabled,autonomous_default_connection_id")
+      .eq("user_id", userId).maybeSingle();
+    const live = Boolean(settings?.autonomous_live_enabled)
+      && Boolean(settings?.autonomous_default_connection_id);
+    const { data: openRun } = await supabase.from("autonomous_runs")
+      .select("id").eq("user_id", userId).is("finished_at", null)
+      .order("started_at", { ascending: false }).limit(1).maybeSingle();
+    const runId = String(openRun?.id ?? "fatal-cycle");
+    if (openRun?.id) {
+      await supabase.from("autonomous_runs").update({
+        finished_at: finishedAt,
+        live,
+        errors: [`fatal_cycle_error:${message}`],
+      }).eq("id", openRun.id);
+    }
+    return {
+      runId, scanned: 0, executed: 0, rejected: 0,
+      rejectReasons: {}, errors: [`fatal_cycle_error:${message}`],
+      skipped: "fatal_cycle_error",
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
