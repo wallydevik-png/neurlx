@@ -87,10 +87,16 @@ export function atr(candles: Candle[], period = 14): number | null {
 
 export interface VolumeStats { avg: number; last: number; ratio: number; }
 export function volumeStats(candles: Candle[], period = 20): VolumeStats | null {
-  if (candles.length < period) return null;
-  const vols = candles.slice(-period).map(c => c.volume);
-  const avg = vols.reduce((a, b) => a + b, 0) / period;
-  const last = candles[candles.length - 1].volume;
+  if (candles.length < period + 1) return null;
+  // The newest broker candle is usually still forming. Comparing its partial
+  // tick volume with completed bars creates a false low-liquidity rejection
+  // near the start of every timeframe. Compare the latest completed bar with
+  // the preceding completed baseline instead.
+  const completed = candles.slice(0, -1);
+  const last = completed[completed.length - 1].volume;
+  const baseline = completed.slice(-(period + 1), -1).map(c => c.volume);
+  if (baseline.length < period) return null;
+  const avg = baseline.reduce((a, b) => a + b, 0) / period;
   return { avg, last, ratio: avg > 0 ? last / avg : 1 };
 }
 
