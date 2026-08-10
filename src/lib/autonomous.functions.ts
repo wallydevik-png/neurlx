@@ -440,22 +440,14 @@ export async function runAutonomousCycleFor(
       // 15m proxy silently degraded to an entry-timeframe bias and let
       // counter-trend ideas through).
       const { filterHtfAligned } = await import("@/lib/trading/htfFilter.server");
-      let htfTimer: ReturnType<typeof setTimeout> | undefined;
-      const htfTimeout = new Promise<never>((_, reject) => {
-        htfTimer = setTimeout(() => reject(new Error("htf_scan_timeout:15s")), 15_000);
-      });
-      const htf = await Promise.race([
-        filterHtfAligned(
-          supabase,
-          viable,
-          v => v.consensusDirection as "buy" | "sell",
-          userId,
-          Math.min(viable.length, 12),
-        ),
-        htfTimeout,
-      ]).finally(() => {
-        if (htfTimer) clearTimeout(htfTimer);
-      });
+      const htf = await filterHtfAligned(
+        supabase,
+        viable,
+        v => v.consensusDirection as "buy" | "sell",
+        userId,
+        Math.min(viable.length, 8),
+        6,
+      );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
         errors.push(
