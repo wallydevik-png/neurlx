@@ -79,7 +79,7 @@ async function markConnectionRegionBlocked(
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
-export async function runAutonomousCycleFor(
+async function runAutonomousCycleCore(
   supabase: SupabaseClient,
   userId: string,
   trigger: "manual" | "cron" | "signal",
@@ -98,12 +98,10 @@ export async function runAutonomousCycleFor(
   // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
   // let the next invocation start another scan for the same user while the
   // current one is still running; overlapping scans exhaust broker quotas and
-  // leave misleading unfinished rows in the activity feed. A genuinely stale
-  // run is closed and recovered automatically. (Shortened from 5 minutes:
-  // every outbound request now has a hard 20s timeout — see rest.server.ts —
-  // so a cycle can no longer hang indefinitely on a single stalled network
-  // call, and doesn't need as generous a grace window to be recognized as stuck.)
-  const staleRunCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  // leave misleading unfinished rows in the activity feed. The cron runs once
+  // a minute, so a row still unfinished after 50 seconds cannot be allowed to
+  // block the next invocation. Slow broker work below is separately bounded.
+  const staleRunCutoff = new Date(Date.now() - 50 * 1000).toISOString();
   const { data: unfinishedRuns } = await supabase.from("autonomous_runs")
     .select("id,started_at")
     .eq("user_id", userId)
@@ -371,10 +369,28 @@ export async function runAutonomousCycleFor(
       const rawTradable = await listTradableSymbols(supabase, userId);
       const tradable = filterScanUniverse(rawTradable);
       brokerSymbols = new Set(tradable);
-      const universe = Array.from(new Set([
+      const fullUniverse = Array.from(new Set([
         ...filterScanUniverse(settings.allowed_assets ?? []),
-        ...tradable.slice(0, 60),
+        ...tradable,
       ]));
+      // Scan a rotating, bounded slice instead of trying to download hundreds
+      // of broker candles inside one serverless request. The most liquid
+      // instruments are always checked; the remainder rotates every minute so
+      // the complete crypto/major-FX/index universe is still covered quickly.
+      const anchors = [
+        "BTC-USD", "ETH-USD", "SOL-USD", "EUR-USD", "GBP-USD", "USD-JPY",
+        "US30", "NAS100", "SPX500",
+      ].filter(symbol => fullUniverse.includes(symbol));
+      const rotating = fullUniverse.filter(symbol => !anchors.includes(symbol));
+      const batchSize = 18;
+      const rotationSlots = Math.max(0, batchSize - anchors.length);
+      const rotationStart = rotating.length
+        ? (Math.floor(Date.now() / 60_000) * Math.max(1, rotationSlots)) % rotating.length
+        : 0;
+      const rotated = rotating.length
+        ? [...rotating.slice(rotationStart), ...rotating.slice(0, rotationStart)]
+        : [];
+      const universe = [...anchors, ...rotated.slice(0, rotationSlots)];
       // "scanned" now means symbols evaluated by the AI committee — the
       // honest metric. Signals produced are reported separately below.
       scanned = universe.length;
@@ -382,7 +398,16 @@ export async function runAutonomousCycleFor(
         `universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}` +
         `:broker=${tradable.length}/${rawTradable.length}(non-equity)`,
       );
-      const verdicts = await runCommittee(supabase, universe, userId);
+      let committeeTimer: ReturnType<typeof setTimeout> | undefined;
+      const committeeTimeout = new Promise<never>((_, reject) => {
+        committeeTimer = setTimeout(() => reject(new Error("committee_scan_timeout:22s")), 22_000);
+      });
+      const verdicts = await Promise.race([
+        runCommittee(supabase, universe, userId),
+        committeeTimeout,
+      ]).finally(() => {
+        if (committeeTimer) clearTimeout(committeeTimer);
+      });
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
@@ -420,10 +445,8 @@ export async function runAutonomousCycleFor(
         viable,
         v => v.consensusDirection as "buy" | "sell",
         userId,
-        // Search the full momentum-qualified set (bounded to the calibrated
-        // universe) rather than only the first 24 ranked names. A single
-        // market-wide direction conflict must not end a 72-symbol cycle.
-        Math.min(viable.length, 60),
+        Math.min(viable.length, 8),
+        6,
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
@@ -921,6 +944,42 @@ export async function runAutonomousCycleFor(
     .eq("user_id", userId);
 
   return finish(undefined, live);
+}
+
+/** Guaranteed cleanup boundary: no unexpected provider/database exception may
+ * leave an autonomous_runs row open and block every subsequent cron tick. */
+export async function runAutonomousCycleFor(
+  supabase: SupabaseClient,
+  userId: string,
+  trigger: "manual" | "cron" | "signal",
+): Promise<CycleResult> {
+  try {
+    return await runAutonomousCycleCore(supabase, userId, trigger);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const finishedAt = new Date().toISOString();
+    const { data: settings } = await supabase.from("automation_settings")
+      .select("autonomous_live_enabled,autonomous_default_connection_id")
+      .eq("user_id", userId).maybeSingle();
+    const live = Boolean(settings?.autonomous_live_enabled)
+      && Boolean(settings?.autonomous_default_connection_id);
+    const { data: openRun } = await supabase.from("autonomous_runs")
+      .select("id").eq("user_id", userId).is("finished_at", null)
+      .order("started_at", { ascending: false }).limit(1).maybeSingle();
+    const runId = String(openRun?.id ?? "fatal-cycle");
+    if (openRun?.id) {
+      await supabase.from("autonomous_runs").update({
+        finished_at: finishedAt,
+        live,
+        errors: [`fatal_cycle_error:${message}`],
+      }).eq("id", openRun.id);
+    }
+    return {
+      runId, scanned: 0, executed: 0, rejected: 0,
+      rejectReasons: {}, errors: [`fatal_cycle_error:${message}`],
+      skipped: "fatal_cycle_error",
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------

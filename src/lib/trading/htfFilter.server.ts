@@ -81,11 +81,17 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   const slice = candidates.slice(0, budget);
   const verdicts: Array<HtfVerdict | null> = new Array(slice.length).fill(null);
   let next = 0;
+  const deadline = Date.now() + 13_000;
   const worker = async () => {
-    while (next < slice.length) {
+    while (next < slice.length && Date.now() < deadline) {
       const i = next++;
       const c = slice[i]!;
-      verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId);
+      try {
+        verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId);
+      } catch {
+        // A slow/unavailable broker symbol must not discard verdicts already
+        // completed in this bounded batch.
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, slice.length) }, () => worker()));

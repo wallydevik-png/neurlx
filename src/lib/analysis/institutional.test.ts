@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { adx, buildRiskFrame, correlation, performanceStats, trendBias } from "./institutional";
+import { volumeStats } from "./indicators";
 import type { Candle } from "./indicators";
 import { checkEventWindow } from "./eventWindow";
 
@@ -12,6 +13,21 @@ function series(prices: number[]): Candle[] {
 
 const uptrend = series(Array.from({ length: 120 }, (_, i) => 100 + i * 0.8));
 const downtrend = series(Array.from({ length: 120 }, (_, i) => 200 - i * 0.8));
+
+describe("volumeStats", () => {
+  it("ignores the partial live candle when measuring liquidity", () => {
+    const candles = series(Array.from({ length: 22 }, (_, i) => 100 + i));
+    candles[candles.length - 1].volume = 1;
+    const stats = volumeStats(candles, 20);
+    expect(stats).not.toBeNull();
+    expect(stats?.last).toBe(1020);
+    expect(stats?.ratio).toBeCloseTo(1020 / 1009.5, 5);
+  });
+
+  it("returns unavailable until there is a completed comparison window", () => {
+    expect(volumeStats(series(Array.from({ length: 20 }, (_, i) => 100 + i)), 20)).toBeNull();
+  });
+});
 
 describe("adx", () => {
   it("reports strong trend strength on a clean uptrend", () => {
