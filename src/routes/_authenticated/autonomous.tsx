@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
@@ -33,6 +33,7 @@ function AutonomousPage() {
   const [form, setForm] = useState({
     mode: "manual" as "manual" | "assisted" | "autonomous",
     autonomous_min_confidence: 0.85,
+    exec_min_confidence: 0.9,
     autonomous_max_open_positions: 3,
     autonomous_cooldown_seconds: 300,
     autonomous_max_consecutive_losses: 3,
@@ -45,6 +46,7 @@ function AutonomousPage() {
       setForm({
         mode: data.settings.mode as "manual" | "assisted" | "autonomous",
         autonomous_min_confidence: Number(data.settings.autonomous_min_confidence ?? 0.85),
+        exec_min_confidence: Number(data.settings.exec_min_confidence ?? 0.9),
         autonomous_max_open_positions: data.settings.autonomous_max_open_positions ?? 3,
         autonomous_cooldown_seconds: data.settings.autonomous_cooldown_seconds ?? 300,
         autonomous_max_consecutive_losses: data.settings.autonomous_max_consecutive_losses ?? 3,
@@ -125,6 +127,21 @@ function AutonomousPage() {
                 <Input type="range" min={0.5} max={0.99} step={0.01}
                   value={form.autonomous_min_confidence}
                   onChange={e => setForm(f => ({ ...f, autonomous_min_confidence: Number(e.target.value) }))} />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Execution confidence floor ({(form.exec_min_confidence * 100).toFixed(0)}%)</Label>
+                  <Button asChild variant="link" size="sm" className="h-auto p-0">
+                    <Link to="/shadow">View shadow trades</Link>
+                  </Button>
+                </div>
+                <Input type="range" min={0.5} max={0.99} step={0.01}
+                  value={form.exec_min_confidence}
+                  onChange={e => setForm(f => ({ ...f, exec_min_confidence: Number(e.target.value) }))} />
+                <p className="text-xs text-muted-foreground">
+                  Signals below this final execution threshold are tracked in Shadow Mode instead of sent live.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

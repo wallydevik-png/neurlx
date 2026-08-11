@@ -554,7 +554,12 @@ async function runAutonomousCycleCore(
   const { evaluateEntry } = await import("@/lib/trading/entryFilters.server");
   const { loadPolicy, dynamicRiskPct } = await import("@/lib/risk/policy.server");
   const { computePositionSize } = await import("@/lib/execution/sizing");
-  const policy = await loadPolicy(supabase, userId, live && liveStableUsd > 0 ? liveStableUsd : undefined);
+  const liveConnectionId = live ? liveConn?.id : undefined;
+  const policy = await loadPolicy(
+    supabase, userId,
+    live && liveStableUsd > 0 ? liveStableUsd : undefined,
+    liveConnectionId,
+  );
   if (!policy.tradingAllowed) {
     for (const b of policy.blocks) bump(rejectReasons, `policy:${b}`);
     await supabase.from("automation_settings")
@@ -601,7 +606,11 @@ async function runAutonomousCycleCore(
   } = await import("@/lib/portfolioIntel/manager.server");
   let pmCtx: Awaited<ReturnType<typeof loadPortfolioContext>> | null = null;
   try {
-    pmCtx = await loadPortfolioContext(supabase, userId, live && liveStableUsd > 0 ? liveStableUsd : undefined);
+    pmCtx = await loadPortfolioContext(
+      supabase, userId,
+      live && liveStableUsd > 0 ? liveStableUsd : undefined,
+      liveConnectionId,
+    );
     await snapshotHealth(supabase, userId, pmCtx);
     errors.push(`portfolio_health:${pmCtx.health.healthScore}:${pmCtx.mode}`);
     const capital = await runCapitalEngine(supabase, userId);
@@ -802,6 +811,8 @@ async function runAutonomousCycleCore(
       symbol: sig.symbol, side, qty: execQty, entry,
       stopLoss: execStop, takeProfit: execTp,
       confidence: entryEval?.confidence ?? Number(sig.confidence),
+      equity: live && liveStableUsd > 0 ? liveStableUsd : undefined,
+      connectionId: liveConnectionId,
     });
     if (!decision.allowed) {
       bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
@@ -905,6 +916,8 @@ async function runAutonomousCycleCore(
           ai_reasoning: sig.reasoning, ai_confidence: sig.confidence,
           ai_regime: sig.market_regime,
           strategy_id: liveGate?.strategyId ?? null,
+          connection_id: result.isLive ? liveConnectionId ?? null : null,
+          external_position_id: result.isLive ? result.positionId : null,
         }).select().single();
         await supabase.from("orders").update({ position_id: pos?.id })
           .eq("id", result.orderId);
@@ -994,6 +1007,7 @@ export const runAutonomousCycle = createServerFn({ method: "POST" })
 const AutonomousSettingsSchema = z.object({
   mode: z.enum(["manual", "assisted", "autonomous"]),
   autonomous_min_confidence: z.number().min(0.5).max(0.99),
+  exec_min_confidence: z.number().min(0.5).max(0.99),
   autonomous_max_open_positions: z.number().int().min(1).max(20),
   autonomous_cooldown_seconds: z.number().int().min(30).max(3600),
   autonomous_max_consecutive_losses: z.number().int().min(1).max(10),
@@ -1021,6 +1035,7 @@ export const updateAutonomousSettings = createServerFn({ method: "POST" })
     await context.supabase.from("automation_settings").update({
       mode: data.mode,
       autonomous_min_confidence: data.autonomous_min_confidence,
+      exec_min_confidence: data.exec_min_confidence,
       autonomous_max_open_positions: data.autonomous_max_open_positions,
       autonomous_cooldown_seconds: data.autonomous_cooldown_seconds,
       autonomous_max_consecutive_losses: data.autonomous_max_consecutive_losses,

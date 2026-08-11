@@ -62,6 +62,7 @@ export async function loadPolicy(
   supabase: SupabaseClient,
   userId: string,
   equityInput?: number,
+  connectionId?: string,
 ): Promise<PolicySnapshot> {
   const { data: settings } = await supabase
     .from("automation_settings").select("*").eq("user_id", userId).maybeSingle();
@@ -75,14 +76,17 @@ export async function loadPolicy(
   const dayStart = startOfUtcDay().toISOString();
   const weekStart = startOfUtcWeek().toISOString();
 
+  const scope = <T extends { eq: (column: string, value: string) => T; is: (column: string, value: null) => T }>(query: T) =>
+    connectionId ? query.eq("connection_id", connectionId) : query.is("connection_id", null);
+  const dayQuery = scope(supabase.from("positions").select("realized_pnl").eq("user_id", userId)
+    .eq("status", "closed")).gte("closed_at", dayStart);
+  const weekQuery = scope(supabase.from("positions").select("realized_pnl").eq("user_id", userId)
+    .eq("status", "closed")).gte("closed_at", weekStart);
+  const recentQuery = scope(supabase.from("positions").select("realized_pnl, closed_at").eq("user_id", userId)
+    .eq("status", "closed")).order("closed_at", { ascending: false }).limit(10);
+  const openQuery = scope(supabase.from("positions").select("id").eq("user_id", userId).eq("status", "open"));
   const [{ data: dayTrades }, { data: weekTrades }, { data: recent }, { data: open }] = await Promise.all([
-    supabase.from("positions").select("realized_pnl").eq("user_id", userId)
-      .eq("status", "closed").gte("closed_at", dayStart),
-    supabase.from("positions").select("realized_pnl").eq("user_id", userId)
-      .eq("status", "closed").gte("closed_at", weekStart),
-    supabase.from("positions").select("realized_pnl, closed_at").eq("user_id", userId)
-      .eq("status", "closed").order("closed_at", { ascending: false }).limit(10),
-    supabase.from("positions").select("id").eq("user_id", userId).eq("status", "open"),
+    dayQuery, weekQuery, recentQuery, openQuery,
   ]);
 
   const sum = (rows: { realized_pnl: number | null }[] | null) =>
@@ -91,11 +95,21 @@ export async function loadPolicy(
   const dailyPnl = sum(dayTrades);
   const weeklyPnl = sum(weekTrades);
 
-  const storedHw = Number(settings?.equity_high_water ?? 0);
+  let storedHw = Number(settings?.equity_high_water ?? 0);
+  if (connectionId) {
+    const { data: connection } = await supabase.from("exchange_connections")
+      .select("live_equity_high_water").eq("id", connectionId).eq("user_id", userId).maybeSingle();
+    storedHw = Number(connection?.live_equity_high_water ?? 0);
+  }
   const highWater = Math.max(storedHw, equity);
   if (equity > storedHw && equity > 0) {
-    await supabase.from("automation_settings")
-      .update({ equity_high_water: equity }).eq("user_id", userId);
+    if (connectionId) {
+      await supabase.from("exchange_connections").update({ live_equity_high_water: equity })
+        .eq("id", connectionId).eq("user_id", userId);
+    } else {
+      await supabase.from("automation_settings")
+        .update({ equity_high_water: equity }).eq("user_id", userId);
+    }
   }
 
   const dailyBase = equity - dailyPnl;
