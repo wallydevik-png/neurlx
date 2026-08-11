@@ -76,15 +76,24 @@ export async function loadPolicy(
   const dayStart = startOfUtcDay().toISOString();
   const weekStart = startOfUtcWeek().toISOString();
 
-  const scope = <T extends { eq: (column: string, value: string) => T; is: (column: string, value: null) => T }>(query: T) =>
-    connectionId ? query.eq("connection_id", connectionId) : query.is("connection_id", null);
-  const dayQuery = scope(supabase.from("positions").select("realized_pnl").eq("user_id", userId)
-    .eq("status", "closed")).gte("closed_at", dayStart);
-  const weekQuery = scope(supabase.from("positions").select("realized_pnl").eq("user_id", userId)
-    .eq("status", "closed")).gte("closed_at", weekStart);
-  const recentQuery = scope(supabase.from("positions").select("realized_pnl, closed_at").eq("user_id", userId)
-    .eq("status", "closed")).order("closed_at", { ascending: false }).limit(10);
-  const openQuery = scope(supabase.from("positions").select("id").eq("user_id", userId).eq("status", "open"));
+  let dayQuery = supabase.from("positions").select("realized_pnl").eq("user_id", userId)
+    .eq("status", "closed").gte("closed_at", dayStart);
+  let weekQuery = supabase.from("positions").select("realized_pnl").eq("user_id", userId)
+    .eq("status", "closed").gte("closed_at", weekStart);
+  let recentQuery = supabase.from("positions").select("realized_pnl, closed_at").eq("user_id", userId)
+    .eq("status", "closed").order("closed_at", { ascending: false }).limit(10);
+  let openQuery = supabase.from("positions").select("id").eq("user_id", userId).eq("status", "open");
+  if (connectionId) {
+    dayQuery = dayQuery.eq("connection_id", connectionId);
+    weekQuery = weekQuery.eq("connection_id", connectionId);
+    recentQuery = recentQuery.eq("connection_id", connectionId);
+    openQuery = openQuery.eq("connection_id", connectionId);
+  } else {
+    dayQuery = dayQuery.is("connection_id", null);
+    weekQuery = weekQuery.is("connection_id", null);
+    recentQuery = recentQuery.is("connection_id", null);
+    openQuery = openQuery.is("connection_id", null);
+  }
   const [{ data: dayTrades }, { data: weekTrades }, { data: recent }, { data: open }] = await Promise.all([
     dayQuery, weekQuery, recentQuery, openQuery,
   ]);
