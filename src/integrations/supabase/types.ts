@@ -1123,6 +1123,7 @@ export type Database = {
           last_test_at: string | null
           last_test_report: Json | null
           latency_ms: number | null
+          live_equity_high_water: number
           max_notional_per_order: number | null
           oauth_expires_at: string | null
           oauth_token_ciphertext: string | null
@@ -1156,6 +1157,7 @@ export type Database = {
           last_test_at?: string | null
           last_test_report?: Json | null
           latency_ms?: number | null
+          live_equity_high_water?: number
           max_notional_per_order?: number | null
           oauth_expires_at?: string | null
           oauth_token_ciphertext?: string | null
@@ -1189,6 +1191,7 @@ export type Database = {
           last_test_at?: string | null
           last_test_report?: Json | null
           latency_ms?: number | null
+          live_equity_high_water?: number
           max_notional_per_order?: number | null
           oauth_expires_at?: string | null
           oauth_token_ciphertext?: string | null

@@ -230,7 +230,7 @@ export interface PortfolioContext {
  * that mode implies.
  */
 export async function loadPortfolioContext(
-  supabase: SupabaseClient, userId: string, liveEquityOverride?: number,
+  supabase: SupabaseClient, userId: string, liveEquityOverride?: number, connectionId?: string,
 ): Promise<PortfolioContext> {
   const [{ data: settingsRow }, { data: account }, { data: open }, { data: recentClosed }] = await Promise.all([
     supabase.from("automation_settings").select("*").eq("user_id", userId).maybeSingle(),
@@ -290,10 +290,20 @@ export async function loadPortfolioContext(
   const volatility = equity > 0 ? Math.min(100, (stdev / equity) * 100 * 5) : 0;
 
   // High-water mark / drawdown — same approach as the per-trade risk policy.
-  const storedHw = Number(settings["equity_high_water"] ?? 0);
+  let storedHw = Number(settings["equity_high_water"] ?? 0);
+  if (connectionId) {
+    const { data: connection } = await supabase.from("exchange_connections")
+      .select("live_equity_high_water").eq("id", connectionId).eq("user_id", userId).maybeSingle();
+    storedHw = Number(connection?.live_equity_high_water ?? 0);
+  }
   const highWater = Math.max(storedHw, equity);
   if (equity > storedHw && equity > 0) {
-    await supabase.from("automation_settings").update({ equity_high_water: equity }).eq("user_id", userId);
+    if (connectionId) {
+      await supabase.from("exchange_connections").update({ live_equity_high_water: equity })
+        .eq("id", connectionId).eq("user_id", userId);
+    } else {
+      await supabase.from("automation_settings").update({ equity_high_water: equity }).eq("user_id", userId);
+    }
   }
   const drawdownPct = highWater > 0 ? Math.max(0, (highWater - equity) / highWater) : 0;
 

@@ -9,6 +9,8 @@ export interface RiskInput {
   stopLoss: number | null;
   takeProfit: number | null;
   confidence: number;
+  equity?: number;
+  connectionId?: string;
 }
 
 export interface RiskDecision {
@@ -28,7 +30,7 @@ export async function evaluateRisk(
   // Institutional capital-protection layer: drawdown circuit breakers,
   // recovery pauses and concurrent-position caps. Capital preservation first.
   const { loadPolicy, checkCorrelationBudget } = await import("@/lib/risk/policy.server");
-  const policy = await loadPolicy(supabase, userId);
+  const policy = await loadPolicy(supabase, userId, input.equity, input.connectionId);
   if (!policy.tradingAllowed) return { allowed: false, reason: policy.blocks[0] };
 
   if (settings.kill_switch_active) return { allowed: false, reason: "Emergency kill switch is active." };
@@ -58,9 +60,13 @@ export async function evaluateRisk(
     return { allowed: false, reason: `Daily trade limit (${settings.max_trades_per_day}) reached.` };
   }
 
-  const { data: todayClosed } = await supabase
+  let todayClosedQuery = supabase
     .from("positions").select("realized_pnl").eq("user_id", userId)
     .eq("status", "closed").gte("closed_at", dayStart.toISOString());
+  todayClosedQuery = input.connectionId
+    ? todayClosedQuery.eq("connection_id", input.connectionId)
+    : todayClosedQuery.is("connection_id", null);
+  const { data: todayClosed } = await todayClosedQuery;
   const dailyPnl = (todayClosed ?? []).reduce((s, r) => s + Number(r.realized_pnl ?? 0), 0);
   if (dailyPnl < -Number(settings.max_daily_loss)) {
     return { allowed: false, reason: `Daily loss limit ($${settings.max_daily_loss}) breached — trading halted.` };
