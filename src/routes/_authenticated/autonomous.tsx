@@ -15,6 +15,17 @@ import {
 import { Bot, Play, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/autonomous")({
+  head: () => ({
+    meta: [
+      { title: "Autonomous Trading Engine — NeurlX" },
+      { name: "description", content: "Control NeurlX autonomous trading, execution confidence, live connections, and cycle status." },
+      { property: "og:title", content: "Autonomous Trading Engine — NeurlX" },
+      { property: "og:description", content: "Control autonomous trading, confidence thresholds, live connections, and cycle status." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: AutonomousPage,
 });
 
