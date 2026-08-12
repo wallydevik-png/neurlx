@@ -2552,6 +2552,30 @@ export type Database = {
         }
         Relationships: []
       }
+      rejection_stage_stats: {
+        Row: {
+          count: number
+          day: string
+          stage: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          count?: number
+          day?: string
+          stage: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          stage?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       research_hypotheses: {
         Row: {
           created_at: string

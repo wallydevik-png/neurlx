@@ -149,8 +149,13 @@ async function runAutonomousCycleCore(
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
       reject_reasons: rejectReasons, errors: runErrors, live,
     }).eq("id", runId);
+    try {
+      const { recordRejectionStages } = await import("@/lib/autonomous/rejectionStats.server");
+      await recordRejectionStages(supabase, userId, runErrors, rejectReasons);
+    } catch { /* telemetry must never break a cycle */ }
     return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
   };
+
 
   // 1. Load settings
   const { data: settings } = await supabase.from("automation_settings")
@@ -1064,10 +1069,13 @@ export const getAutonomousStatus = createServerFn({ method: "GET" })
         .select("id,label,connector_id,trading_enabled,status")
         .eq("user_id", context.userId),
     ]);
+    const { loadRejectionBreakdown } = await import("@/lib/autonomous/rejectionStats.server");
+    const rejectionBreakdown = await loadRejectionBreakdown(context.supabase, context.userId, 7);
     return {
       settings: settingsRes.data,
       runs: runsRes.data ?? [],
       openPositions: openRes.count ?? 0,
       connections: connsRes.data ?? [],
+      rejectionBreakdown,
     };
   });
