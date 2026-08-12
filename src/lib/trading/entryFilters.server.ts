@@ -19,6 +19,7 @@ import { bollinger, ema, macd, rsi, volumeStats } from "@/lib/analysis/indicator
 import { classifyRegime, type RegimeReport } from "@/lib/analysis/regime";
 import { adx, buildRiskFrame, trendBias, type RiskFrame } from "@/lib/analysis/institutional";
 import { checkEventWindow } from "@/lib/analysis/eventWindow";
+import { evaluateOverExtension } from "@/lib/trading/overExtension";
 
 export interface FilterCheck {
   name: string;
@@ -194,13 +195,16 @@ export async function evaluateEntry(
     weight: 0.05,
   });
 
-  // 9. Bollinger over-extension (do not buy the top of a move) ---------------
-  const bb = bollinger(closes, 20, 2);
-  const extended = bb ? (side === "buy" ? bb.percentB > 0.97 : bb.percentB < 0.03) : false;
+  // 9. Bollinger over-extension (never chase the side you are trading into) --
+  // Evaluated on COMPLETED bars: the forming bar's partial close made %B spike
+  // to the band edges early in each timeframe and produced phantom rejections.
+  const completedCloses = closes.length > 1 ? closes.slice(0, -1) : closes;
+  const bb = bollinger(completedCloses, 20, 2);
+  const oe = evaluateOverExtension(bb?.percentB ?? null, side);
   checks.push({
     name: "Over-extension guard",
-    passed: !extended,
-    detail: bb ? `%B ${(bb.percentB * 100).toFixed(0)}%` : "bands unavailable",
+    passed: !oe.extended,
+    detail: oe.detail,
     weight: 0,
   });
 
