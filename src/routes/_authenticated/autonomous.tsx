@@ -251,6 +251,37 @@ function AutonomousPage() {
         </div>
 
         <Card>
+          <CardHeader><CardTitle>Rejection funnel — last 7 days</CardTitle></CardHeader>
+          <CardContent>
+            {(data?.rejectionBreakdown?.stages ?? []).length === 0 && (
+              <p className="text-sm text-muted-foreground">No rejections recorded yet.</p>
+            )}
+            {(data?.rejectionBreakdown?.stages ?? []).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Biggest bottleneck:{" "}
+                  <span className="font-semibold text-foreground">{data?.rejectionBreakdown?.bottleneck}</span>{" "}
+                  ({data?.rejectionBreakdown?.total} candidate rejections total)
+                </p>
+                {(data?.rejectionBreakdown?.stages ?? []).map(s => (
+                  <div key={s.stage} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-mono">{s.stage}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {s.count} · {(s.share * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded bg-muted">
+                      <div className="h-1.5 rounded bg-primary" style={{ width: `${Math.max(2, s.share * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader><CardTitle>Recent cycles</CardTitle></CardHeader>
           <CardContent>
             {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
