@@ -149,8 +149,13 @@ async function runAutonomousCycleCore(
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
       reject_reasons: rejectReasons, errors: runErrors, live,
     }).eq("id", runId);
+    try {
+      const { recordRejectionStages } = await import("@/lib/autonomous/rejectionStats.server");
+      await recordRejectionStages(supabase, userId, runErrors, rejectReasons);
+    } catch { /* telemetry must never break a cycle */ }
     return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
   };
+
 
   // 1. Load settings
   const { data: settings } = await supabase.from("automation_settings")
