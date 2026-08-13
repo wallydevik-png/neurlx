@@ -108,3 +108,49 @@ export async function loadRejectionBreakdown(
     .sort((a, b) => b.count - a.count);
   return { days, total, stages, bottleneck: stages[0]?.stage ?? null };
 }
+
+export interface HtfSeverityBreakdown {
+  days: number;
+  total: number;
+  buckets: Array<{ agree: number; label: string; count: number; share: number }>;
+}
+
+/**
+ * htf_conflict rejections split by how many higher timeframes agreed with the
+ * proposed direction. Parsed from the cycle logs in autonomous_runs, which
+ * carry the "X/3 agree with BUY" detail per rejected candidate.
+ */
+export async function loadHtfSeverityBreakdown(
+  supabase: SupabaseClient,
+  userId: string,
+  days = 7,
+): Promise<HtfSeverityBreakdown> {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data } = await supabase.from("autonomous_runs")
+    .select("errors").eq("user_id", userId).gte("started_at", since).limit(5000);
+  const counts = [0, 0, 0];
+  for (const row of data ?? []) {
+    const errs = (row as { errors: unknown }).errors;
+    if (!Array.isArray(errs)) continue;
+    for (const e of errs) {
+      if (typeof e !== "string" || !e.startsWith("htf_conflict")) continue;
+      for (const m of e.matchAll(/([0-3])\/3 agree with/g)) {
+        const n = Number(m[1]);
+        if (n >= 0 && n <= 2) counts[n]++;
+      }
+    }
+  }
+  const total = counts.reduce((a, b) => a + b, 0);
+  const labels = [
+    "full contradiction",
+    "partial contradiction",
+    "near-miss, one timeframe against",
+  ];
+  return {
+    days,
+    total,
+    buckets: counts.map((count, agree) => ({
+      agree, label: labels[agree]!, count, share: total > 0 ? count / total : 0,
+    })),
+  };
+}

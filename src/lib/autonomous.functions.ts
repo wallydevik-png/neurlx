@@ -1069,13 +1069,18 @@ export const getAutonomousStatus = createServerFn({ method: "GET" })
         .select("id,label,connector_id,trading_enabled,status")
         .eq("user_id", context.userId),
     ]);
-    const { loadRejectionBreakdown } = await import("@/lib/autonomous/rejectionStats.server");
-    const rejectionBreakdown = await loadRejectionBreakdown(context.supabase, context.userId, 7);
+    const { loadRejectionBreakdown, loadHtfSeverityBreakdown } =
+      await import("@/lib/autonomous/rejectionStats.server");
+    const [rejectionBreakdown, htfSeverity] = await Promise.all([
+      loadRejectionBreakdown(context.supabase, context.userId, 7),
+      loadHtfSeverityBreakdown(context.supabase, context.userId, 7),
+    ]);
     return {
       settings: settingsRes.data,
       runs: runsRes.data ?? [],
       openPositions: openRes.count ?? 0,
       connections: connsRes.data ?? [],
       rejectionBreakdown,
+      htfSeverity,
     };
   });

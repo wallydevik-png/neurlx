@@ -18,6 +18,7 @@ import type { Candle } from "@/lib/analysis/indicators";
 import { bollinger, ema, macd, rsi, volumeStats } from "@/lib/analysis/indicators";
 import { classifyRegime, type RegimeReport } from "@/lib/analysis/regime";
 import { adx, buildRiskFrame, trendBias, type RiskFrame } from "@/lib/analysis/institutional";
+import { isHtfAligned } from "@/lib/trading/htfAlignment";
 import { checkEventWindow } from "@/lib/analysis/eventWindow";
 import { evaluateOverExtension } from "@/lib/trading/overExtension";
 
@@ -111,10 +112,9 @@ export async function evaluateEntry(
 
   // 1. Higher-timeframe alignment -------------------------------------------
   const aligned = [htfBias.d1, htfBias.h4, htfBias.h1].filter(b => b === want).length;
-  const opposed = [htfBias.d1, htfBias.h4, htfBias.h1].filter(b => b !== want && b !== "neutral").length;
   checks.push({
     name: "Higher-timeframe alignment",
-    passed: requireMtf ? aligned >= 2 && opposed === 0 : aligned >= 1,
+    passed: requireMtf ? isHtfAligned(htfBias, want as "bullish" | "bearish") : aligned >= 1,
     detail: `1D ${htfBias.d1}, 4H ${htfBias.h4}, 1H ${htfBias.h1} — ${aligned}/3 agree with ${side.toUpperCase()}`,
     weight: 0.25,
   });
