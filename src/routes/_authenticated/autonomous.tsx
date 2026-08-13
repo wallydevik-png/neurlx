@@ -285,12 +285,20 @@ function AutonomousPage() {
           <CardHeader><CardTitle>htf_conflict breakdown — last 7 days</CardTitle></CardHeader>
           <CardContent>
             {(data?.htfSeverity?.total ?? 0) === 0 && (
-              <p className="text-sm text-muted-foreground">No higher-timeframe conflicts logged yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No higher-timeframe conflicts recorded yet by the counters. Buckets are now taken
+                from the same rolling telemetry as the funnel, so they start accumulating from the
+                next cycle.
+              </p>
             )}
             {(data?.htfSeverity?.total ?? 0) > 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  {data?.htfSeverity?.total} logged conflicting candidates by timeframe agreement
+                  {data?.htfSeverity?.total} of {data?.htfSeverity?.conflictTotal} htf_conflict
+                  rejections classified
+                  {(data?.htfSeverity?.unmeasured ?? 0) > 0 && (
+                    <> · {data?.htfSeverity?.unmeasured} counted before per-severity telemetry existed</>
+                  )}
                 </p>
                 {(data?.htfSeverity?.buckets ?? []).map(b => (
                   <div key={b.agree} className="space-y-1">

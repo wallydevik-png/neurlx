@@ -455,9 +455,25 @@ async function runAutonomousCycleCore(
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
+        // Telemetry must be counted from the *measured* verdicts, not from
+        // viable.length (which includes candidates the HTF budget never
+        // inspected) and not from the 3-candidate sample in the log text.
+        // The histogram below is what both the funnel's htf_conflict total and
+        // the severity breakdown are built from, so they always agree.
+        const rejected = htf.verdicts.filter(v => !v.aligned);
+        const hist = [0, 0, 0];
+        for (const v of rejected) {
+          const m = /([0-3])\/3 agree with/.exec(v.detail);
+          const n = m ? Number(m[1]) : -1;
+          if (n >= 0 && n <= 2) hist[n]++;
+        }
         errors.push(
-          `htf_conflict:${viable.length}_candidates_counter_trend:` +
-          htf.verdicts.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
+          `htf_conflict:${rejected.length}_candidates_counter_trend:` +
+          rejected.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
+        );
+        errors.push(
+          `htf_agree:0=${hist[0]},1=${hist[1]},2=${hist[2]}` +
+          `,unmeasured=${Math.max(0, viable.length - htf.verdicts.length)}`,
         );
       }
       if (!viable.length && verdicts.length) {
