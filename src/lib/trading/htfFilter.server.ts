@@ -56,10 +56,9 @@ export async function checkHtfAlignment(
     return { symbol, side, aligned: false, bias: { d1, h4, h1 }, detail: "htf candles unavailable" };
   }
   const agree = all.filter(b => b === want).length;
-  const oppose = all.filter(b => b !== want && b !== "neutral" && b !== "unknown").length;
   return {
     symbol, side,
-    aligned: agree >= 2 && oppose === 0,
+    aligned: isHtfAligned({ d1, h4, h1 }, want),
     bias: { d1, h4, h1 },
     detail: `1D ${d1}, 4H ${h4}, 1H ${h1} — ${agree}/3 agree with ${side.toUpperCase()}`,
   };
