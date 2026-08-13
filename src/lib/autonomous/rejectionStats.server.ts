@@ -124,32 +124,40 @@ export async function loadRejectionBreakdown(
 export interface HtfSeverityBreakdown {
   days: number;
   total: number;
+  /** htf_conflict total from the funnel, for reconciliation with `total`. */
+  conflictTotal: number;
+  /** Rejected candidates the HTF budget never inspected (conflictTotal - total). */
+  unmeasured: number;
   buckets: Array<{ agree: number; label: string; count: number; share: number }>;
 }
 
 /**
  * htf_conflict rejections split by how many higher timeframes agreed with the
- * proposed direction. Parsed from the cycle logs in autonomous_runs, which
- * carry the "X/3 agree with BUY" detail per rejected candidate.
+ * proposed direction.
+ *
+ * Read from public.rejection_stage_stats — the SAME rolling counters that feed
+ * the funnel — not by re-parsing cycle log text. The log line only ever carried
+ * a 3-candidate sample, which is why the old parsed breakdown reported a small
+ * fraction of the funnel's htf_conflict total.
  */
 export async function loadHtfSeverityBreakdown(
   supabase: SupabaseClient,
   userId: string,
   days = 7,
 ): Promise<HtfSeverityBreakdown> {
-  const since = new Date(Date.now() - days * 86_400_000).toISOString();
-  const { data } = await supabase.from("autonomous_runs")
-    .select("errors").eq("user_id", userId).gte("started_at", since).limit(5000);
+  const from = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+  const { data } = await supabase.from("rejection_stage_stats")
+    .select("stage,count").eq("user_id", userId).gte("day", from)
+    .in("stage", [...HTF_BUCKET_STAGES, "htf_conflict"]);
   const counts = [0, 0, 0];
-  for (const row of data ?? []) {
-    const errs = (row as { errors: unknown }).errors;
-    if (!Array.isArray(errs)) continue;
-    for (const e of errs) {
-      if (typeof e !== "string" || !e.startsWith("htf_conflict")) continue;
-      for (const m of e.matchAll(/([0-3])\/3 agree with/g)) {
-        const n = Number(m[1]);
-        if (n >= 0 && n <= 2) counts[n]++;
-      }
+  let conflictTotal = 0;
+  for (const r of data ?? []) {
+    const n = Number(r.count) || 0;
+    const stage = r.stage as string;
+    if (stage === "htf_conflict") conflictTotal += n;
+    else {
+      const idx = Number(stage.slice(-1));
+      if (idx >= 0 && idx <= 2) counts[idx] += n;
     }
   }
   const total = counts.reduce((a, b) => a + b, 0);
@@ -161,6 +169,8 @@ export async function loadHtfSeverityBreakdown(
   return {
     days,
     total,
+    conflictTotal,
+    unmeasured: Math.max(0, conflictTotal - total),
     buckets: counts.map((count, agree) => ({
       agree, label: labels[agree]!, count, share: total > 0 ? count / total : 0,
     })),
