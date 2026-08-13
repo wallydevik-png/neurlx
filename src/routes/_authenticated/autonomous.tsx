@@ -282,6 +282,35 @@ function AutonomousPage() {
         </Card>
 
         <Card>
+          <CardHeader><CardTitle>htf_conflict breakdown — last 7 days</CardTitle></CardHeader>
+          <CardContent>
+            {(data?.htfSeverity?.total ?? 0) === 0 && (
+              <p className="text-sm text-muted-foreground">No higher-timeframe conflicts logged yet.</p>
+            )}
+            {(data?.htfSeverity?.total ?? 0) > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  {data?.htfSeverity?.total} logged conflicting candidates by timeframe agreement
+                </p>
+                {(data?.htfSeverity?.buckets ?? []).map(b => (
+                  <div key={b.agree} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-mono">{b.agree}/3 agree ({b.label})</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {b.count} · {(b.share * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded bg-muted">
+                      <div className="h-1.5 rounded bg-primary" style={{ width: `${Math.max(2, b.share * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader><CardTitle>Recent cycles</CardTitle></CardHeader>
           <CardContent>
             {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
