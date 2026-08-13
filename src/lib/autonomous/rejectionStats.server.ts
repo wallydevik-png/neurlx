@@ -111,6 +111,9 @@ export async function loadRejectionBreakdown(
   for (const r of data ?? []) {
     totals.set(r.stage as string, (totals.get(r.stage as string) ?? 0) + (Number(r.count) || 0));
   }
+  // Severity buckets are stored in the same table but are a *sub-division* of
+  // htf_conflict, so they must not inflate the funnel totals.
+  for (const s of HTF_BUCKET_STAGES) totals.delete(s);
   const total = [...totals.values()].reduce((a, b) => a + b, 0);
   const stages = [...totals.entries()]
     .map(([stage, count]) => ({ stage, count, share: total > 0 ? count / total : 0 }))
