@@ -56,6 +56,8 @@ export function summarizeCycle(
     else if (e.startsWith("htf_conflict")) {
       const m = /htf_conflict:(\d+)_candidates/.exec(e);
       add("htf_conflict", m ? Number(m[1]) : 1);
+    } else if (e.startsWith("htf_agree:")) {
+      for (const m of e.matchAll(/([0-2])=(\d+)/g)) add(`htf_agree_${m[1]}`, Number(m[2]) || 0);
     } else if (e.startsWith("committee_no_trade")) add("committee_no_trade", 1);
   }
   return out;
