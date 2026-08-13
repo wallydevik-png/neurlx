@@ -14,6 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCandlesWithSource } from "@/lib/marketdata/service.server";
 import { trendBias } from "@/lib/analysis/institutional";
+import { isHtfAligned } from "@/lib/trading/htfAlignment";
 
 export interface HtfVerdict {
   symbol: string;
