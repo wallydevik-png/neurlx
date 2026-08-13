@@ -18,6 +18,7 @@ import type { Candle } from "@/lib/analysis/indicators";
 import { bollinger, ema, macd, rsi, volumeStats } from "@/lib/analysis/indicators";
 import { classifyRegime, type RegimeReport } from "@/lib/analysis/regime";
 import { adx, buildRiskFrame, trendBias, type RiskFrame } from "@/lib/analysis/institutional";
+import { isHtfAligned } from "@/lib/trading/htfAlignment";
 import { checkEventWindow } from "@/lib/analysis/eventWindow";
 import { evaluateOverExtension } from "@/lib/trading/overExtension";
 
