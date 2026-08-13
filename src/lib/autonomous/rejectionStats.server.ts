@@ -22,8 +22,15 @@ export const REJECTION_STAGES = [
   "wallet",
   "policy",
   "no_open_slots",
+  // htf_conflict severity buckets. Stored alongside the funnel stages so the
+  // breakdown and the funnel are literally the same dataset; hidden from the
+  // funnel list itself to avoid double counting htf_conflict.
+  "htf_agree_0",
+  "htf_agree_1",
+  "htf_agree_2",
   "other",
 ] as const;
+const HTF_BUCKET_STAGES = ["htf_agree_0", "htf_agree_1", "htf_agree_2"] as const;
 export type RejectionStage = (typeof REJECTION_STAGES)[number];
 
 function stageOfKey(key: string): RejectionStage {
