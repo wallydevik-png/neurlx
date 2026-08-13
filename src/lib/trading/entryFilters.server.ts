@@ -111,10 +111,9 @@ export async function evaluateEntry(
 
   // 1. Higher-timeframe alignment -------------------------------------------
   const aligned = [htfBias.d1, htfBias.h4, htfBias.h1].filter(b => b === want).length;
-  const opposed = [htfBias.d1, htfBias.h4, htfBias.h1].filter(b => b !== want && b !== "neutral").length;
   checks.push({
     name: "Higher-timeframe alignment",
-    passed: requireMtf ? aligned >= 2 && opposed === 0 : aligned >= 1,
+    passed: requireMtf ? isHtfAligned(htfBias, want as "bullish" | "bearish") : aligned >= 1,
     detail: `1D ${htfBias.d1}, 4H ${htfBias.h4}, 1H ${htfBias.h1} — ${aligned}/3 agree with ${side.toUpperCase()}`,
     weight: 0.25,
   });
