@@ -437,7 +437,6 @@ async function runAutonomousCycleCore(
           // evaluateEntry. Apply that authoritative momentum rule here so the
           // search continues to the next instrument instead of starving.
           && v.entryMomentumConfirmed
-          && v.base.regime !== "low_volatility"
           && v.base.regime !== "extreme_risk");
       // Counter-trend candidates are guaranteed to fail the entry gate's
       // higher-timeframe alignment check, so they must not consume the batch.
@@ -450,7 +449,7 @@ async function runAutonomousCycleCore(
         viable,
         v => v.consensusDirection as "buy" | "sell",
         userId,
-        Math.min(viable.length, 8),
+        Math.min(viable.length, 12),
         6,
       );
       const picks = htf.aligned.slice(0, candidateLimit);
@@ -588,8 +587,11 @@ async function runAutonomousCycleCore(
       .eq("user_id", userId);
     return finish(policy.blocks[0], live);
   }
+  // The hidden 0.9 floor overrode the user's own Min Confidence setting and
+  // made the composite gate unreachable in anything but a textbook trend.
+  // Respect the configured value with a 0.70 sanity floor.
   const institutionalMinConf = Math.max(
-    Number(settings.autonomous_min_confidence ?? 0.9), 0.9,
+    Number(settings.autonomous_min_confidence ?? 0.8), 0.7,
   );
 
   // Self-learning: automatically review performance every 100 closed trades

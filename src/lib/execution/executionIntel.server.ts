@@ -91,7 +91,7 @@ export async function loadExecutionConfig(
     : DEFAULT_WEIGHTS;
   return {
     enabled: s?.exec_intel_enabled !== false,
-    minConfidence: Math.max(0.5, Math.min(0.99, Number(s?.exec_min_confidence ?? 0.9))),
+    minConfidence: Math.max(0.5, Math.min(0.99, Number(s?.exec_min_confidence ?? 0.75))),
     sessionFilterEnabled: s?.exec_session_filter_enabled !== false,
     newsFilterEnabled: s?.news_filter_enabled !== false,
     maxSpreadBps: Number(s?.max_spread_bps ?? 30),
@@ -139,7 +139,7 @@ export async function evaluateExecution(
 ): Promise<ExecutionVerdict> {
   const cfg = args.config
     ?? (supabase && userId ? await loadExecutionConfig(supabase, userId) : {
-      enabled: true, minConfidence: 0.9, sessionFilterEnabled: true, newsFilterEnabled: true,
+      enabled: true, minConfidence: 0.75, sessionFilterEnabled: true, newsFilterEnabled: true,
       maxSpreadBps: 30, minRR: 2, maxRR: 5, weights: DEFAULT_WEIGHTS, modelVersion: 1,
     });
 
@@ -189,7 +189,7 @@ export async function evaluateExecution(
     const ev = checkEventWindow();
     if (ev.active) rejections.push(`News/event window: ${ev.reason}`);
   }
-  if (cfg.sessionFilterEnabled && timing.sessionScore < 40) {
+  if (cfg.sessionFilterEnabled && timing.sessionScore < 25) {
     rejections.push(`Session "${session.replace(/_/g, " ")}" scores ${timing.sessionScore} — outside tradeable hours`);
   }
   if (timing.structure === (args.side === "buy" ? "bos_down" : "bos_up")
