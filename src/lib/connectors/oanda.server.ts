@@ -39,6 +39,7 @@ export function createOandaConnector(
 
   return {
     id: "oanda", displayName: `OANDA (${env})`, supportsRealExecution: hasCreds,
+    isMarginVenue: true,
 
     async verify() {
       try {
