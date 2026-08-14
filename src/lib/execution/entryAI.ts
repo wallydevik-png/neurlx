@@ -237,7 +237,7 @@ export function multiTimeframeConfirmation(
   return {
     biases: filled, aligned, opposed,
     score: +score.toFixed(1),
-    confirmed: htfAligned >= 2 && htfOpposed === 0,
+    confirmed: htfAligned >= 2 && htfOpposed <= 1,
   };
 }
 

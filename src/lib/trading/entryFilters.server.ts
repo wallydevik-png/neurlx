@@ -28,6 +28,12 @@ export interface FilterCheck {
   detail: string;
   /** Weight this check contributes to the composite confidence (0..1). */
   weight: number;
+  /**
+   * Hard gates veto the trade on their own. Soft checks only cost confidence.
+   * Previously EVERY check was a hard gate, so nine independent conditions had
+   * to be simultaneously true — that is what drove the 0% conversion rate.
+   */
+  hard?: boolean;
 }
 
 export interface EntryEvaluation {
@@ -65,7 +71,7 @@ export async function evaluateEntry(
   cfg: EntryFilterConfig = {},
   userId?: string | null,
 ): Promise<EntryEvaluation> {
-  const minConfidence = cfg.minConfidence ?? 0.9;
+  const minConfidence = cfg.minConfidence ?? 0.65;
   const requireMtf = cfg.requireMtf ?? true;
   const newsFilterEnabled = cfg.newsFilterEnabled ?? true;
   const maxSpreadBps = cfg.maxSpreadBps ?? 30;
@@ -117,6 +123,7 @@ export async function evaluateEntry(
     passed: requireMtf ? isHtfAligned(htfBias, want as "bullish" | "bearish") : aligned >= 1,
     detail: `1D ${htfBias.d1}, 4H ${htfBias.h4}, 1H ${htfBias.h1} — ${aligned}/3 agree with ${side.toUpperCase()}`,
     weight: 0.25,
+    hard: true,
   });
 
   // 2. Entry-timeframe momentum ---------------------------------------------
@@ -125,9 +132,14 @@ export async function evaluateEntry(
   const r = rsi(closes, 14);
   const e20 = ema(closes, 20);
   const e50 = ema(closes, 50);
-  const momentumOk = side === "buy"
-    ? !!m && m.histogram > 0 && (r ?? 50) > 45 && (r ?? 50) < 78 && (e20 ?? 0) >= (e50 ?? 0)
-    : !!m && m.histogram < 0 && (r ?? 50) < 55 && (r ?? 50) > 22 && (e20 ?? 0) <= (e50 ?? 0);
+  // Same 2-of-3 rule the committee now uses, so the pre-filter and the
+  // authoritative gate can never disagree about momentum.
+  const hist = m?.histogram ?? 0;
+  const rv = r ?? 50;
+  const momentumConds = side === "buy"
+    ? [hist >= 0, rv > 40 && rv < 82, (e20 ?? 0) >= (e50 ?? 0)]
+    : [hist <= 0, rv < 60 && rv > 18, (e20 ?? 0) <= (e50 ?? 0)];
+  const momentumOk = !!m && momentumConds.filter(Boolean).length >= 2;
   checks.push({
     name: "Entry momentum confirmation",
     passed: momentumOk,
@@ -145,7 +157,7 @@ export async function evaluateEntry(
 
   // 4. Trend strength --------------------------------------------------------
   const a = adx(entryCandles, 14);
-  const strengthOk = regime.regime === "ranging" ? true : (a?.adx ?? 0) >= 20;
+  const strengthOk = regime.regime === "ranging" ? true : (a?.adx ?? 0) >= 15;
   checks.push({
     name: "Trend strength (ADX)",
     passed: strengthOk,
@@ -155,7 +167,7 @@ export async function evaluateEntry(
 
   // 5. Volume / liquidity ----------------------------------------------------
   const v = volumeStats(entryCandles, 20);
-  const volumeOk = !v || v.ratio >= 0.7;
+  const volumeOk = !v || v.ratio >= 0.5;
   checks.push({
     name: "Liquidity confirmation",
     passed: volumeOk,
@@ -171,6 +183,7 @@ export async function evaluateEntry(
   checks.push({
     name: "Structural risk frame",
     passed: !!frame && frame.riskReward >= (cfg.minRR ?? 2),
+    hard: true,
     detail: frame
       ? `Stop from ${frame.basis} at ${frame.stopLoss}, target ${frame.takeProfit} (1:${frame.riskReward})`
       : "Could not derive an ATR/structure stop",
@@ -182,6 +195,7 @@ export async function evaluateEntry(
   checks.push({
     name: "Spread budget",
     passed: !spreadKnown || (cfg.spreadBps as number) <= maxSpreadBps,
+    hard: true,
     detail: spreadKnown ? `${(cfg.spreadBps as number).toFixed(1)} bps vs ${maxSpreadBps} bps budget` : "spread not reported by venue",
     weight: 0.05,
   });
@@ -191,6 +205,7 @@ export async function evaluateEntry(
   checks.push({
     name: "News / event window",
     passed: !newsFilterEnabled || !ev.active,
+    hard: true,
     detail: ev.active ? `Blocked: ${ev.reason}` : "No high-impact window",
     weight: 0.05,
   });
@@ -206,6 +221,7 @@ export async function evaluateEntry(
     passed: !oe.extended,
     detail: oe.detail,
     weight: 0,
+    hard: true,
   });
 
   const totalWeight = checks.reduce((s, c) => s + c.weight, 0);
@@ -213,7 +229,12 @@ export async function evaluateEntry(
   const base = totalWeight > 0 ? earned / totalWeight : 0;
   const confidence = Math.max(0, Math.min(0.99, base * regime.confidenceMultiplier));
 
-  const rejections = checks.filter(c => !c.passed).map(c => `${c.name}: ${c.detail}`);
+  // Only hard gates veto outright. Soft checks (momentum, regime tradability,
+  // ADX strength, liquidity) reduce the composite score instead, and the
+  // confidence threshold below decides whether the remaining quality is
+  // sufficient. Stop-loss/target validity, spread, news and over-extension
+  // remain absolute.
+  const rejections = checks.filter(c => !c.passed && c.hard).map(c => `${c.name}: ${c.detail}`);
   if (confidence < minConfidence) {
     rejections.push(`Composite confidence ${(confidence * 100).toFixed(1)}% below ${(minConfidence * 100).toFixed(0)}% threshold`);
   }

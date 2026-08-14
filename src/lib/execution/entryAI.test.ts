@@ -93,9 +93,14 @@ describe("multi-timeframe confirmation", () => {
     expect(r.confirmed).toBe(true);
     expect(r.score).toBeGreaterThan(85);
   });
-  it("rejects when a higher timeframe opposes", () => {
+  it("allows a single opposing higher timeframe (pullback entry)", () => {
     const r = multiTimeframeConfirmation(
       { "1d": "bearish", "4h": "bullish", "1h": "bullish", "15m": "bullish", "5m": "bullish" }, "buy");
+    expect(r.confirmed).toBe(true);
+  });
+  it("rejects when two higher timeframes oppose", () => {
+    const r = multiTimeframeConfirmation(
+      { "1d": "bearish", "4h": "bearish", "1h": "bullish", "15m": "bullish", "5m": "bullish" }, "buy");
     expect(r.confirmed).toBe(false);
   });
 });

@@ -15,10 +15,13 @@ export function isHtfAligned(bias: HtfBias, want: "bullish" | "bearish"): boolea
   const all = [bias.d1, bias.h4, bias.h1];
   const opposes = (b: Bias) => b !== want && b !== "neutral" && b !== "unknown";
   const agree = all.filter(b => b === want).length;
-  if (agree < 2) return false;
-  // Slow timeframes must never contradict the trade.
-  if (opposes(bias.d1) || opposes(bias.h4)) return false;
-  return true; // 1H may oppose (pullback entry) or be neutral.
+  const opposed = all.filter(opposes).length;
+  // Recalibrated: a 2/3 majority is enough regardless of WHICH timeframe is
+  // the dissenter. 1D-against-with-4H+1H-agreeing is a daily pullback, the
+  // mirror of the 1H pullback case, and 7 days of telemetry showed those
+  // near-misses were the single largest rejection bucket in the whole engine.
+  // Two or more opposing timeframes is still a hard reject.
+  return agree >= 2 && opposed <= 1;
 }
 
 export function htfDetail(bias: HtfBias, side: "buy" | "sell"): string {

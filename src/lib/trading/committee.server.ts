@@ -54,9 +54,16 @@ function entryMomentum(
   const r = rsi(closes, 14);
   const e20 = ema(closes, 20);
   const e50 = ema(closes, 50);
-  const confirmed = side === "buy"
-    ? !!m && m.histogram > 0 && (r ?? 50) > 45 && (r ?? 50) < 78 && (e20 ?? 0) >= (e50 ?? 0)
-    : !!m && m.histogram < 0 && (r ?? 50) < 55 && (r ?? 50) > 22 && (e20 ?? 0) <= (e50 ?? 0);
+  // Recalibrated: 2 of 3 momentum conditions instead of all 3, with wider RSI
+  // bands. Requiring MACD + RSI + EMA to agree simultaneously on a 15m bar is
+  // a coincidence filter, not a quality filter — it rejected setups where the
+  // trend was clean but the histogram happened to be crossing zero.
+  const hist = m?.histogram ?? 0;
+  const rv = r ?? 50;
+  const conds = side === "buy"
+    ? [hist >= 0, rv > 40 && rv < 82, (e20 ?? 0) >= (e50 ?? 0)]
+    : [hist <= 0, rv < 60 && rv > 18, (e20 ?? 0) <= (e50 ?? 0)];
+  const confirmed = !!m && conds.filter(Boolean).length >= 2;
   return {
     confirmed,
     detail: `MACD ${m?.histogram.toFixed(8) ?? "n/a"}, RSI ${r?.toFixed(1) ?? "n/a"}, EMA20/50 ${e20 != null && e50 != null ? (e20 >= e50 ? "bullish" : "bearish") : "n/a"}`,
@@ -80,8 +87,8 @@ function reweight(base: AiSignal, weights: Record<string, number>): AnalystVote 
   // Lowered direction floor from 0.15 → 0.08 so ranging markets still surface
   // the strongest available bias instead of everyone voting "wait".
   let direction: Direction = "wait";
-  if (score > 0.08) direction = "buy";
-  else if (score < -0.08) direction = "sell";
+  if (score > 0.05) direction = "buy";
+  else if (score < -0.05) direction = "sell";
   return {
     analyst: "Trend",
     direction,
