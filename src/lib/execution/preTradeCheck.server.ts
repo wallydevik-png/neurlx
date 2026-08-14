@@ -173,7 +173,41 @@ export async function runPreTradeCheck(
       await logDecision(supabase, userId, input.connectionId, false, msg, {});
       return { ok: false, reason: msg };
     }
+  } else if (connector.isMarginVenue) {
+    // Margin/CFD venue (MT5, OANDA): a sell opens a short position and
+    // never requires already holding the underlying asset — checking spot
+    // inventory here (as the branch below does) would reject every single
+    // sell order unconditionally, since a margin account's getBalances()
+    // only ever returns the account's own currency balance, never a
+    // per-asset entry. Check buying power for the short the same way a buy
+    // is checked, not asset ownership.
+    try {
+      const balances = await connector.getBalances();
+      const stableBalances = balances.filter(b => b.currency === "USDT" || b.currency === "USD" || b.currency === "USDC" || !isNaN(Number(b.available)));
+      availableUsd = stableBalances.reduce((sum, b) => sum + Math.max(0, b.available), 0);
+      const need = adjustedQty * input.estPrice * 1.005;
+      if (need > availableUsd) {
+        let resizedQty = availableUsd / (input.estPrice * 1.005);
+        if (stepSize) resizedQty = Math.floor(resizedQty / stepSize) * stepSize;
+        resizedQty = Number(resizedQty.toFixed(8));
+        const resizedNotional = resizedQty * input.estPrice;
+        if (resizedQty > 0 && (!minQty || resizedQty >= minQty) && (!minNotional || resizedNotional >= minNotional)) {
+          adjustedQty = resizedQty;
+        } else {
+          const minNeeded = minNotional ? ` Minimum venue notional is $${minNotional.toFixed(2)}.` : "";
+          const msg = `Insufficient margin to open short: need up to $${need.toFixed(2)}, have $${availableUsd.toFixed(2)}.${minNeeded}`;
+          await logDecision(supabase, userId, input.connectionId, false, msg, { need, availableUsd, minNotional, resizedQty });
+          return { ok: false, reason: msg };
+        }
+      }
+    } catch (e) {
+      const msg = `Margin check failed: ${e instanceof Error ? e.message : String(e)}`;
+      await logDecision(supabase, userId, input.connectionId, false, msg, {});
+      return { ok: false, reason: msg };
+    }
   } else {
+    // Spot exchange (Bybit, Binance, Kraken spot, Coinbase, ...): selling
+    // requires actually holding the asset — this check is correct here.
     try {
       const balances = await connector.getBalances();
       const base = balances.find(b => b.currency.toUpperCase() === baseAsset);
