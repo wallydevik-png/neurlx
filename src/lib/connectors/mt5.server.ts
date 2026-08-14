@@ -635,6 +635,7 @@ export function createMt5Connector(
   return {
     id: brokerId, displayName: label,
     supportsRealExecution: canProvision() || isReady(),
+    isMarginVenue: true,
 
     async verify() {
       try {
