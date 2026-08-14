@@ -71,7 +71,7 @@ export async function evaluateEntry(
   cfg: EntryFilterConfig = {},
   userId?: string | null,
 ): Promise<EntryEvaluation> {
-  const minConfidence = cfg.minConfidence ?? 0.8;
+  const minConfidence = cfg.minConfidence ?? 0.65;
   const requireMtf = cfg.requireMtf ?? true;
   const newsFilterEnabled = cfg.newsFilterEnabled ?? true;
   const maxSpreadBps = cfg.maxSpreadBps ?? 30;

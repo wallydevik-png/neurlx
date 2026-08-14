@@ -591,7 +591,7 @@ async function runAutonomousCycleCore(
   // made the composite gate unreachable in anything but a textbook trend.
   // Respect the configured value with a 0.70 sanity floor.
   const institutionalMinConf = Math.max(
-    Number(settings.autonomous_min_confidence ?? 0.8), 0.7,
+    Number(settings.autonomous_min_confidence ?? 0.65), 0.55,
   );
 
   // Self-learning: automatically review performance every 100 closed trades
