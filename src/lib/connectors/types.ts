@@ -208,6 +208,15 @@ export interface TradingConnector {
     price?: number,
   ): Promise<MarginEstimate | null>;
   supportsRealExecution?: boolean;
+  /** True for CFD/margin venues (MT5, OANDA, ...) where a "sell" opens a
+   *  short position and never requires already holding the underlying
+   *  asset — as opposed to spot exchanges (Bybit, Binance, Kraken spot,
+   *  Coinbase), where selling something you don't hold is impossible.
+   *  Pre-trade checks must branch on this: applying spot inventory rules to
+   *  a margin venue rejects every single sell order unconditionally, since
+   *  margin-account getBalances() never returns a per-asset balance to
+   *  begin with. */
+  isMarginVenue?: boolean;
   /** Optional: closes (fully or partially) an already-open broker-side
    *  position by its broker ticket/position ID. Distinct from placeOrder,
    *  which opens new exposure — this targets an existing position directly
