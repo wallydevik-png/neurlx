@@ -48,9 +48,9 @@ describe("buildTradeRequest", () => {
       actionType: "ORDER_TYPE_SELL", symbol: "BTCUSD", volume: 0.1, stopLoss: 71000,
     });
   });
-  it("requires openPrice on pending orders", () => {
-    expect(() => buildTradeRequest({ ...base, orderType: "limit" }, "BTCUSD"))
-      .toThrow(/positive openPrice/);
+  it("downgrades a pending order with no price to market", () => {
+    expect(buildTradeRequest({ ...base, orderType: "limit" }, "BTCUSD"))
+      .toMatchObject({ actionType: "ORDER_TYPE_BUY" });
     expect(buildTradeRequest({ ...base, orderType: "limit", limitPrice: 60000 }, "BTCUSD"))
       .toMatchObject({ actionType: "ORDER_TYPE_BUY_LIMIT", openPrice: 60000 });
   });

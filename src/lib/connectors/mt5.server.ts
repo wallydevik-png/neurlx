@@ -194,32 +194,128 @@ export function sanitizeClientId(raw: string | undefined): string | undefined {
 }
 
 
+export interface MtPriceContext {
+  bid?: number | null;
+  ask?: number | null;
+  digits?: number | null;
+  /** Broker's minimum distance (in price units) for pending/SL/TP levels. */
+  minDistance?: number | null;
+}
+
+export interface SanitizedPrices {
+  actionType: MtAction;
+  openPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  notes: string[];
+}
+
+function roundTo(value: number, digits: number): number {
+  return Number(value.toFixed(Math.max(0, Math.min(8, digits))));
+}
+
+/**
+ * TRADE_RETCODE_INVALID_PRICE (10015) came from three things, all fixed here:
+ *   1. openPrice / stopLoss / takeProfit sent with full float precision
+ *      instead of the symbol's `digits` grid.
+ *   2. Limit prices on the WRONG side of the market (a buy_limit above the
+ *      ask, a sell_limit below the bid) — MT5 rejects those outright. We fall
+ *      back to a market order rather than dropping the trade.
+ *   3. Stop-loss / take-profit on the wrong side of entry (or inside the
+ *      broker's minimum stop distance) — those levels are dropped, never sent.
+ */
+export function sanitizeOrderPrices(
+  actionType: MtAction,
+  input: { limitPrice?: number | null; stopLoss?: number | null; takeProfit?: number | null },
+  ctx: MtPriceContext,
+): SanitizedPrices {
+  const notes: string[] = [];
+  const digits = Number.isFinite(Number(ctx.digits)) && Number(ctx.digits) >= 0
+    ? Number(ctx.digits) : 5;
+  const bid = Number(ctx.bid) > 0 ? Number(ctx.bid) : null;
+  const ask = Number(ctx.ask) > 0 ? Number(ctx.ask) : null;
+  const mid = bid && ask ? (bid + ask) / 2 : (bid ?? ask);
+  const minDist = Number(ctx.minDistance) > 0 ? Number(ctx.minDistance) : 0;
+
+  const isBuy = actionType === MT_ACTIONS.buy_market || actionType === MT_ACTIONS.buy_limit
+    || actionType === MT_ACTIONS.buy_stop;
+  let action = actionType;
+  let openPrice = Number(input.limitPrice) > 0 ? roundTo(Number(input.limitPrice), digits) : undefined;
+
+  const isPending = action !== MT_ACTIONS.buy_market && action !== MT_ACTIONS.sell_market;
+  if (isPending) {
+    const toMarket = (why: string) => {
+      notes.push(`${why} — submitted as a market order instead`);
+      action = isBuy ? MT_ACTIONS.buy_market : MT_ACTIONS.sell_market;
+      openPrice = undefined;
+    };
+    if (!openPrice) {
+      toMarket("no valid pending price");
+    } else if (action === MT_ACTIONS.buy_limit && ask !== null && openPrice >= ask - minDist) {
+      toMarket(`buy limit ${openPrice} is not below the ask ${ask}`);
+    } else if (action === MT_ACTIONS.sell_limit && bid !== null && openPrice <= bid + minDist) {
+      toMarket(`sell limit ${openPrice} is not above the bid ${bid}`);
+    } else if (action === MT_ACTIONS.buy_stop && ask !== null && openPrice <= ask + minDist) {
+      toMarket(`buy stop ${openPrice} is not above the ask ${ask}`);
+    } else if (action === MT_ACTIONS.sell_stop && bid !== null && openPrice >= bid - minDist) {
+      toMarket(`sell stop ${openPrice} is not below the bid ${bid}`);
+    }
+  } else {
+    openPrice = undefined;
+  }
+
+  const reference = openPrice ?? (isBuy ? (ask ?? mid) : (bid ?? mid));
+
+  const level = (raw: number | null | undefined, kind: "stopLoss" | "takeProfit") => {
+    if (!(Number(raw) > 0)) return undefined;
+    const v = roundTo(Number(raw), digits);
+    if (!reference) return v;
+    const wantAbove = kind === "takeProfit" ? isBuy : !isBuy;
+    const ok = wantAbove ? v > reference + minDist : v < reference - minDist;
+    if (!ok) {
+      notes.push(`${kind} ${v} is on the wrong side of ${reference} — dropped`);
+      return undefined;
+    }
+    return v;
+  };
+
+  return {
+    actionType: action,
+    ...(openPrice ? { openPrice } : {}),
+    ...(level(input.stopLoss, "stopLoss") ? { stopLoss: level(input.stopLoss, "stopLoss") } : {}),
+    ...(level(input.takeProfit, "takeProfit") ? { takeProfit: level(input.takeProfit, "takeProfit") } : {}),
+    notes,
+  };
+}
+
 /** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
 export function buildTradeRequest(
   input: PlaceOrderInput,
   mtSymbol: string,
+  ctx: MtPriceContext = {},
 ): Record<string, unknown> {
-  const actionType = resolveTradeAction(input.side, input.orderType);
-  if (!actionType) throw new Error(`Refusing to submit MT trade with undefined action for ${mtSymbol}`);
+  const resolved = resolveTradeAction(input.side, input.orderType);
+  if (!resolved) throw new Error(`Refusing to submit MT trade with undefined action for ${mtSymbol}`);
   const volume = Number(input.qty);
   if (!(volume > 0)) throw new Error(`Invalid MT volume ${input.qty} for ${mtSymbol}`);
-  const isPending = actionType !== MT_ACTIONS.buy_market && actionType !== MT_ACTIONS.sell_market;
-  if (isPending && !(Number(input.limitPrice) > 0)) {
-    throw new Error(`Pending order on ${mtSymbol} requires a positive openPrice`);
-  }
+
+  const priced = sanitizeOrderPrices(resolved, {
+    limitPrice: input.limitPrice ?? null,
+    stopLoss: input.stopLoss ?? null,
+    takeProfit: input.takeProfit ?? null,
+  }, ctx);
+  if (priced.notes.length) console.log(`[MT5] price sanitisation ${mtSymbol}: ${priced.notes.join("; ")}`);
+
   const clientId = sanitizeClientId(input.clientOrderId);
   return {
-    actionType,
+    actionType: priced.actionType,
     symbol: mtSymbol,
     volume,
-    ...(isPending && input.limitPrice ? { openPrice: Number(input.limitPrice) } : {}),
-    // Native broker-side protection. Previously this only fired when
-    // input.stopPrice happened to be set (the *entry* trigger price for
-    // stop/stop-limit orders) — meaning ordinary market-entry trades (the
-    // vast majority) never got a stop-loss or take-profit sent to MT5 at
-    // all. stopLoss/takeProfit are now their own dedicated fields.
-    ...(input.stopLoss ? { stopLoss: Number(input.stopLoss) } : {}),
-    ...(input.takeProfit ? { takeProfit: Number(input.takeProfit) } : {}),
+    ...(priced.openPrice ? { openPrice: priced.openPrice } : {}),
+    // Native broker-side protection: stopLoss/takeProfit are dedicated fields,
+    // rounded to the symbol's digit grid and validated against the entry side.
+    ...(priced.stopLoss ? { stopLoss: priced.stopLoss } : {}),
+    ...(priced.takeProfit ? { takeProfit: priced.takeProfit } : {}),
     ...(clientId ? { clientId } : {}),
   };
 }
@@ -788,9 +884,22 @@ export function createMt5Connector(
         sizingNotes.push(...plan.notes.filter(n => n.startsWith("capped")));
       }
 
+      // Live quote + digit grid: without these, openPrice/SL/TP went to the
+      // broker unrounded and sometimes on the wrong side of the market, which
+      // is exactly what TRADE_RETCODE_INVALID_PRICE (10015) reports.
+      const quote = await req<{ bid: number; ask: number }>(
+        "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/current-price`,
+      ).catch(() => null);
+      const priceCtx = {
+        bid: quote?.bid ?? null,
+        ask: quote?.ask ?? null,
+        digits: spec.digits ?? null,
+        minDistance: null,
+      };
+
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
-      const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol);
+      const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol, priceCtx);
       const actionType = body.actionType as string;
       const requiredMargin = marginPerLot ? Number((marginPerLot * sized.volume).toFixed(2)) : null;
 
@@ -809,10 +918,24 @@ export function createMt5Connector(
 
 
       // MetaApi's REST /trade endpoint takes the trade object at the top level.
-      const r = await req<{ orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string }>(
-        "POST", `/users/current/accounts/${state.accountId}/trade`, body,
+      type TradeResponse = { orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string };
+      const submit = (b: Record<string, unknown>) => req<TradeResponse>(
+        "POST", `/users/current/accounts/${state.accountId}/trade`, b,
       );
-      const success = r.stringCode === "TRADE_RETCODE_DONE" || r.numericCode === 10009;
+      let r = await submit(body);
+      const isDone = (x: TradeResponse) => x.stringCode === "TRADE_RETCODE_DONE" || x.numericCode === 10009;
+      // Prices can move between the quote and the fill. A single 10015 retry as
+      // a clean market order (no stale openPrice) recovers that race instead of
+      // burning the candidate and tripping the consecutive-failure breaker.
+      if (!isDone(r) && (r.numericCode === 10015 || /INVALID_PRICE/i.test(r.stringCode ?? ""))) {
+        const isBuy = actionType === MT_ACTIONS.buy_market || actionType === MT_ACTIONS.buy_limit
+          || actionType === MT_ACTIONS.buy_stop;
+        const retry = { ...body, actionType: isBuy ? MT_ACTIONS.buy_market : MT_ACTIONS.sell_market };
+        delete (retry as Record<string, unknown>).openPrice;
+        console.log(`[MT5] 10015 on ${mtSymbol} — retrying as market`, JSON.stringify(retry));
+        r = await submit(retry);
+      }
+      const success = isDone(r);
       if (!success) {
         throw new Error(
           `MT trade rejected on ${mtSymbol}: ${r.stringCode ?? "unknown"} (${r.numericCode ?? "?"})${r.message ? " — " + r.message : ""}`,

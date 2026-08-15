@@ -179,7 +179,16 @@ export async function evaluateExecution(
   }
 
   // Hard gates ---------------------------------------------------------------
-  if (!mtf.confirmed) rejections.push(`Higher-timeframe confirmation failed (${mtf.aligned}/5 aligned, ${mtf.opposed} opposed)`);
+  if (!mtf.confirmed) {
+    // Report the HTF subset that actually decides the gate (1D/4H/1H), not the
+    // 5-timeframe tally — the old wording made a passing "1 opposed" case look
+    // like a contradiction of the ≤1-opposing rule.
+    const htfDetail = (["1d", "4h", "1h"] as const)
+      .map(tf => `${tf.toUpperCase()} ${mtf.biases[tf]}`).join(", ");
+    rejections.push(
+      `Higher-timeframe confirmation failed (${htfDetail}; needs 2 of 3 agreeing and at most 1 opposing)`,
+    );
+  }
   if (timing.volatility && !timing.volatility.tradable) {
     rejections.push(timing.volatility.spreadOk
       ? `Volatility state "${timing.volatility.state}" is untradeable`
