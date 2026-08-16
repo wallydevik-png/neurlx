@@ -365,7 +365,7 @@ async function runAutonomousCycleCore(
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
       const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
-      const { filterScanUniverse } = await import("@/lib/marketdata/assetClass");
+      const { filterScanUniverse, isMemeSymbol } = await import("@/lib/marketdata/assetClass");
       // The scan universe is the UNION of the user's watchlist and the
       // connected broker's real tradable list, restricted to the instrument
       // families this engine is calibrated for: crypto, major forex and index
@@ -386,16 +386,28 @@ async function runAutonomousCycleCore(
         "BTC-USD", "ETH-USD", "SOL-USD", "EUR-USD", "GBP-USD", "USD-JPY",
         "US30", "NAS100", "SPX500",
       ].filter(symbol => fullUniverse.includes(symbol));
-      const rotating = fullUniverse.filter(symbol => !anchors.includes(symbol));
-      const batchSize = 18;
-      const rotationSlots = Math.max(0, batchSize - anchors.length);
+      // Meme coins get dedicated slots every cycle so high-beta names are
+      // never starved by the alphabetical rotation.
+      const memes = fullUniverse.filter(s => !anchors.includes(s) && isMemeSymbol(s));
+      const memeStart = memes.length
+        ? (Math.floor(Date.now() / 60_000) * 4) % memes.length
+        : 0;
+      const memeSlice = memes.length
+        ? [...memes.slice(memeStart), ...memes.slice(0, memeStart)].slice(0, 6)
+        : [];
+      const rotating = fullUniverse.filter(
+        symbol => !anchors.includes(symbol) && !memeSlice.includes(symbol),
+      );
+      const batchSize = 22;
+      const rotationSlots = Math.max(0, batchSize - anchors.length - memeSlice.length);
       const rotationStart = rotating.length
         ? (Math.floor(Date.now() / 60_000) * Math.max(1, rotationSlots)) % rotating.length
         : 0;
       const rotated = rotating.length
         ? [...rotating.slice(rotationStart), ...rotating.slice(0, rotationStart)]
         : [];
-      const universe = [...anchors, ...rotated.slice(0, rotationSlots)];
+      const universe = [...anchors, ...memeSlice, ...rotated.slice(0, rotationSlots)];
+
       // "scanned" now means symbols evaluated by the AI committee — the
       // honest metric. Signals produced are reported separately below.
       scanned = universe.length;

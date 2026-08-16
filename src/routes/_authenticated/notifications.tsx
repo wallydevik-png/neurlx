@@ -8,7 +8,7 @@ import {
   updateNotificationPreferences,
 } from "@/lib/notifications.functions";
 import { toast } from "sonner";
-import { Bell, Check, CheckCheck } from "lucide-react";
+import { Bell, Check, CheckCheck, AlertTriangle } from "lucide-react";
 
 type NotifData = { notifications: Notif[]; unread: number; preferences: Prefs | null };
 
@@ -63,9 +63,16 @@ function NotificationsPage() {
   const notifs = (data?.notifications ?? []) as Notif[];
   const initialPrefs: Prefs = (data?.preferences as Prefs | null) ?? DEFAULT_PREFS;
   const [prefs, setPrefs] = useState<Prefs>(initialPrefs);
-  const [filter, setFilter] = useState<"all"|"unread">("all");
+  const [filter, setFilter] = useState<"all"|"unread"|"critical"|"routine">("all");
 
-  const visible = notifs.filter(n => filter === "all" || !n.read_at);
+  const isCritical = (n: Notif) => n.severity === "critical" || n.severity === "emergency";
+  const criticalUnread = notifs.filter(n => isCritical(n) && !n.read_at);
+
+  const visible = notifs.filter(n =>
+    filter === "all" ? true
+    : filter === "unread" ? !n.read_at
+    : filter === "critical" ? isCritical(n)
+    : !isCritical(n));
 
   async function handleMarkAll() {
     await markAll();
@@ -95,12 +102,45 @@ function NotificationsPage() {
         }
       />
 
+      {criticalUnread.length > 0 && (
+        <div className="panel p-3 mb-4 border border-destructive/50 bg-destructive/5">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-destructive" />
+            <div className="text-sm font-semibold text-destructive">
+              {criticalUnread.length} critical alert{criticalUnread.length === 1 ? "" : "s"} needing attention
+            </div>
+          </div>
+          <div className="space-y-1">
+            {criticalUnread.slice(0, 5).map(n => (
+              <div key={n.id} className="flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <span className="font-medium">{n.title}</span>
+                  <span className="text-muted-foreground"> — {n.message}</span>
+                </div>
+                <button onClick={() => handleMark(n.id)} className="shrink-0 text-muted-foreground hover:text-foreground" title="Mark read">
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-2">
-          <div className="flex gap-2 mb-2">
-            <button onClick={() => setFilter("all")} className={`text-xs px-2 py-1 rounded ${filter==="all"?"bg-primary/20 text-primary":"text-muted-foreground"}`}>All</button>
-            <button onClick={() => setFilter("unread")} className={`text-xs px-2 py-1 rounded ${filter==="unread"?"bg-primary/20 text-primary":"text-muted-foreground"}`}>Unread</button>
+          <div className="flex gap-2 mb-2 flex-wrap">
+            {([
+              ["all", "All"], ["unread", "Unread"],
+              ["critical", `Critical${criticalUnread.length ? ` (${criticalUnread.length})` : ""}`],
+              ["routine", "Routine"],
+            ] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setFilter(key)}
+                className={`text-xs px-2 py-1 rounded ${filter===key?"bg-primary/20 text-primary":"text-muted-foreground"}`}>
+                {label}
+              </button>
+            ))}
           </div>
+
           {visible.length === 0 && (
             <div className="panel p-8 text-center text-muted-foreground text-sm">
               <Bell className="w-8 h-8 mx-auto mb-2 opacity-40" />

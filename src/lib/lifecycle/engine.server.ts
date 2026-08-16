@@ -356,7 +356,12 @@ export async function runWeekendRetraining(
   }
 
   const { data: strategies } = await supabase.from("strategies").select("*").eq("user_id", userId);
+  // Nothing to retrain: bail out BEFORE emitting anything. Previously this
+  // path inserted no model_versions row, so the "last run < 5 days" cooldown
+  // above never engaged and every cycle re-ran and re-notified ("0 strategies").
+  if (!strategies || strategies.length === 0) return { ran: false, strategies: 0 };
   const version = `v${now.toISOString().slice(0, 10).replace(/-/g, "")}.${Math.floor(now.getTime() / 1000) % 10000}`;
+
 
   for (const s of (strategies ?? []) as Row[]) {
     const { shadow, paper, live } = await loadStrategyTrades(supabase, userId, String(s.id));
