@@ -13,6 +13,13 @@ const MAJOR_CURRENCIES = new Set([
   "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD",
 ]);
 
+/** Meme-coin bases — traded with the same models, prioritised in the scan. */
+export const MEME_BASES = new Set([
+  "DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "MEME", "BOME", "POPCAT",
+  "MEW", "TURBO", "BRETT", "MOG", "NEIRO", "PNUT", "GOAT", "SPX", "TRUMP",
+  "FARTCOIN", "BABYDOGE", "LADYS", "SNEK", "AIDOGE", "DEGEN", "TOSHI",
+]);
+
 const CRYPTO_BASES = new Set([
   "BTC", "XBT", "ETH", "SOL", "ADA", "AVAX", "LINK", "DOGE", "MATIC", "POL",
   "XRP", "TRX", "LTC", "BNB", "DOT", "ATOM", "NEAR", "FIL", "ETC", "UNI",
@@ -21,7 +28,9 @@ const CRYPTO_BASES = new Set([
   "COMP", "ENJ", "CHZ", "EOS", "XMR", "ZEC", "DASH", "NEO", "VET", "THETA",
   "FTM", "RUNE", "KAS", "TON", "TIA", "SEI", "STX", "RNDR", "IMX", "HBAR",
   "EGLD", "FLOW", "GALA", "KSM", "ONE", "QNT", "ROSE", "WLD", "YFI", "ZIL",
+  ...MEME_BASES,
 ]);
+
 
 const STABLE_QUOTES = new Set(["USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "EUR"]);
 
@@ -101,4 +110,14 @@ export function isScannableSymbol(symbol: string): boolean {
 /** Filter a broker/watchlist symbol list down to the scannable universe. */
 export function filterScanUniverse(symbols: string[]): string[] {
   return symbols.filter(isScannableSymbol);
+}
+
+/** True when the symbol's base asset is a meme coin. */
+export function isMemeSymbol(symbol: string): boolean {
+  if (classifySymbol(symbol) !== "crypto") return false;
+  const sym = symbol.toUpperCase().replace(/[._-](M|MICRO|RAW|ECN|PRO|CASH|SPOT)$/i, "");
+  const pair = sym.includes("-") || sym.includes("/")
+    ? sym.split(/[-/]/)[0]
+    : sym.replace(/(USDT|USDC|USD|EUR)$/i, "");
+  return MEME_BASES.has(pair.toUpperCase());
 }

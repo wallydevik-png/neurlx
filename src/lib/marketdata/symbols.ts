@@ -17,6 +17,16 @@ export const BASE_PRICES: Record<string, number> = {
   "LTC-USD": 85,
   "BNB-USD": 590,
   "DOT-USD": 6.5,
+  // Meme coins (high beta, scanned with dedicated slots each cycle)
+  "SHIB-USD": 0.000022,
+  "PEPE-USD": 0.0000095,
+  "WIF-USD": 2.1,
+  "BONK-USD": 0.000024,
+  "FLOKI-USD": 0.00015,
+  "BOME-USD": 0.009,
+  "POPCAT-USD": 0.85,
+  "TURBO-USD": 0.006,
+
   // Forex majors
   "EUR-USD": 1.085,
   "GBP-USD": 1.27,

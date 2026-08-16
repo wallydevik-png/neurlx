@@ -480,6 +480,8 @@ async function provisionAccount(params: {
 // re-provisions / re-lists symbols, which is what produced the repeated
 // 429 TooManyRequestsError from MetaApi.
 const accountIdCache = new Map<string, string>();          // credential key -> deployed accountId
+// accountId -> real region + deployment/connection readiness (MetaApi truth)
+const accountMetaCache = new Map<string, { at: number; region: string; ready: boolean }>();
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
 const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
@@ -560,8 +562,77 @@ export function createMt5Connector(
   const canProvision = () => Boolean(state.token && state.login && state.password && state.server);
   const isReady = () => Boolean(state.token && state.accountId);
 
+  // Set when MetaApi refuses to deploy the account (e.g. token lacks the
+  // account-management scope) so we can surface the real cause, not a 504.
+  let deployBlockedReason: string | null = null;
+
+  // MetaApi rejects client/market-data calls with a 504 TimeoutError when the
+  // account is undeployed OR when the request host region doesn't match the
+  // region the account actually lives in. Both are recoverable: read the real
+  // account record, adopt its region, and (re)deploy when needed.
+  async function syncAccountMeta(force = false): Promise<void> {
+    if (!state.accountId || !state.token) return;
+    const cached = accountMetaCache.get(state.accountId);
+    if (!force && cached && cached.ready && Date.now() - cached.at < 5 * 60_000) {
+      state.region = cached.region;
+      return;
+    }
+    try {
+      const res = await fetchWithTimeout(
+        `${PROVISIONING_BASE}/users/current/accounts/${state.accountId}`,
+        { headers: { "auth-token": state.token } },
+      );
+      if (!res.ok) return;
+      const acc = await res.json() as { region?: string; state?: string; connectionStatus?: string };
+      if (acc.region) state.region = acc.region;
+      if (acc.state && acc.state !== "DEPLOYED") {
+        const dep = await fetchWithTimeout(
+          `${PROVISIONING_BASE}/users/current/accounts/${state.accountId}/deploy`,
+          { method: "POST", headers: { "auth-token": state.token } },
+        ).catch(() => undefined);
+        if (dep && !dep.ok) {
+          const body = await dep.text().catch(() => "");
+          deployBlockedReason = dep.status === 403
+            ? "Your MetaApi token is missing the account-management (deploy) permission, so NeurlX cannot start your MT account. Create a new MetaApi token with full access — or deploy the account once in MetaApi — then reconnect."
+            : `MetaApi refused to deploy the account (${dep.status}): ${body.slice(0, 160)}`;
+        } else {
+          deployBlockedReason = null;
+        }
+      } else {
+        deployBlockedReason = null;
+      }
+      accountMetaCache.set(state.accountId, {
+        at: Date.now(),
+        region: state.region,
+        ready: acc.state === "DEPLOYED" && acc.connectionStatus === "CONNECTED",
+      });
+    } catch {
+      // Non-fatal — fall back to the configured region.
+    }
+  }
+
+  function isNotConnectedError(e: unknown): boolean {
+    const m = e instanceof Error ? e.message : String(e);
+    return /TimeoutError|not connected to broker|does not match the account region|\[504\]/i.test(m);
+  }
+
+  /** Replace MetaApi's opaque 504 with the real, actionable cause. */
+  function explain(e: unknown): unknown {
+    if (isNotConnectedError(e) && deployBlockedReason) return new Error(deployBlockedReason);
+    if (isNotConnectedError(e)) {
+      return new Error(
+        `MT account ${state.accountId} is not connected to the broker yet (region ${state.region}). NeurlX asked MetaApi to deploy it — retry in a minute.`,
+      );
+    }
+    return e;
+  }
+
+
   async function ensureReady(): Promise<void> {
-    if (isReady()) return;
+    if (isReady()) {
+      await syncAccountMeta();
+      return;
+    }
     if (!state.token) {
       throw new Error(
         "MetaApi bridge unavailable — set the METAAPI_TOKEN workspace secret (or provide a per-connection metaApiToken) so NeurlX can reach your MT account.",
@@ -594,18 +665,24 @@ export function createMt5Connector(
 
   async function req<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
     await ensureReady();
-    const base = clientBaseFor(state.region);
-    return withBackoff(() => doRequest<T>({
-      ctx: logCtx, method, path, url: `${base}${path}`,
+    const send = () => withBackoff(() => doRequest<T>({
+      ctx: logCtx, method, path, url: `${clientBaseFor(state.region)}${path}`,
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
       params: body as Record<string, unknown> | undefined, signed: true,
     }));
+    try {
+      return await send();
+    } catch (e) {
+      if (!isNotConnectedError(e)) throw e;
+      await syncAccountMeta(true);
+      try { return await send(); } catch (e2) { throw explain(e2); }
+    }
   }
 
   async function marketDataReq<T>(path: string): Promise<T> {
     await ensureReady();
-    return withBackoff(() => doRequest<T>({
+    const send = () => withBackoff(() => doRequest<T>({
       ctx: logCtx,
       method: "GET",
       path,
@@ -613,7 +690,16 @@ export function createMt5Connector(
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       signed: true,
     }));
+    try {
+      return await send();
+    } catch (e) {
+      if (!isNotConnectedError(e)) throw e;
+      await syncAccountMeta(true);
+      try { return await send(); } catch (e2) { throw explain(e2); }
+    }
   }
+
+
 
   // ---- Broker symbol map -------------------------------------------------
   // MetaApi exposes the exact instrument names the connected broker offers
