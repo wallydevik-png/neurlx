@@ -676,7 +676,7 @@ export function createMt5Connector(
     } catch (e) {
       if (!isNotConnectedError(e)) throw e;
       await syncAccountMeta(true);
-      return send();
+      try { return await send(); } catch (e2) { throw explain(e2); }
     }
   }
 
@@ -695,9 +695,10 @@ export function createMt5Connector(
     } catch (e) {
       if (!isNotConnectedError(e)) throw e;
       await syncAccountMeta(true);
-      return send();
+      try { return await send(); } catch (e2) { throw explain(e2); }
     }
   }
+
 
 
   // ---- Broker symbol map -------------------------------------------------
