@@ -362,7 +362,7 @@ export async function runWeekendRetraining(
   if (!strategies || strategies.length === 0) return { ran: false, strategies: 0 };
   const version = `v${now.toISOString().slice(0, 10).replace(/-/g, "")}.${Math.floor(now.getTime() / 1000) % 10000}`;
 
-
+  let inserted = 0;
   for (const s of (strategies ?? []) as Row[]) {
     const { shadow, paper, live } = await loadStrategyTrades(supabase, userId, String(s.id));
     const all = [...shadow, ...paper, ...live].sort((x, y) => x.ts - y.ts);
@@ -375,21 +375,28 @@ export async function runWeekendRetraining(
     importance["avg_r"] = +(m.avgR).toFixed(3);
     importance["execution_quality"] = +(m.executionQuality).toFixed(3);
 
-    await supabase.from("model_versions").insert({
+    const { error } = await supabase.from("model_versions").insert({
       user_id: userId, strategy_id: String(s.id), version, state: "shadow",
       training_window: { trades: all.length, from: all[0]?.ts ?? null, to: all[all.length - 1]?.ts ?? null } as never,
       feature_importance: importance as never,
       validation_metrics: { metrics: m, walkForwardPassRate: wf.passRate, score: strategyScore(m) } as never,
       is_candidate: true,
     });
+    if (!error) inserted++;
   }
+
+  // A retrain that produced no candidate model is a no-op: no notification.
+  // Without this, a failed/empty run left no model_versions row, the 5-day
+  // cooldown above never engaged, and every single cron minute re-notified.
+  if (inserted === 0) return { ran: false, strategies: 0 };
 
   await emitNotification(supabase, userId, {
     kind: "model.retrained", severity: "info",
     title: `Retraining complete — ${version}`,
-    message: `Candidate models deployed to SHADOW for ${(strategies ?? []).length} strateg${(strategies ?? []).length === 1 ? "y" : "ies"}. They must earn promotion before trading live.`,
+    message: `Candidate models deployed to SHADOW for ${inserted} strateg${inserted === 1 ? "y" : "ies"}. They must earn promotion before trading live.`,
     payload: { version },
   });
 
-  return { ran: true, version, strategies: (strategies ?? []).length };
+  return { ran: true, version, strategies: inserted };
 }
+

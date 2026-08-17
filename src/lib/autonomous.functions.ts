@@ -573,6 +573,20 @@ async function runAutonomousCycleCore(
   }
 
   const allowedAssets = new Set<string>(settings.allowed_assets ?? []);
+  // When the cycle works through signals queued by an EARLIER cycle we never
+  // built the broker symbol list, so every broker-discovered symbol (AUD-NZD,
+  // NAS100 …) was rejected as `asset_not_allowed`. Load it lazily here so the
+  // permission check is identical on both paths.
+  if (brokerSymbols.size === 0 && allowedAssets.size > 0) {
+    try {
+      const { listTradableSymbols } = await import("@/lib/marketdata/service.server");
+      const { filterScanUniverse } = await import("@/lib/marketdata/assetClass");
+      brokerSymbols = new Set(filterScanUniverse(await listTradableSymbols(supabase, userId)));
+    } catch {
+      // Non-fatal: fall back to the watchlist-only check.
+    }
+  }
+
   const minConf = Number(settings.autonomous_min_confidence ?? 0.85);
   const perOrderCap = Number(settings.live_max_notional_per_order ?? 50);
 

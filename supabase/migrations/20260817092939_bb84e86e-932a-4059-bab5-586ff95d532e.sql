@@ -1,0 +1,2 @@
+update public.automation_settings set live_kill_until = null, live_kill_reason = null, live_consecutive_failures = 0 where live_kill_until is not null and live_kill_until <= now();
+delete from public.notifications where kind = 'model.retrained' and message like '%for 0 strategies%';
