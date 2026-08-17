@@ -15,7 +15,7 @@
 // MetaApi's provisioning API to create + deploy the account, then persists
 // the returned accountId back into the encrypted credential blob so future
 // calls skip provisioning.
-
+ 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AccountSummary, ApiPermissionSnapshot, Balance, ClosedDeal, ConnectionHealth,
@@ -23,7 +23,7 @@ import type {
   Quote, RichPosition, TradingConnector,
 } from "./types";
 import { doRequest } from "./rest.server";
-
+ 
 const PROVISIONING_BASE = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 function clientBaseFor(region: string): string {
   const r = region || "new-york";
@@ -57,7 +57,7 @@ export function splitPair(symbol: string): { base: string; quote: string } | nul
   }
   return null;
 }
-
+ 
 /** All broker-name candidates for an AI symbol, ordered best-first. */
 export function candidatesFor(symbol: string): string[] {
   const k = normalizeKey(symbol);
@@ -77,7 +77,7 @@ export function candidatesFor(symbol: string): string[] {
   if (k.endsWith("USDT")) c.add(k.slice(0, -1));
   return [...c].filter(Boolean);
 }
-
+ 
 /** MetaApi timeframe strings for the historical-market-data endpoint. Matches
  *  our internal Interval values 1:1 except we spell it out defensively in
  *  case MetaApi's format ever diverges. */
@@ -92,7 +92,7 @@ const MT_TIMEFRAME_MS: Record<string, number> = {
   "4h": 4 * 60 * 60_000,
   "1d": 24 * 60 * 60_000,
 };
-
+ 
 /** Inverse of splitPair-style logic: turn a raw broker instrument name
  *  ("EURUSD", "BTCUSDm", "XAUUSD.raw") into our "BASE-QUOTE" symbol form
  *  ("EUR-USD", "BTC-USD", "XAU-USD") where a known quote currency can be
@@ -111,7 +111,7 @@ export function brokerSymbolToNeurlx(mtSymbol: string): string {
   }
   return cleaned;
 }
-
+ 
 export class UnsupportedSymbolError extends Error {
   readonly unsupportedSymbol: string;
   constructor(symbol: string, venue: string) {
@@ -123,7 +123,7 @@ export class UnsupportedSymbolError extends Error {
 function isMt4(brokerId: string): boolean {
   return brokerId === "mt4";
 }
-
+ 
 /** Every MetaApi action NeurlX can emit. */
 export const MT_ACTIONS = {
   buy_market: "ORDER_TYPE_BUY",
@@ -134,7 +134,7 @@ export const MT_ACTIONS = {
   sell_stop: "ORDER_TYPE_SELL_STOP",
 } as const;
 export type MtAction = (typeof MT_ACTIONS)[keyof typeof MT_ACTIONS];
-
+ 
 /** Normalize any AI/committee side or order-type wording into a MetaApi action. */
 export function resolveTradeAction(
   side: string | undefined,
@@ -142,18 +142,18 @@ export function resolveTradeAction(
 ): MtAction {
   const s = String(side ?? "").toLowerCase().trim();
   const t = String(orderType ?? "market").toLowerCase().trim();
-
+ 
   // Some upstream signals encode direction inside orderType ("buy_limit").
   const combined = `${s}_${t}`;
   const direction = /sell|short|bearish/.test(combined) ? "sell"
     : /buy|long|bullish/.test(combined) ? "buy"
     : null;
   if (!direction) throw new Error(`Unknown trade direction "${side}" (orderType "${orderType}")`);
-
+ 
   const kind = /stop_loss_limit|take_profit_limit|limit/.test(t) ? "limit"
     : /stop/.test(t) ? "stop"
     : "market";
-
+ 
   const action = kind === "limit"
     ? (direction === "buy" ? MT_ACTIONS.buy_limit : MT_ACTIONS.sell_limit)
     : kind === "stop"
@@ -161,7 +161,7 @@ export function resolveTradeAction(
       : (direction === "buy" ? MT_ACTIONS.buy_market : MT_ACTIONS.sell_market);
   return action;
 }
-
+ 
 /**
  * MetaApi's clientId is NOT a free-form string: per
  * https://metaapi.cloud/docs/client/clientIdUsage/ it must follow
@@ -175,12 +175,12 @@ export function resolveTradeAction(
  */
 export const MT_CLIENT_ID_PATTERN = /^[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}_[A-Za-z0-9]{1,10}$/;
 export const MT_CLIENT_ID_MAX_LEN = 26;
-
+ 
 export function sanitizeClientId(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   // Already compliant? keep as-is.
   if (MT_CLIENT_ID_PATTERN.test(raw) && raw.length <= MT_CLIENT_ID_MAX_LEN) return raw;
-
+ 
   const alnum = raw.replace(/[^A-Za-z0-9]/g, "");
   if (!alnum) return undefined;
   // NX_<first 9 chars>_<last 8 chars>  -> max 3 + 9 + 1 + 8 = 21 chars
@@ -192,8 +192,8 @@ export function sanitizeClientId(raw: string | undefined): string | undefined {
   }
   return candidate;
 }
-
-
+ 
+ 
 export interface MtPriceContext {
   bid?: number | null;
   ask?: number | null;
@@ -201,7 +201,7 @@ export interface MtPriceContext {
   /** Broker's minimum distance (in price units) for pending/SL/TP levels. */
   minDistance?: number | null;
 }
-
+ 
 export interface SanitizedPrices {
   actionType: MtAction;
   openPrice?: number;
@@ -209,11 +209,11 @@ export interface SanitizedPrices {
   takeProfit?: number;
   notes: string[];
 }
-
+ 
 function roundTo(value: number, digits: number): number {
   return Number(value.toFixed(Math.max(0, Math.min(8, digits))));
 }
-
+ 
 /**
  * TRADE_RETCODE_INVALID_PRICE (10015) came from three things, all fixed here:
  *   1. openPrice / stopLoss / takeProfit sent with full float precision
@@ -236,12 +236,12 @@ export function sanitizeOrderPrices(
   const ask = Number(ctx.ask) > 0 ? Number(ctx.ask) : null;
   const mid = bid && ask ? (bid + ask) / 2 : (bid ?? ask);
   const minDist = Number(ctx.minDistance) > 0 ? Number(ctx.minDistance) : 0;
-
+ 
   const isBuy = actionType === MT_ACTIONS.buy_market || actionType === MT_ACTIONS.buy_limit
     || actionType === MT_ACTIONS.buy_stop;
   let action = actionType;
   let openPrice = Number(input.limitPrice) > 0 ? roundTo(Number(input.limitPrice), digits) : undefined;
-
+ 
   const isPending = action !== MT_ACTIONS.buy_market && action !== MT_ACTIONS.sell_market;
   if (isPending) {
     const toMarket = (why: string) => {
@@ -263,31 +263,43 @@ export function sanitizeOrderPrices(
   } else {
     openPrice = undefined;
   }
-
+ 
   const reference = openPrice ?? (isBuy ? (ask ?? mid) : (bid ?? mid));
-
+ 
   const level = (raw: number | null | undefined, kind: "stopLoss" | "takeProfit") => {
     if (!(Number(raw) > 0)) return undefined;
     const v = roundTo(Number(raw), digits);
     if (!reference) return v;
     const wantAbove = kind === "takeProfit" ? isBuy : !isBuy;
-    const ok = wantAbove ? v > reference + minDist : v < reference - minDist;
-    if (!ok) {
+    const boundary = wantAbove ? reference + minDist : reference - minDist;
+    const onCorrectSide = wantAbove ? v > reference : v < reference;
+    if (!onCorrectSide) {
+      // Genuinely on the wrong side of price — can't be salvaged by widening.
       notes.push(`${kind} ${v} is on the wrong side of ${reference} — dropped`);
       return undefined;
     }
+    if (wantAbove ? v <= boundary : v >= boundary) {
+      // Right side, but inside the broker's minimum stop distance — widen it
+      // to the boundary instead of dropping it. A wider stop is still real
+      // protection; no stop at all is not.
+      const widened = roundTo(boundary, digits);
+      notes.push(`${kind} ${v} was inside the ${minDist} minimum stop distance — widened to ${widened}`);
+      return widened;
+    }
     return v;
   };
-
+ 
+  const sl = level(input.stopLoss, "stopLoss");
+  const tp = level(input.takeProfit, "takeProfit");
   return {
     actionType: action,
     ...(openPrice ? { openPrice } : {}),
-    ...(level(input.stopLoss, "stopLoss") ? { stopLoss: level(input.stopLoss, "stopLoss") } : {}),
-    ...(level(input.takeProfit, "takeProfit") ? { takeProfit: level(input.takeProfit, "takeProfit") } : {}),
+    ...(sl ? { stopLoss: sl } : {}),
+    ...(tp ? { takeProfit: tp } : {}),
     notes,
   };
 }
-
+ 
 /** Build + validate the exact JSON body MetaApi's /trade endpoint expects. */
 export function buildTradeRequest(
   input: PlaceOrderInput,
@@ -298,14 +310,14 @@ export function buildTradeRequest(
   if (!resolved) throw new Error(`Refusing to submit MT trade with undefined action for ${mtSymbol}`);
   const volume = Number(input.qty);
   if (!(volume > 0)) throw new Error(`Invalid MT volume ${input.qty} for ${mtSymbol}`);
-
+ 
   const priced = sanitizeOrderPrices(resolved, {
     limitPrice: input.limitPrice ?? null,
     stopLoss: input.stopLoss ?? null,
     takeProfit: input.takeProfit ?? null,
   }, ctx);
   if (priced.notes.length) console.log(`[MT5] price sanitisation ${mtSymbol}: ${priced.notes.join("; ")}`);
-
+ 
   const clientId = sanitizeClientId(input.clientOrderId);
   return {
     actionType: priced.actionType,
@@ -319,8 +331,8 @@ export function buildTradeRequest(
     ...(clientId ? { clientId } : {}),
   };
 }
-
-
+ 
+ 
 /** Subset of MetaApi's symbol specification we care about for sizing. */
 export interface MtSymbolSpec {
   volumeMin?: number;
@@ -328,15 +340,24 @@ export interface MtSymbolSpec {
   volumeStep?: number;
   contractSize?: number;
   digits?: number;
+  /** Broker's minimum distance for SL/TP from the current price, in points.
+   *  A stop placed closer than this is rejected by MT with
+   *  TRADE_RETCODE_INVALID_STOPS (10016) — this was previously never read,
+   *  so sanitizeOrderPrices' minimum-distance check always ran with 0,
+   *  silently allowing stops the broker would then reject. */
+  stopsLevel?: number;
+  /** Price value of one point/pip for this symbol, used to convert
+   *  stopsLevel (points) into an actual price distance. */
+  tickSize?: number;
 }
-
+ 
 export class InvalidVolumeError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "InvalidVolumeError";
   }
 }
-
+ 
 /** Thrown when the broker cannot fund the order — the trade is skipped, not failed. */
 export class InsufficientMarginError extends Error {
   readonly required: number;
@@ -348,14 +369,14 @@ export class InsufficientMarginError extends Error {
     this.available = available;
   }
 }
-
-
+ 
+ 
 function decimalsOf(step: number): number {
   const s = String(step);
   const i = s.indexOf(".");
   return i === -1 ? 0 : Math.min(8, s.length - i - 1);
 }
-
+ 
 /**
  * Round the requested volume to the broker's volumeStep and clamp it between
  * volumeMin and volumeMax. Volumes below the minimum are raised to the minimum
@@ -369,21 +390,21 @@ export function normalizeVolume(
   const min = Number(spec.volumeMin) > 0 ? Number(spec.volumeMin) : 0.01;
   const max = Number(spec.volumeMax) > 0 ? Number(spec.volumeMax) : Number.POSITIVE_INFINITY;
   const step = Number(spec.volumeStep) > 0 ? Number(spec.volumeStep) : min;
-
+ 
   if (!(Number(requested) > 0)) {
     throw new InvalidVolumeError(`Requested volume ${requested} is not a positive number`);
   }
   if (min > max) {
     throw new InvalidVolumeError(`Broker volume limits are inconsistent (min ${min} > max ${max})`);
   }
-
+ 
   const d = Math.max(decimalsOf(step), decimalsOf(min));
   const round = (v: number) => Number(v.toFixed(d));
-
+ 
   // Snap to the step grid, anchored at volumeMin.
   let volume = round(min + Math.round((requested - min) / step) * step);
   let note: string | undefined;
-
+ 
   if (volume < min) {
     volume = round(min);
     note = `raised to broker minimum lot ${min}`;
@@ -401,7 +422,7 @@ export function normalizeVolume(
   if (adjusted && !note) note = `rounded to step ${step}`;
   return { volume, adjusted, note };
 }
-
+ 
 async function persistCredentials(
   ctx: { supabase?: SupabaseClient; userId?: string; connectionId?: string | null },
   updated: Record<string, string>,
@@ -417,7 +438,7 @@ async function persistCredentials(
     // Non-fatal — provisioning still succeeded, next call will re-provision.
   }
 }
-
+ 
 /** These two calls predate the shared doRequest() timeout fix and used plain
  *  fetch() directly — completely unprotected from a stalled connection.
  *  Since provisioning only runs on a cold start (when accountIdCache is
@@ -438,7 +459,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 20_0
     clearTimeout(timer);
   }
 }
-
+ 
 async function provisionAccount(params: {
   token: string; brokerId: string; login: string; password: string;
   server: string; region: string; name: string;
@@ -474,7 +495,7 @@ async function provisionAccount(params: {
   }).catch(() => undefined);
   return parsed.id;
 }
-
+ 
 // ---- Process-level caches ------------------------------------------------
 // The executor creates a fresh connector per order. Without caching, each order
 // re-provisions / re-lists symbols, which is what produced the repeated
@@ -485,7 +506,7 @@ const accountMetaCache = new Map<string, { at: number; region: string; ready: bo
 const symbolMapCache = new Map<string, { at: number; map: Map<string, string> }>();
 const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${accountId}|${mtSymbol}`
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
-
+ 
 /**
  * MetaApi hard-caps historical-market-data requests at 5 concurrent per
  * account ("TooManyRequestsError" / HTTP 429 if exceeded). The app scans up
@@ -499,7 +520,7 @@ const SYMBOL_TTL_MS = 30 * 60 * 1000;
  */
 const MAX_CONCURRENT_HISTORY = 4; // stay safely under MetaApi's cap of 5
 const historyQueues = new Map<string, { active: number; queue: Array<() => void> }>();
-
+ 
 async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
   let state = historyQueues.get(accountId);
   if (!state) {
@@ -519,7 +540,7 @@ async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Pro
   }
 }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
+ 
 /** Retry 429 / 5xx with exponential backoff + jitter; never retry 4xx validation. */
 async function withBackoff<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
   let lastErr: unknown;
@@ -538,7 +559,7 @@ async function withBackoff<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
   }
   throw lastErr;
 }
-
+ 
 export function createMt5Connector(
   brokerId: string,
   credentials: Record<string, string>,
@@ -555,17 +576,17 @@ export function createMt5Connector(
   // Stable key for this MT account across connector instances.
   const cacheKey = `${ctx.connectionId ?? ""}|${brokerId}|${state.login}|${state.server}`;
   if (!state.accountId) state.accountId = accountIdCache.get(cacheKey) ?? "";
-
+ 
   const logCtx = { ...ctx, venue: `mt5:${brokerId}` };
   const label = brokerId === "mt5" || brokerId === "mt4"
     ? "MetaTrader" : `${brokerId.toUpperCase()} · MetaTrader 5`;
   const canProvision = () => Boolean(state.token && state.login && state.password && state.server);
   const isReady = () => Boolean(state.token && state.accountId);
-
+ 
   // Set when MetaApi refuses to deploy the account (e.g. token lacks the
   // account-management scope) so we can surface the real cause, not a 504.
   let deployBlockedReason: string | null = null;
-
+ 
   // MetaApi rejects client/market-data calls with a 504 TimeoutError when the
   // account is undeployed OR when the request host region doesn't match the
   // region the account actually lives in. Both are recoverable: read the real
@@ -610,12 +631,12 @@ export function createMt5Connector(
       // Non-fatal — fall back to the configured region.
     }
   }
-
+ 
   function isNotConnectedError(e: unknown): boolean {
     const m = e instanceof Error ? e.message : String(e);
     return /TimeoutError|not connected to broker|does not match the account region|\[504\]/i.test(m);
   }
-
+ 
   /** Replace MetaApi's opaque 504 with the real, actionable cause. */
   function explain(e: unknown): unknown {
     if (isNotConnectedError(e) && deployBlockedReason) return new Error(deployBlockedReason);
@@ -626,8 +647,8 @@ export function createMt5Connector(
     }
     return e;
   }
-
-
+ 
+ 
   async function ensureReady(): Promise<void> {
     if (isReady()) {
       await syncAccountMeta();
@@ -662,7 +683,7 @@ export function createMt5Connector(
       server: state.server,
     });
   }
-
+ 
   async function req<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
     await ensureReady();
     const send = () => withBackoff(() => doRequest<T>({
@@ -679,7 +700,7 @@ export function createMt5Connector(
       try { return await send(); } catch (e2) { throw explain(e2); }
     }
   }
-
+ 
   async function marketDataReq<T>(path: string): Promise<T> {
     await ensureReady();
     const send = () => withBackoff(() => doRequest<T>({
@@ -698,9 +719,9 @@ export function createMt5Connector(
       try { return await send(); } catch (e2) { throw explain(e2); }
     }
   }
-
-
-
+ 
+ 
+ 
   // ---- Broker symbol map -------------------------------------------------
   // MetaApi exposes the exact instrument names the connected broker offers
   // (they differ per broker: BTCUSD, BTCUSD.m, BTCUSDT, #BTCUSD ...). We pull
@@ -708,7 +729,7 @@ export function createMt5Connector(
   // resolve every requested symbol against that list, so nothing unsupported
   // ever reaches MetaApi.
   let symbolMapPromise: Promise<Map<string, string>> | null = null;
-
+ 
   async function loadSymbolMap(): Promise<Map<string, string>> {
     const list = await req<string[]>(
       "GET", `/users/current/accounts/${state.accountId}/symbols`,
@@ -723,7 +744,7 @@ export function createMt5Connector(
     symbolMapCache.set(state.accountId, { at: Date.now(), map });
     return map;
   }
-
+ 
   async function getSymbolMap(): Promise<Map<string, string>> {
     const cached = symbolMapCache.get(state.accountId);
     if (cached && Date.now() - cached.at < SYMBOL_TTL_MS) return cached.map;
@@ -735,7 +756,7 @@ export function createMt5Connector(
     }
     return symbolMapPromise;
   }
-
+ 
   /** Returns the broker's exact instrument name, or throws UnsupportedSymbolError. */
   async function resolveSymbol(symbol: string): Promise<string> {
     const map = await getSymbolMap();
@@ -755,7 +776,7 @@ export function createMt5Connector(
     }
     throw new UnsupportedSymbolError(symbol, label);
   }
-
+ 
   /** Broker's lot limits for an instrument (cached 30 min). */
   async function getSymbolSpec(mtSymbol: string): Promise<MtSymbolSpec> {
     const key = `${state.accountId}|${mtSymbol}`;
@@ -774,18 +795,18 @@ export function createMt5Connector(
       return {};
     }
   }
-
+ 
   interface MtAccountInfo {
     broker?: string; currency?: string; balance?: number; equity?: number;
     margin?: number; freeMargin?: number; marginLevel?: number; leverage?: number;
   }
-
+ 
   async function accountInformation(): Promise<MtAccountInfo> {
     return req<MtAccountInfo>(
       "GET", `/users/current/accounts/${state.accountId}/accountInformation`,
     );
   }
-
+ 
   /** Broker-calculated margin for an order (MetaApi calculate-margin endpoint). */
   async function calcMargin(
     mtSymbol: string, actionType: string, volume: number, openPrice: number,
@@ -803,7 +824,7 @@ export function createMt5Connector(
       return null;
     }
   }
-
+ 
   async function midPrice(mtSymbol: string): Promise<number> {
     try {
       const r = await req<{ bid: number; ask: number }>(
@@ -812,13 +833,13 @@ export function createMt5Connector(
       return (Number(r.bid) + Number(r.ask)) / 2;
     } catch { return 0; }
   }
-
-
+ 
+ 
   return {
     id: brokerId, displayName: label,
     supportsRealExecution: canProvision() || isReady(),
     isMarginVenue: true,
-
+ 
     async verify() {
       try {
         await ensureReady();
@@ -835,7 +856,7 @@ export function createMt5Connector(
         return { ok: false, message: msg };
       }
     },
-
+ 
     async getBalances(): Promise<Balance[]> {
       try {
         const r = await req<{ balance: number; equity: number; currency: string; freeMargin: number }>(
@@ -844,7 +865,7 @@ export function createMt5Connector(
         return [{ currency: r.currency, total: r.equity, available: r.freeMargin }];
       } catch { return []; }
     },
-
+ 
     async getQuote(symbol: string): Promise<Quote> {
       const s = await resolveSymbol(symbol);
       const r = await req<{ bid: number; ask: number }>(
@@ -852,14 +873,14 @@ export function createMt5Connector(
       );
       return { symbol, bid: r.bid, ask: r.ask, mid: (r.bid + r.ask) / 2, ts: Date.now() };
     },
-
+ 
     // ---- Market data (real candle history for signal generation) ---------
     // Powers the AI engine directly off this account's live broker feed,
     // instead of the synthetic/paper fallback.
     async getCandles(symbol: string, interval: string, limit: number) {
       const s = await resolveSymbol(symbol);
       const timeframe = MT_TIMEFRAME[interval] ?? interval;
-
+ 
       // Historical candles are served by MetaApi's dedicated market-data host,
       // not the trading/RPC host used by account information and order calls.
       // Sending this path to mt-client-api-v1 returns a route-level 404 for
@@ -887,7 +908,7 @@ export function createMt5Connector(
         .filter(c => Number.isFinite(c.ts) && Number.isFinite(c.close))
         .sort((a, b) => a.ts - b.ts)
         .slice(-limit);
-
+ 
       // Freshness telemetry: prints the timestamp of the newest bar the broker
       // actually returned, so a stale feed is visible directly in the logs.
       const last = candles[candles.length - 1];
@@ -902,8 +923,8 @@ export function createMt5Connector(
       }
       return candles;
     },
-
-
+ 
+ 
     /** The broker's actual tradable instrument list, translated to NeurlX
      *  "BASE-QUOTE" symbol form so the scanner can research pairs beyond the
      *  fixed hardcoded universe (forex, metals, indices — not just crypto). */
@@ -915,18 +936,18 @@ export function createMt5Connector(
       }
       return [...out];
     },
-
+ 
     async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
       const started = Date.now();
       // Throws UnsupportedSymbolError for instruments the broker doesn't list,
       // so the caller skips the trade instead of submitting a bad request.
       const mtSymbol = await resolveSymbol(input.symbol);
-
+ 
       // Broker lot limits decide the final volume — submitting an unrounded or
       // sub-minimum size is what produced TRADE_RETCODE_INVALID_VOLUME (10014).
       const spec = await getSymbolSpec(mtSymbol);
       const requestedVolume = Number(input.qty);
-
+ 
       // ---- Dynamic sizing + margin pre-check --------------------------------
       // Size from equity/risk/stop distance, then cap by usable free margin so
       // we never submit a volume the account cannot fund.
@@ -936,10 +957,10 @@ export function createMt5Connector(
       const probeAction = resolveTradeAction(input.side, input.orderType);
       const refPrice = Number(input.limitPrice) > 0 ? Number(input.limitPrice) : await midPrice(mtSymbol);
       const marginPerLot = refPrice > 0 ? await calcMargin(mtSymbol, probeAction, 1, refPrice) : null;
-
+ 
       let sized = normalizeVolume(requestedVolume, spec);
       const sizingNotes: string[] = sized.note ? [sized.note] : [];
-
+ 
       if (marginPerLot && freeMargin > 0) {
         const { computePositionSize } = await import("@/lib/execution/sizing");
         const plan = computePositionSize({
@@ -969,26 +990,38 @@ export function createMt5Connector(
         }
         sizingNotes.push(...plan.notes.filter(n => n.startsWith("capped")));
       }
-
+ 
       // Live quote + digit grid: without these, openPrice/SL/TP went to the
       // broker unrounded and sometimes on the wrong side of the market, which
       // is exactly what TRADE_RETCODE_INVALID_PRICE (10015) reports.
       const quote = await req<{ bid: number; ask: number }>(
         "GET", `/users/current/accounts/${state.accountId}/symbols/${encodeURIComponent(mtSymbol)}/current-price`,
       ).catch(() => null);
+      // stopsLevel (points) × tickSize = the broker's real minimum distance
+      // for SL/TP from the current price. This was previously hardcoded to
+      // null, which silently disabled the minimum-distance check in
+      // sanitizeOrderPrices — stops on the correct side of price but too
+      // close to it slipped through here and were then rejected by the
+      // broker as TRADE_RETCODE_INVALID_STOPS (10016).
+      const tickSize = Number(spec.tickSize) > 0
+        ? Number(spec.tickSize)
+        : (Number.isFinite(Number(spec.digits)) ? Math.pow(10, -Number(spec.digits)) : null);
+      const minDistance = Number(spec.stopsLevel) > 0 && tickSize
+        ? Number(spec.stopsLevel) * tickSize
+        : null;
       const priceCtx = {
         bid: quote?.bid ?? null,
         ask: quote?.ask ?? null,
         digits: spec.digits ?? null,
-        minDistance: null,
+        minDistance,
       };
-
+ 
       // Normalizes any committee wording (buy/sell/long/short, market/limit/stop)
       // into a valid MetaApi action and validates before submitting.
       const body = buildTradeRequest({ ...input, qty: sized.volume }, mtSymbol, priceCtx);
       const actionType = body.actionType as string;
       const requiredMargin = marginPerLot ? Number((marginPerLot * sized.volume).toFixed(2)) : null;
-
+ 
       // Exact request body + broker limits logged before the call.
       console.log("[MT5] trade request", JSON.stringify({
         accountId: state.accountId, requestedSymbol: input.symbol, mtSymbol,
@@ -1001,8 +1034,8 @@ export function createMt5Connector(
         },
         body,
       }));
-
-
+ 
+ 
       // MetaApi's REST /trade endpoint takes the trade object at the top level.
       type TradeResponse = { orderId: string; positionId?: string; numericCode: number; stringCode: string; message?: string };
       const submit = (b: Record<string, unknown>) => req<TradeResponse>(
@@ -1049,9 +1082,9 @@ export function createMt5Connector(
         },
       };
     },
-
-
-
+ 
+ 
+ 
     async cancelOrder(externalOrderId: string) {
       try {
         await req<void>("POST", `/users/current/accounts/${state.accountId}/trade`, {
@@ -1060,7 +1093,7 @@ export function createMt5Connector(
         return { ok: true };
       } catch { return { ok: false }; }
     },
-
+ 
     /** Closes (fully, or partially if `volume` is given) an existing broker
      *  position by its MetaApi/MT5 ticket. Used by the app's profit-protection
      *  engine and manual close actions — this is the one place a real open
@@ -1081,7 +1114,7 @@ export function createMt5Connector(
       }
       return { fillPrice: r.price ?? null };
     },
-
+ 
     async getPositions(): Promise<ConnectorPosition[]> {
       try {
         const r = await req<Array<{ id: string; symbol: string; volume: number; type: string; openPrice: number }>>(
@@ -1095,7 +1128,7 @@ export function createMt5Connector(
         }));
       } catch { return []; }
     },
-
+ 
     async getHistory(limit = 50): Promise<HistoryEntry[]> {
       try {
         const end = new Date().toISOString();
@@ -1111,7 +1144,7 @@ export function createMt5Connector(
         }));
       } catch { return []; }
     },
-
+ 
     // ---- Live desk -------------------------------------------------------
     async getAccountSummary(): Promise<AccountSummary | null> {
       try {
@@ -1130,7 +1163,7 @@ export function createMt5Connector(
         };
       } catch { return null; }
     },
-
+ 
     async getRichPositions(): Promise<RichPosition[]> {
       try {
         const r = await req<Array<{
@@ -1156,7 +1189,7 @@ export function createMt5Connector(
         }));
       } catch { return []; }
     },
-
+ 
     async getClosedDeals(sinceMs = Date.now() - 90 * 24 * 3600 * 1000): Promise<ClosedDeal[]> {
       try {
         const end = new Date().toISOString();
@@ -1166,7 +1199,7 @@ export function createMt5Connector(
           volume?: number; price?: number; profit?: number; commission?: number; swap?: number;
           time: string; comment?: string;
         }>>("GET", `/users/current/accounts/${state.accountId}/history-deals/time/${start}/${end}`);
-
+ 
         // Pair DEAL_ENTRY_IN with DEAL_ENTRY_OUT on the same broker position.
         const opens = new Map<string, { price: number; time: string; type: string }>();
         const out: ClosedDeal[] = [];
@@ -1203,7 +1236,7 @@ export function createMt5Connector(
         return out.sort((a, b) => +new Date(b.closedAt) - +new Date(a.closedAt));
       } catch { return []; }
     },
-
+ 
     async estimateMargin(symbol, side, volume, price): Promise<MarginEstimate | null> {
       try {
         const mtSymbol = await resolveSymbol(symbol);
@@ -1216,9 +1249,9 @@ export function createMt5Connector(
         return { margin, freeMargin, sufficient: margin <= freeMargin * 0.8 };
       } catch { return null; }
     },
-
-
-
+ 
+ 
+ 
     async checkHealth(): Promise<ConnectionHealth> {
       const t0 = Date.now();
       try {
@@ -1231,7 +1264,7 @@ export function createMt5Connector(
         };
       }
     },
-
+ 
     async getApiPermissions(): Promise<ApiPermissionSnapshot> {
       // MT permissions are set on the trading account, not on the API token —
       // investor password = read-only, trading password = read + trade.
