@@ -87,6 +87,14 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
             });
             continue;
           }
+          // The breaker is time-based and auto-recovers, but the stale reason
+          // text used to linger in the UI long after it expired. Clear it.
+          if (u.live_kill_until && new Date(u.live_kill_until) <= new Date()) {
+            await supabaseAdmin.from("automation_settings")
+              .update({ live_kill_until: null, live_kill_reason: null, live_consecutive_failures: 0 })
+              .eq("user_id", u.user_id);
+          }
+
           try {
             const r = await runAutonomousCycleFor(supabaseAdmin, u.user_id, "cron");
             results.push({
