@@ -120,19 +120,35 @@ export async function runCommittee(
   supabase: SupabaseClient | null,
   symbols: string[],
   userId?: string | null,
+  options?: { deadlineMs?: number },
 ): Promise<CommitteeVerdict[]> {
   // MetaApi rate-limits large bursts. Scan with a small worker pool instead of
   // firing the entire broker universe at once; one failed symbol remains
   // isolated and cannot starve every otherwise valid committee candidate.
   const results: Array<CommitteeVerdict | null> = new Array(symbols.length).fill(null);
   let nextIndex = 0;
+  const deadline = Date.now() + Math.max(5_000, options?.deadlineMs ?? 30_000);
   const worker = async () => {
-    while (nextIndex < symbols.length) {
+    while (nextIndex < symbols.length && Date.now() < deadline) {
       const index = nextIndex++;
       const symbol = symbols[index];
       if (!symbol) continue;
       try {
-        const { candles, source, isSynthetic } = await fetchCandlesWithSource(supabase, symbol, "15m", 200, userId);
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) break;
+        let symbolTimer: ReturnType<typeof setTimeout> | undefined;
+        const symbolDeadline = new Promise<never>((_, reject) => {
+          symbolTimer = setTimeout(
+            () => reject(new Error("committee_symbol_deadline")),
+            remainingMs,
+          );
+        });
+        const { candles, source, isSynthetic } = await Promise.race([
+          fetchCandlesWithSource(supabase, symbol, "15m", 200, userId),
+          symbolDeadline,
+        ]).finally(() => {
+          if (symbolTimer) clearTimeout(symbolTimer);
+        });
         if (!candles || candles.length < 60) continue;
         const base = analyzeCandles(symbol, candles, source, isSynthetic);
         const votes = voteFor(base);
@@ -159,6 +175,7 @@ export async function runCommittee(
           entryMomentumDetail: momentum.detail,
         } as CommitteeVerdict;
       } catch (e) {
+        if (Date.now() >= deadline) break;
         console.warn(
           `[committee] skipped ${symbol}: live candles unavailable:`,
           e instanceof Error ? e.message : String(e),

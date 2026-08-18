@@ -398,7 +398,12 @@ async function runAutonomousCycleCore(
       const rotating = fullUniverse.filter(
         symbol => !anchors.includes(symbol) && !memeSlice.includes(symbol),
       );
-      const batchSize = 22;
+      // Ten symbols fit reliably inside the server request budget. The former
+      // 22-symbol batch was paired with a 22-second Promise.race that discarded
+      // every completed verdict when the slowest broker calls crossed the
+      // deadline. Smaller rotating batches complete instead of reporting a
+      // misleading zero-result timeout, while still covering the full universe.
+      const batchSize = 10;
       const rotationSlots = Math.max(0, batchSize - anchors.length - memeSlice.length);
       const rotationStart = rotating.length
         ? (Math.floor(Date.now() / 60_000) * Math.max(1, rotationSlots)) % rotating.length
@@ -415,16 +420,11 @@ async function runAutonomousCycleCore(
         `universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}` +
         `:broker=${tradable.length}/${rawTradable.length}(non-equity)`,
       );
-      let committeeTimer: ReturnType<typeof setTimeout> | undefined;
-      const committeeTimeout = new Promise<never>((_, reject) => {
-        committeeTimer = setTimeout(() => reject(new Error("committee_scan_timeout:22s")), 22_000);
-      });
-      const verdicts = await Promise.race([
-        runCommittee(supabase, universe, userId),
-        committeeTimeout,
-      ]).finally(() => {
-        if (committeeTimer) clearTimeout(committeeTimer);
-      });
+      // The committee owns its deadline and returns whichever verdicts have
+      // completed. Do not wrap it in an outer Promise.race: that left broker
+      // requests running after the cycle had been marked failed, causing the
+      // next manual/cron invocation to collide with an unfinished cycle.
+      const verdicts = await runCommittee(supabase, universe, userId, { deadlineMs: 24_000 });
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
