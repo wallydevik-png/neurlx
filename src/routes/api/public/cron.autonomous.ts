@@ -9,6 +9,8 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const requestStartedMs = Date.now();
+        const requestBudgetMs = 45_000;
         // Accept either Authorization: Bearer <AUTONOMOUS_CRON_SECRET>
         // OR apikey header matching the project publishable key (pg_cron default).
         const secret = process.env.AUTONOMOUS_CRON_SECRET;
@@ -78,6 +80,15 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
 
         const results: Array<{ userId: string; executed: number; rejected: number; skipped?: string }> = [];
         for (const u of users ?? []) {
+          if (Date.now() - requestStartedMs >= requestBudgetMs) {
+            results.push({
+              userId: u.user_id,
+              executed: 0,
+              rejected: 0,
+              skipped: "deferred_to_next_tick",
+            });
+            continue;
+          }
           if (u.live_kill_until && new Date(u.live_kill_until) > new Date()) {
             results.push({
               userId: u.user_id,

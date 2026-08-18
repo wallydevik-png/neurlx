@@ -967,7 +967,9 @@ export function createMt5Connector(
           equity, freeMargin,
           riskPct: 0, // risk-based target comes from the caller's qty
           entryPrice: refPrice,
-          stopLoss: input.stopPrice ?? null,
+          // stopPrice is the trigger for a pending entry; stopLoss is the
+          // protective level that defines the trade's actual risk distance.
+          stopLoss: input.stopLoss ?? null,
           spec: {
             volumeMin: Number(spec.volumeMin ?? 0.01),
             volumeMax: Number(spec.volumeMax ?? 100),

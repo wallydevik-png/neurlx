@@ -84,6 +84,8 @@ async function runAutonomousCycleCore(
   userId: string,
   trigger: "manual" | "cron" | "signal",
 ): Promise<CycleResult> {
+  const cycleStartedMs = Date.now();
+  const cycleBudgetMs = 44_000;
   const rejectReasons: Record<string, number> = {};
   const errors: string[] = [];
   let scanned = 0;
@@ -137,9 +139,25 @@ async function runAutonomousCycleCore(
       errors: ["recovered:stale_unfinished_cycle"],
     }).in("id", staleRunIds);
   }
-  const { data: runRow } = await supabase.from("autonomous_runs").insert({
+  const { data: runRow, error: runInsertError } = await supabase.from("autonomous_runs").insert({
     user_id: userId, started_at: startedAt, trigger, live: false,
   }).select().single();
+  // The database has a partial unique index for unfinished runs. This catches
+  // the cron/manual race atomically even when both callers pass the read above.
+  if (runInsertError?.code === "23505") {
+    return {
+      runId: "overlap-skipped",
+      scanned: 0,
+      executed: 0,
+      rejected: 0,
+      rejectReasons: {},
+      errors: ["skipped:cycle_already_running:atomic_lock"],
+      skipped: "cycle_already_running",
+    };
+  }
+  if (runInsertError || !runRow?.id) {
+    throw new Error(`autonomous_run_start_failed:${runInsertError?.message ?? "missing run id"}`);
+  }
   const runId = runRow?.id as string;
 
   const finish = async (skipped?: string, live = false) => {
@@ -398,7 +416,12 @@ async function runAutonomousCycleCore(
       const rotating = fullUniverse.filter(
         symbol => !anchors.includes(symbol) && !memeSlice.includes(symbol),
       );
-      const batchSize = 22;
+      // Ten symbols fit reliably inside the server request budget. The former
+      // 22-symbol batch was paired with a 22-second Promise.race that discarded
+      // every completed verdict when the slowest broker calls crossed the
+      // deadline. Smaller rotating batches complete instead of reporting a
+      // misleading zero-result timeout, while still covering the full universe.
+      const batchSize = 10;
       const rotationSlots = Math.max(0, batchSize - anchors.length - memeSlice.length);
       const rotationStart = rotating.length
         ? (Math.floor(Date.now() / 60_000) * Math.max(1, rotationSlots)) % rotating.length
@@ -415,16 +438,11 @@ async function runAutonomousCycleCore(
         `universe:${universe.length}:watchlist=${(settings.allowed_assets ?? []).length}` +
         `:broker=${tradable.length}/${rawTradable.length}(non-equity)`,
       );
-      let committeeTimer: ReturnType<typeof setTimeout> | undefined;
-      const committeeTimeout = new Promise<never>((_, reject) => {
-        committeeTimer = setTimeout(() => reject(new Error("committee_scan_timeout:22s")), 22_000);
-      });
-      const verdicts = await Promise.race([
-        runCommittee(supabase, universe, userId),
-        committeeTimeout,
-      ]).finally(() => {
-        if (committeeTimer) clearTimeout(committeeTimer);
-      });
+      // The committee owns its deadline and returns whichever verdicts have
+      // completed. Do not wrap it in an outer Promise.race: that left broker
+      // requests running after the cycle had been marked failed, causing the
+      // next manual/cron invocation to collide with an unfinished cycle.
+      const verdicts = await runCommittee(supabase, universe, userId, { deadlineMs: 24_000 });
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
@@ -670,7 +688,15 @@ async function runAutonomousCycleCore(
   }
 
   let slots = capacity;
-  for (const sig of signals) {
+  for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
+    const sig = signals[signalIndex];
+    if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
+      const deferred = signals.length - signalIndex;
+      errors.push(`cycle_time_budget_exceeded:deferred=${deferred}`);
+      // Leave these signals pending for the next bounded cycle rather than
+      // falsely rejecting valid setups because broker history was slow.
+      break;
+    }
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
     if (Number(sig.confidence) < minConf) {
       bump(rejectReasons, "below_min_confidence"); rejected++;
