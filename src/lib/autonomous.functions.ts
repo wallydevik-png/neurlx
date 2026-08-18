@@ -84,6 +84,8 @@ async function runAutonomousCycleCore(
   userId: string,
   trigger: "manual" | "cron" | "signal",
 ): Promise<CycleResult> {
+  const cycleStartedMs = Date.now();
+  const cycleBudgetMs = 44_000;
   const rejectReasons: Record<string, number> = {};
   const errors: string[] = [];
   let scanned = 0;
@@ -137,9 +139,25 @@ async function runAutonomousCycleCore(
       errors: ["recovered:stale_unfinished_cycle"],
     }).in("id", staleRunIds);
   }
-  const { data: runRow } = await supabase.from("autonomous_runs").insert({
+  const { data: runRow, error: runInsertError } = await supabase.from("autonomous_runs").insert({
     user_id: userId, started_at: startedAt, trigger, live: false,
   }).select().single();
+  // The database has a partial unique index for unfinished runs. This catches
+  // the cron/manual race atomically even when both callers pass the read above.
+  if (runInsertError?.code === "23505") {
+    return {
+      runId: "overlap-skipped",
+      scanned: 0,
+      executed: 0,
+      rejected: 0,
+      rejectReasons: {},
+      errors: ["skipped:cycle_already_running:atomic_lock"],
+      skipped: "cycle_already_running",
+    };
+  }
+  if (runInsertError || !runRow?.id) {
+    throw new Error(`autonomous_run_start_failed:${runInsertError?.message ?? "missing run id"}`);
+  }
   const runId = runRow?.id as string;
 
   const finish = async (skipped?: string, live = false) => {
@@ -670,7 +688,15 @@ async function runAutonomousCycleCore(
   }
 
   let slots = capacity;
-  for (const sig of signals) {
+  for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
+    const sig = signals[signalIndex];
+    if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
+      const deferred = signals.length - signalIndex;
+      errors.push(`cycle_time_budget_exceeded:deferred=${deferred}`);
+      // Leave these signals pending for the next bounded cycle rather than
+      // falsely rejecting valid setups because broker history was slow.
+      break;
+    }
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
     if (Number(sig.confidence) < minConf) {
       bump(rejectReasons, "below_min_confidence"); rejected++;
