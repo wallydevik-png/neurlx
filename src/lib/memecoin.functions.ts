@@ -10,7 +10,7 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
     const settings = await loadSettings(supabase, userId);
 
     const [{ data: wallet }, { data: signals }, { data: positions }, { data: roles }] = await Promise.all([
-      supabase.from("memecoin_wallets").select("public_key,phantom_address,label,updated_at")
+      supabase.from("memecoin_wallets").select("public_key,phantom_address,label,encrypted_secret,updated_at")
         .eq("user_id", userId).maybeSingle(),
       supabase.from("memecoin_signals").select("*").order("created_at", { ascending: false }).limit(60),
       supabase.from("memecoin_positions").select("*").eq("user_id", userId)
@@ -41,7 +41,14 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
 
     return {
       settings,
-      wallet: wallet ? { ...wallet, sol: walletSol } : null,
+      wallet: wallet ? {
+        public_key: wallet.public_key,
+        phantom_address: wallet.phantom_address,
+        label: wallet.label,
+        updated_at: wallet.updated_at,
+        hasKey: Boolean(wallet.encrypted_secret),
+        sol: walletSol,
+      } : null,
       signals: latestSignals,
       open, closed,
       stats: {
@@ -95,21 +102,22 @@ export const linkPhantomWallet = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** Admin-only: store the trading wallet's private key, encrypted at rest. */
+/** Import the authenticated user's Solana wallet, encrypted at rest. */
 export const saveTradingWalletKey = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { secretKey: string; label?: string }) => d)
+  .inputValidator((d: { secretKey: string; label?: string }) => {
+    if (!d || typeof d.secretKey !== "string") throw new Error("Wallet secret is required");
+    const secretKey = d.secretKey.trim();
+    if (secretKey.length < 32 || secretKey.length > 500) throw new Error("Wallet secret has an invalid length");
+    return { secretKey, label: typeof d.label === "string" ? d.label.trim().slice(0, 80) : undefined };
+  })
   .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase
-      .rpc("has_role", { _user_id: context.userId, _role: "admin" });
-    if (!isAdmin) throw new Error("Only an admin can store a trading wallet key");
-
     const { keypairFromSecret } = await import("@/lib/memecoin/jupiter.server");
     let publicKey: string;
     try {
-      publicKey = keypairFromSecret(data.secretKey).publicKey.toBase58();
+      publicKey = (await keypairFromSecret(data.secretKey)).publicKey.toBase58();
     } catch {
-      throw new Error("That key could not be read. Paste the base58 private key exported from Phantom.");
+      throw new Error("That wallet could not be read. Enter a valid Phantom recovery phrase or private key.");
     }
 
     const { encryptJSON } = await import("@/lib/crypto.server");
@@ -117,7 +125,8 @@ export const saveTradingWalletKey = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("memecoin_wallets").upsert({
       user_id: context.userId, public_key: publicKey, encrypted_secret: encrypted,
-      label: data.label ?? "Sniper trading wallet",
+      phantom_address: publicKey,
+      label: data.label || "Imported sniper wallet",
     }, { onConflict: "user_id" });
 
     return { ok: true, publicKey };
