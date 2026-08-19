@@ -10,7 +10,13 @@ class UnsupportedWebSocketClient {
 }
 
 export default UnsupportedWebSocketClient;
-export { UnsupportedWebSocketClient as Client, UnsupportedWebSocketClient as CommonClient };
+export {
+  UnsupportedWebSocketClient as Client,
+  UnsupportedWebSocketClient as CommonClient,
+  UnsupportedWebSocketClient as WebSocket,
+  UnsupportedWebSocketClient as Server,
+};
 export const createRpc = () => {
   throw new Error("WebSocket RPC subscriptions are not supported in this runtime");
 };
+
