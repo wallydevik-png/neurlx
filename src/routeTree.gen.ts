@@ -33,6 +33,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedMultiAssetRouteImport } from './routes/_authenticated/multi-asset'
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
 import { Route as AuthenticatedMobileRouteImport } from './routes/_authenticated/mobile'
+import { Route as AuthenticatedMemecoinRouteImport } from './routes/_authenticated/memecoin'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
 import { Route as AuthenticatedLiveDeskRouteImport } from './routes/_authenticated/live-desk'
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
@@ -182,6 +183,11 @@ const AuthenticatedMonitoringRoute = AuthenticatedMonitoringRouteImport.update({
 const AuthenticatedMobileRoute = AuthenticatedMobileRouteImport.update({
   id: '/mobile',
   path: '/mobile',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMemecoinRoute = AuthenticatedMemecoinRouteImport.update({
+  id: '/memecoin',
+  path: '/memecoin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
@@ -347,6 +353,7 @@ export interface FileRoutesByFullPath {
   '/lab': typeof AuthenticatedLabRoute
   '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/memecoin': typeof AuthenticatedMemecoinRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -397,6 +404,7 @@ export interface FileRoutesByTo {
   '/lab': typeof AuthenticatedLabRoute
   '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/memecoin': typeof AuthenticatedMemecoinRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -450,6 +458,7 @@ export interface FileRoutesById {
   '/_authenticated/lab': typeof AuthenticatedLabRoute
   '/_authenticated/live-desk': typeof AuthenticatedLiveDeskRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
+  '/_authenticated/memecoin': typeof AuthenticatedMemecoinRoute
   '/_authenticated/mobile': typeof AuthenticatedMobileRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
   '/_authenticated/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -503,6 +512,7 @@ export interface FileRouteTypes {
     | '/lab'
     | '/live-desk'
     | '/market'
+    | '/memecoin'
     | '/mobile'
     | '/monitoring'
     | '/multi-asset'
@@ -553,6 +563,7 @@ export interface FileRouteTypes {
     | '/lab'
     | '/live-desk'
     | '/market'
+    | '/memecoin'
     | '/mobile'
     | '/monitoring'
     | '/multi-asset'
@@ -605,6 +616,7 @@ export interface FileRouteTypes {
     | '/_authenticated/lab'
     | '/_authenticated/live-desk'
     | '/_authenticated/market'
+    | '/_authenticated/memecoin'
     | '/_authenticated/mobile'
     | '/_authenticated/monitoring'
     | '/_authenticated/multi-asset'
@@ -808,6 +820,13 @@ declare module '@tanstack/react-router' {
       path: '/mobile'
       fullPath: '/mobile'
       preLoaderRoute: typeof AuthenticatedMobileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/memecoin': {
+      id: '/_authenticated/memecoin'
+      path: '/memecoin'
+      fullPath: '/memecoin'
+      preLoaderRoute: typeof AuthenticatedMemecoinRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/market': {
@@ -1034,6 +1053,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
   AuthenticatedLiveDeskRoute: typeof AuthenticatedLiveDeskRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
+  AuthenticatedMemecoinRoute: typeof AuthenticatedMemecoinRoute
   AuthenticatedMobileRoute: typeof AuthenticatedMobileRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
   AuthenticatedMultiAssetRoute: typeof AuthenticatedMultiAssetRoute
@@ -1079,6 +1099,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLabRoute: AuthenticatedLabRoute,
   AuthenticatedLiveDeskRoute: AuthenticatedLiveDeskRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
+  AuthenticatedMemecoinRoute: AuthenticatedMemecoinRoute,
   AuthenticatedMobileRoute: AuthenticatedMobileRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,
   AuthenticatedMultiAssetRoute: AuthenticatedMultiAssetRoute,
