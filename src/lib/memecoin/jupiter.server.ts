@@ -9,6 +9,8 @@
 // Cloudflare Worker runtime.
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
+import { mnemonicToSeedWebcrypto, validateMnemonic } from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const JUP = "https://lite-api.jup.ag/swap/v1";
@@ -29,10 +31,36 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   return json.result as T;
 }
 
-export function keypairFromSecret(secret: string): Keypair {
+async function derivePhantomKeypair(mnemonic: string): Promise<Keypair> {
+  if (!validateMnemonic(mnemonic, wordlist)) throw new Error("Invalid recovery phrase");
+  let key = await mnemonicToSeedWebcrypto(mnemonic);
+  const path = [44, 501, 0, 0];
+  for (const index of path) {
+    const data = new Uint8Array(37);
+    data[0] = 0;
+    data.set(key.slice(0, 32), 1);
+    new DataView(data.buffer).setUint32(33, index + 0x80000000, false);
+    const hmacKey = await crypto.subtle.importKey(
+      "raw", key.length === 64 ? new TextEncoder().encode("ed25519 seed") : key.slice(32),
+      { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
+    );
+    key = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, data));
+  }
+  return Keypair.fromSeed(key.slice(0, 32));
+}
+
+export async function keypairFromSecret(secret: string): Promise<Keypair> {
   const trimmed = secret.trim();
+  const words = trimmed.toLowerCase().split(/\s+/);
+  if ([12, 15, 18, 21, 24].includes(words.length)) {
+    return derivePhantomKeypair(words.join(" "));
+  }
   if (trimmed.startsWith("[")) {
-    return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed) as number[]));
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!Array.isArray(parsed) || parsed.length !== 64 || parsed.some(n => !Number.isInteger(n) || n < 0 || n > 255)) {
+      throw new Error("Invalid secret-key byte array");
+    }
+    return Keypair.fromSecretKey(Uint8Array.from(parsed as number[]));
   }
   return Keypair.fromSecretKey(bs58.decode(trimmed));
 }
@@ -65,7 +93,7 @@ export async function getQuote(inputMint: string, outputMint: string, amountRaw:
 export async function swap(opts: {
   secret: string; inputMint: string; outputMint: string; amountRaw: number; slippageBps: number;
 }): Promise<{ signature: string; outAmount: number; priceImpactPct: number }> {
-  const kp = keypairFromSecret(opts.secret);
+  const kp = await keypairFromSecret(opts.secret);
   const quote = await getQuote(opts.inputMint, opts.outputMint, opts.amountRaw, opts.slippageBps);
 
   const buildRes = await fetch(`${JUP}/swap`, {

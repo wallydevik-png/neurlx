@@ -1,19 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AppShell, PageHeader, Metric } from "@/components/AppShell";
 import {
-  getMemecoinDesk, updateMemecoinSettings, linkPhantomWallet,
+  getMemecoinDesk, updateMemecoinSettings, saveTradingWalletKey,
   scanMemecoinsNow, snipeSignal, exitMemecoinPosition, runMemecoinCycleNow,
 } from "@/lib/memecoin.functions";
-import { Rocket, Wallet, ShieldAlert, RefreshCw, Play } from "lucide-react";
-import {
-  createPhantomConnectUrl,
-  isMobileBrowser,
-  readPhantomConnectResult,
-} from "@/lib/phantom-mobile";
+import { Rocket, Wallet, ShieldAlert, RefreshCw, Play, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/memecoin")({
   head: () => ({
@@ -26,12 +22,10 @@ export const Route = createFileRoute("/_authenticated/memecoin")({
   component: MemecoinDesk,
 });
 
-type PhantomProvider = { isPhantom?: boolean; connect: () => Promise<{ publicKey: { toString: () => string } }> };
-
 function MemecoinDesk() {
   const deskFn = useServerFn(getMemecoinDesk);
   const saveFn = useServerFn(updateMemecoinSettings);
-  const linkFn = useServerFn(linkPhantomWallet);
+  const importWalletFn = useServerFn(saveTradingWalletKey);
   const scanFn = useServerFn(scanMemecoinsNow);
   const snipeFn = useServerFn(snipeSignal);
   const exitFn = useServerFn(exitMemecoinPosition);
@@ -50,55 +44,29 @@ function MemecoinDesk() {
     min_liquidity_usd: 25000, min_score: 70, slippage_bps: 300, max_daily_loss_sol: 0.25,
   });
   const [busy, setBusy] = useState<string | null>(null);
+  const [walletSecret, setWalletSecret] = useState("");
+  const [showWalletSecret, setShowWalletSecret] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => { if (data?.settings) setForm(f => ({ ...f, ...data.settings })); }, [data?.settings]);
-
-  useEffect(() => {
-    if (!window.location.search.includes("phantom_callback=1")) return;
-    let cancelled = false;
-    setBusy("phantom");
-    try {
-      const result = readPhantomConnectResult(window.location.search);
-      const address = result?.public_key;
-      if (!address) throw new Error("Phantom did not return a wallet address.");
-      linkFn({ data: { address } })
-        .then(() => {
-          if (cancelled) return;
-          toast.success("Phantom wallet linked");
-          window.history.replaceState({}, "", "/memecoin");
-          refresh();
-        })
-        .catch(e => { if (!cancelled) fail(e); })
-        .finally(() => { if (!cancelled) setBusy(null); });
-    } catch (e) {
-      fail(e);
-      window.history.replaceState({}, "", "/memecoin");
-      setBusy(null);
-    }
-    return () => { cancelled = true; };
-  }, [linkFn]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["memecoin-desk"] });
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : "Something went wrong");
 
-  async function connectPhantom() {
-    const provider = (window as unknown as { solana?: PhantomProvider }).solana;
-    if (!provider?.isPhantom) {
-      if (isMobileBrowser()) {
-        window.location.assign(createPhantomConnectUrl());
-        return;
-      }
-      window.open("https://phantom.app/download", "_blank", "noopener");
-      toast.info("Install the Phantom browser extension, then connect again.");
-      return;
-    }
+  async function importWallet() {
+    if (!walletSecret.trim()) return;
     try {
-      setBusy("phantom");
-      const res = await provider.connect();
-      await linkFn({ data: { address: res.publicKey.toString() } });
-      toast.success("Phantom wallet linked");
+      setBusy("wallet-import");
+      const result = await importWalletFn({ data: { secretKey: walletSecret } });
+      setWalletSecret("");
+      setShowImport(false);
+      toast.success(`Wallet imported: ${result.publicKey.slice(0, 6)}…${result.publicKey.slice(-4)}`);
       refresh();
-    } catch (e) { fail(e); } finally { setBusy(null); }
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function save() {
@@ -121,7 +89,7 @@ function MemecoinDesk() {
   }
 
   const signals = data?.signals ?? [];
-  const canTrade = Boolean(data?.wallet?.public_key);
+  const canTrade = Boolean(data?.wallet?.hasKey);
 
   return (
     <AppShell>
@@ -144,18 +112,49 @@ function MemecoinDesk() {
           <div>
             <h2 className="font-semibold flex items-center gap-2"><Wallet className="w-4 h-4" /> Wallet</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-xl">
-              Link Phantom to identify your wallet. Unattended sniping runs from a trading key stored in the
-              admin-only vault — the browser never holds it.
+              Import a dedicated Phantom wallet to fund and trade directly. Its secret is encrypted immediately,
+              never returned to this screen, and only decrypted server-side when signing a swap.
             </p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={connectPhantom} disabled={busy === "phantom"}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60">
-              {data?.wallet?.phantom_address ? "Reconnect Phantom" : "Connect Phantom"}
-            </button>
-            <Link to="/admin" className="rounded-md border border-border px-4 py-2 text-sm">Wallet vault</Link>
-          </div>
+          <Button onClick={() => setShowImport(v => !v)}>
+            <KeyRound /> {data?.wallet?.hasKey ? "Replace wallet" : "Import wallet"}
+          </Button>
         </div>
+        {showImport && (
+          <div className="mt-5 border-t border-border pt-5">
+            <label htmlFor="wallet-secret" className="text-sm font-medium">Recovery phrase or private key</label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use a separate low-balance trading wallet—not your primary wallet. Supports Phantom recovery phrases,
+              base58 private keys, and 64-byte JSON keys.
+            </p>
+            <div className="relative mt-3">
+              <textarea
+                id="wallet-secret"
+                value={walletSecret}
+                onChange={e => setWalletSecret(e.target.value)}
+                rows={3}
+                maxLength={500}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Enter wallet recovery phrase or private key"
+                className="w-full rounded-md bg-input border border-border px-3 py-2 pr-11 text-sm font-mono outline-none focus:border-primary"
+                style={{ WebkitTextSecurity: showWalletSecret ? "none" : "disc" }}
+              />
+              <Button type="button" variant="ghost" size="icon" onClick={() => setShowWalletSecret(v => !v)}
+                className="absolute right-1 top-1" aria-label={showWalletSecret ? "Hide wallet secret" : "Show wallet secret"}>
+                {showWalletSecret ? <EyeOff /> : <Eye />}
+              </Button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button onClick={importWallet} disabled={!walletSecret.trim() || busy === "wallet-import"}>
+                {busy === "wallet-import" ? "Encrypting…" : "Encrypt & import"}
+              </Button>
+              <span className="text-xs text-warning inline-flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5" /> Never import a wallet holding funds you cannot afford to lose.
+              </span>
+            </div>
+          </div>
+        )}
         {!canTrade && (
           <p className="mt-4 text-xs text-warning flex items-center gap-2">
             <ShieldAlert className="w-4 h-4" /> No trading wallet configured yet — the sniper can scan but not execute.
