@@ -211,7 +211,7 @@ export async function aiThesis(candidates: MemeCandidate[]): Promise<Record<stri
       method: "POST",
       headers: { "Content-Type": "application/json", "Lovable-API-Key": key },
       body: JSON.stringify({
-        model: "google/gemini-3-flash",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: "You are an elite Solana memecoin trader. For each token give ONE punchy sentence (max 22 words) on whether the setup is worth sniping and why. Return strict JSON: {\"SYMBOL\":\"thesis\"}." },
           { role: "user", content: JSON.stringify(brief) },
