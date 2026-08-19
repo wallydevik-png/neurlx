@@ -135,7 +135,7 @@ function AutonomousPage() {
 
               <div>
                 <Label>Min confidence ({(form.autonomous_min_confidence * 100).toFixed(0)}%)</Label>
-                <Input type="range" min={0.5} max={0.99} step={0.01}
+                <Input type="range" min={0.4} max={0.99} step={0.01}
                   value={form.autonomous_min_confidence}
                   onChange={e => setForm(f => ({ ...f, autonomous_min_confidence: Number(e.target.value) }))} />
               </div>
