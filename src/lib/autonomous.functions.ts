@@ -14,12 +14,12 @@
 //   8. live only when autonomous_live_enabled AND default connection trading-enabled
 //
 // Every run inserts an autonomous_runs row with counts + reject reasons.
-
+ 
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-
+ 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -32,15 +32,15 @@ interface CycleResult {
   errors: string[];
   skipped?: string; // if the whole cycle was skipped
 }
-
+ 
 function bump(map: Record<string, number>, key: string) {
   map[key] = (map[key] ?? 0) + 1;
 }
-
+ 
 function withDetail(key: string, detail?: string) {
   return detail ? `${key}: ${detail}` : key;
 }
-
+ 
 function isRegionalConnectivityError(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return message.includes("cloudfront")
@@ -50,9 +50,9 @@ function isRegionalConnectivityError(error: unknown): boolean {
     || message.includes("us ip")
     || message.includes("403");
 }
-
+ 
 const BYBIT_REGION_BLOCKED_REASON = "Bybit region block — live autopilot paused because Bybit is rejecting the hosted app server IP. Configure a Bybit regional gateway from an allowed country or switch this account to another live venue.";
-
+ 
 async function markConnectionRegionBlocked(
   supabase: SupabaseClient,
   connectionId: string,
@@ -75,7 +75,7 @@ async function markConnectionRegionBlocked(
     last_sync_at: new Date().toISOString(),
   }).eq("id", connectionId).eq("user_id", userId);
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Core cycle — reusable from both the user-triggered fn and the cron route
 // ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ async function runAutonomousCycleCore(
   let brokerSymbols = new Set<string>();
   let executed = 0;
   let rejected = 0;
-
+ 
   const startedAt = new Date().toISOString();
   // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
   // let the next invocation start another scan for the same user while the
@@ -159,7 +159,7 @@ async function runAutonomousCycleCore(
     throw new Error(`autonomous_run_start_failed:${runInsertError?.message ?? "missing run id"}`);
   }
   const runId = runRow?.id as string;
-
+ 
   const finish = async (skipped?: string, live = false) => {
     const runErrors = skipped ? [...errors, withDetail("skipped", skipped)] : errors;
     await supabase.from("autonomous_runs").update({
@@ -173,8 +173,8 @@ async function runAutonomousCycleCore(
     } catch { /* telemetry must never break a cycle */ }
     return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
   };
-
-
+ 
+ 
   // 1. Load settings
   const { data: settings } = await supabase.from("automation_settings")
     .select("*").eq("user_id", userId).maybeSingle();
@@ -210,7 +210,7 @@ async function runAutonomousCycleCore(
   if (settings.live_kill_until && new Date(settings.live_kill_until) > new Date()) {
     return finish(`circuit_breaker_open:${settings.live_kill_reason ?? "open"}`, wantsLive);
   }
-
+ 
   // 2. Cooldown
   if (settings.autonomous_last_run_at) {
     const nextAllowed = new Date(settings.autonomous_last_run_at).getTime()
@@ -219,7 +219,7 @@ async function runAutonomousCycleCore(
       return finish(`cooldown_until:${new Date(nextAllowed).toISOString()}`, wantsLive);
     }
   }
-
+ 
   // 3. Autonomous consecutive-loss breaker (stateless — query last N closes)
   const maxLosses = settings.autonomous_max_consecutive_losses ?? 3;
   const { data: recentCloses } = await supabase.from("positions")
@@ -248,18 +248,18 @@ async function runAutonomousCycleCore(
     });
     return finish("consecutive_losses_breaker", wantsLive);
   }
-
+ 
   // 4. Max open positions
   const { count: openCount } = await supabase.from("positions")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId).eq("status", "open");
   const capacity = Math.max(0, (settings.autonomous_max_open_positions ?? 3) - (openCount ?? 0));
   if (capacity === 0) return finish("no_open_slots", wantsLive);
-
+ 
   // 5. Daily loss cap check (reuse existing paper account tracking)
   const { data: paperAcct } = await supabase.from("paper_accounts")
     .select("*").eq("user_id", userId).maybeSingle();
-
+ 
   // 6. Determine live routing
   let liveConn: {
     id: string;
@@ -330,7 +330,7 @@ async function runAutonomousCycleCore(
     }
     return finish(reason, true);
   }
-
+ 
   // 7. Pull pending signals — and if none exist, have the AI committee
   // generate fresh ones from the user's allowed_assets watchlist. This is
   // what makes autopilot truly hands-free: the loop doesn't wait for the
@@ -347,7 +347,7 @@ async function runAutonomousCycleCore(
     .select("*").eq("user_id", userId).eq("status", "pending")
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false }).limit(20);
-
+ 
   // Margin venues (MT5, OANDA) can open short positions without holding the
   // base asset — sizing a sell against a spot base balance made every
   // short-side idea unfundable, which is why cycles only ever produced BUY
@@ -360,8 +360,8 @@ async function runAutonomousCycleCore(
     const base = symbol.includes("-") ? symbol.split("-")[0].toUpperCase() : symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
     return (liveBaseAvailable.get(base) ?? 0) > 0;
   };
-
-
+ 
+ 
   if (live && signals?.length) {
     const fundable = [];
     for (const sig of signals) {
@@ -378,7 +378,7 @@ async function runAutonomousCycleCore(
     }
     signals = fundable;
   }
-
+ 
   if ((!signals || signals.length === 0) && capacity > 0) {
     try {
       const { runCommittee } = await import("@/lib/trading/committee.server");
@@ -430,7 +430,7 @@ async function runAutonomousCycleCore(
         ? [...rotating.slice(rotationStart), ...rotating.slice(0, rotationStart)]
         : [];
       const universe = [...anchors, ...memeSlice, ...rotated.slice(0, rotationSlots)];
-
+ 
       // "scanned" now means symbols evaluated by the AI committee — the
       // honest metric. Signals produced are reported separately below.
       scanned = universe.length;
@@ -447,7 +447,7 @@ async function runAutonomousCycleCore(
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
       };
-
+ 
       // Feed the institutional gate a sufficiently broad candidate set. The
       // previous `capacity`-sized slice stopped after the three highest-ranked
       // committee ideas, so three compressed/low-volatility instruments could
@@ -513,8 +513,8 @@ async function runAutonomousCycleCore(
           .join(" | ");
         errors.push(`entry_momentum_no_candidates:${momentumMisses || "no_directional_consensus"}`);
       }
-
-
+ 
+ 
       // Scale qty so notional fits the user's per-trade cap. The engine
       // targets a $500 notional by default; without this, a $10 cap user
       // would see every generated signal rejected at the risk gate as
@@ -524,7 +524,7 @@ async function runAutonomousCycleCore(
       const capForSize = live
         ? Math.min(Number(settings.max_trade_size ?? 500), Number(settings.live_max_notional_per_order ?? 500))
         : Number(settings.max_trade_size ?? 500);
-
+ 
       const toInsert = picks.flatMap(v => {
         let scaledQty = 0;
         if (live && v.consensusDirection === "buy") {
@@ -540,7 +540,7 @@ async function runAutonomousCycleCore(
             const byCap = (capForSize * 0.95) / v.base.entry;
             scaledQty = +Math.min((liveBaseAvailable.get(base) ?? 0) * 0.95, byCap).toFixed(6);
           }
-
+ 
         } else {
           const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
           scaledQty = +(targetNotional / v.base.entry).toFixed(6);
@@ -577,19 +577,19 @@ async function runAutonomousCycleCore(
       errors.push(`committee_gen: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-
+ 
   // `scanned` is set to the committee universe size during generation. When we
   // instead worked from pre-existing pending signals, fall back to their count.
   if (scanned === 0) scanned = signals?.length ?? 0;
   if (signals?.length) errors.push(`signals_in_play:${signals.length}`);
-
+ 
   if (!signals || signals.length === 0) {
     await supabase.from("automation_settings")
       .update({ autonomous_last_run_at: new Date().toISOString() })
       .eq("user_id", userId);
     return finish(undefined, live);
   }
-
+ 
   const allowedAssets = new Set<string>(settings.allowed_assets ?? []);
   // When the cycle works through signals queued by an EARLIER cycle we never
   // built the broker symbol list, so every broker-discovered symbol (AUD-NZD,
@@ -604,13 +604,13 @@ async function runAutonomousCycleCore(
       // Non-fatal: fall back to the watchlist-only check.
     }
   }
-
+ 
   const minConf = Number(settings.autonomous_min_confidence ?? 0.85);
   const perOrderCap = Number(settings.live_max_notional_per_order ?? 50);
-
+ 
   const { evaluateRisk } = await import("@/lib/trading/riskGate.server");
   const { submitOrder } = await import("@/lib/execution/engine.server");
-
+ 
   // ---------------------------------------------------------------------
   // Institutional gate: capital-protection policy + strict entry filters.
   // Quality over quantity — a signal must clear EVERY filter to execute.
@@ -631,13 +631,17 @@ async function runAutonomousCycleCore(
       .eq("user_id", userId);
     return finish(policy.blocks[0], live);
   }
-  // The hidden 0.9 floor overrode the user's own Min Confidence setting and
-  // made the composite gate unreachable in anything but a textbook trend.
-  // Respect the configured value with a 0.70 sanity floor.
+  // A hidden floor here has now silently overridden the user's own Min
+  // Confidence setting twice — first at 0.90, then (after being "fixed") at
+  // 0.55, both while the code comment claimed to respect the user's value.
+  // A 50% slider setting was being clamped up to 55% with zero indication
+  // anywhere in the UI. The sanity floor now sits well below anything a user
+  // would reasonably choose (guards only against 0 or a data-entry error),
+  // so the configured slider value is what actually gates execution.
   const institutionalMinConf = Math.max(
-    Number(settings.autonomous_min_confidence ?? 0.65), 0.55,
+    Number(settings.autonomous_min_confidence ?? 0.65), 0.20,
   );
-
+ 
   // Self-learning: automatically review performance every 100 closed trades
   // and re-weight strategies. Best-effort — never blocks execution.
   try {
@@ -647,7 +651,7 @@ async function runAutonomousCycleCore(
   } catch (e) {
     errors.push(`learning_review: ${e instanceof Error ? e.message : String(e)}`);
   }
-
+ 
   // Strategy lifecycle: re-validate every strategy against recent rolling
   // performance, run weekend retraining, and resolve the live-trading gate.
   let liveGate: { allowed: boolean; reason: string; strategyId: string | null; allocationRiskPct: number } | null = null;
@@ -664,7 +668,7 @@ async function runAutonomousCycleCore(
   } catch (e) {
     errors.push(`lifecycle: ${e instanceof Error ? e.message : String(e)}`);
   }
-
+ 
   // Portfolio Intelligence layer — health, mode, exposure and the Portfolio
   // Manager AI that sits above every strategy and above the Risk Engine.
   const {
@@ -686,7 +690,7 @@ async function runAutonomousCycleCore(
   } catch (e) {
     errors.push(`portfolio_intel: ${e instanceof Error ? e.message : String(e)}`);
   }
-
+ 
   let slots = capacity;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
@@ -719,7 +723,7 @@ async function runAutonomousCycleCore(
     const entry = Number(sig.entry);
     const side = sig.side as "buy" | "sell";
     const notional = qty * entry;
-
+ 
     if (live && notional > perOrderCap) {
       bump(rejectReasons, "over_live_notional_cap"); rejected++;
       await supabase.from("signals").update({
@@ -727,7 +731,7 @@ async function runAutonomousCycleCore(
       }).eq("id", sig.id);
       continue;
     }
-
+ 
     // Institutional entry gate — multi-timeframe, regime, structure, news.
     let execQty = qty;
     let execStop = Number(sig.stop_loss);
@@ -802,7 +806,7 @@ async function runAutonomousCycleCore(
       }).eq("id", sig.id);
       continue;
     }
-
+ 
     // ---------------------------------------------------------------
     // Stage 2 — Strategy lifecycle gate.
     // No real order unless a strategy is LIVE, scored ≥80, free of drift and
@@ -829,7 +833,7 @@ async function runAutonomousCycleCore(
       }).eq("id", sig.id);
       continue;
     }
-
+ 
     // ---------------------------------------------------------------
     // Stage 3 — Portfolio Manager AI.
     // Scores the opportunity 0-100 across return, expectancy, regime,
@@ -878,7 +882,7 @@ async function runAutonomousCycleCore(
         errors.push(`portfolio_manager: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
-
+ 
     // ---------------------------------------------------------------
     // Stage 4 — Risk Engine.
     // ---------------------------------------------------------------
@@ -902,7 +906,7 @@ async function runAutonomousCycleCore(
       });
       continue;
     }
-
+ 
     // ---------------------------------------------------------------
     // Stage 5 — Execution Intelligence (final decision maker).
     // Entry timing, multi-timeframe confirmation, order flow, volatility,
@@ -956,7 +960,7 @@ async function runAutonomousCycleCore(
     } catch (e) {
       errors.push(`execution_intel: ${e instanceof Error ? e.message : String(e)}`);
     }
-
+ 
     // Execute
     try {
       const result = await submitOrder(supabase, userId, {
@@ -967,7 +971,7 @@ async function runAutonomousCycleCore(
         signalId: sig.id,
         connectionId: liveConn?.id ?? null, live,
       });
-
+ 
       if (result.status === "rejected" || result.status === "error") {
         bump(rejectReasons, `exec:${result.message ?? result.status}`);
         rejected++;
@@ -976,7 +980,7 @@ async function runAutonomousCycleCore(
         }).eq("id", sig.id);
         continue;
       }
-
+ 
       // Create position (mirrors approveSignalV2)
       if (paperAcct) {
         const filledPrice = result.filledPrice ?? entry;
@@ -1003,11 +1007,11 @@ async function runAutonomousCycleCore(
           paperAcct.cash_balance = Number(paperAcct.cash_balance) - filledPrice * filledQty - result.fees;
         }
       }
-
+ 
       await supabase.from("signals").update({
         status: "executed", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
-
+ 
       await supabase.from("audit_log").insert({
         user_id: userId, action: "autonomous.execute",
         entity: "signals", entity_id: sig.id,
@@ -1016,7 +1020,7 @@ async function runAutonomousCycleCore(
           fees: result.fees, live: result.isLive, trigger,
         },
       });
-
+ 
       executed++;
       slots--;
     } catch (e) {
@@ -1026,14 +1030,14 @@ async function runAutonomousCycleCore(
       rejected++;
     }
   }
-
+ 
   await supabase.from("automation_settings")
     .update({ autonomous_last_run_at: new Date().toISOString() })
     .eq("user_id", userId);
-
+ 
   return finish(undefined, live);
 }
-
+ 
 /** Guaranteed cleanup boundary: no unexpected provider/database exception may
  * leave an autonomous_runs row open and block every subsequent cron tick. */
 export async function runAutonomousCycleFor(
@@ -1069,7 +1073,7 @@ export async function runAutonomousCycleFor(
     };
   }
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Server functions
 // ---------------------------------------------------------------------------
@@ -1078,10 +1082,10 @@ export const runAutonomousCycle = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     return runAutonomousCycleFor(context.supabase, context.userId, "manual");
   });
-
+ 
 const AutonomousSettingsSchema = z.object({
   mode: z.enum(["manual", "assisted", "autonomous"]),
-  autonomous_min_confidence: z.number().min(0.5).max(0.99),
+  autonomous_min_confidence: z.number().min(0.4).max(0.99),
   exec_min_confidence: z.number().min(0.5).max(0.99),
   autonomous_max_open_positions: z.number().int().min(1).max(20),
   autonomous_cooldown_seconds: z.number().int().min(30).max(3600),
@@ -1089,7 +1093,7 @@ const AutonomousSettingsSchema = z.object({
   autonomous_live_enabled: z.boolean(),
   autonomous_default_connection_id: z.string().uuid().nullable(),
 });
-
+ 
 export const updateAutonomousSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => AutonomousSettingsSchema.parse(d))
@@ -1124,7 +1128,7 @@ export const updateAutonomousSettings = createServerFn({ method: "POST" })
     });
     return { ok: true };
   });
-
+ 
 export const getAutonomousStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -1154,3 +1158,4 @@ export const getAutonomousStatus = createServerFn({ method: "GET" })
       htfSeverity,
     };
   });
+ 
