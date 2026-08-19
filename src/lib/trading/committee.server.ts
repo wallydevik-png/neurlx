@@ -177,7 +177,10 @@ export async function runCommittee(
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(5, symbols.length) }, () => worker()));
+  // Match the connector's four-request MetaApi account limit. A fifth worker
+  // only waits in the connector queue and increases the chance of carrying
+  // stale requests into the next cron tick.
+  await Promise.all(Array.from({ length: Math.min(4, symbols.length) }, () => worker()));
   return results
     .filter((r): r is CommitteeVerdict => r !== null)
     .sort((a, b) => b.score - a.score);
