@@ -14,7 +14,10 @@ export function isMobileBrowser(): boolean {
 
 export function createPhantomConnectUrl(): string {
   const keypair = nacl.box.keyPair();
-  sessionStorage.setItem(SECRET_KEY_STORAGE, bs58.encode(keypair.secretKey));
+  // Mobile Phantom may return through a newly-created browser tab, where
+  // sessionStorage is empty. Keep only this short-lived handshake key in
+  // origin-scoped localStorage and remove it immediately after decryption.
+  localStorage.setItem(SECRET_KEY_STORAGE, bs58.encode(keypair.secretKey));
 
   const origin = window.location.origin;
   const redirectLink = `${origin}/memecoin?phantom_callback=1`;
@@ -36,7 +39,7 @@ export function readPhantomConnectResult(search: string): PhantomConnectPayload 
   const phantomPublicKey = params.get("phantom_encryption_public_key");
   const nonce = params.get("nonce");
   const encryptedData = params.get("data");
-  const secretKey = sessionStorage.getItem(SECRET_KEY_STORAGE);
+  const secretKey = localStorage.getItem(SECRET_KEY_STORAGE);
   if (!phantomPublicKey || !nonce || !encryptedData || !secretKey) {
     throw new Error("Phantom returned without a complete connection response. Please try again.");
   }
@@ -49,6 +52,6 @@ export function readPhantomConnectResult(search: string): PhantomConnectPayload 
   );
   if (!decrypted) throw new Error("Phantom connection response could not be verified.");
 
-  sessionStorage.removeItem(SECRET_KEY_STORAGE);
+  localStorage.removeItem(SECRET_KEY_STORAGE);
   return JSON.parse(new TextDecoder().decode(decrypted)) as PhantomConnectPayload;
 }
