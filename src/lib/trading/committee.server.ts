@@ -136,11 +136,15 @@ export async function runCommittee(
       try {
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) break;
+        // A single unavailable broker instrument must not consume the entire
+        // committee window. Five workers can still cover the 14-symbol batch
+        // while slow/missing symbols fail independently.
+        const symbolBudgetMs = Math.min(8_000, remainingMs);
         let symbolTimer: ReturnType<typeof setTimeout> | undefined;
         const symbolDeadline = new Promise<never>((_, reject) => {
           symbolTimer = setTimeout(
             () => reject(new Error("committee_symbol_deadline")),
-            remainingMs,
+            symbolBudgetMs,
           );
         });
         const { candles, source, isSynthetic } = await Promise.race([
