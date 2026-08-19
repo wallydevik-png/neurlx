@@ -19,50 +19,23 @@ import { useBiometric } from "@/hooks/useBiometric";
 import { useTheme } from "@/hooks/useTheme";
 import { toast } from "sonner";
 
+// Curated navigation. The app grew ~40 pages, most of which were read-only
+// diagnostics for engines that already run automatically. Only the surfaces a
+// trader actually acts on are linked; the rest remain reachable by URL.
 const NAV = [
-  { to: "/onboarding", label: "Get Started", icon: Rocket },
-  { to: "/assistant", label: "Personal Assistant", icon: Sparkles },
-  { to: "/community", label: "Community", icon: Trophy },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/live-desk", label: "Live Trading Desk", icon: Wallet },
-  { to: "/portfolio-intel", label: "Portfolio Intelligence", icon: Brain },
-  { to: "/execution-intel", label: "Execution Intelligence", icon: Crosshair },
-  { to: "/risk-engine", label: "Risk Engine", icon: Shield },
-
-  { to: "/monitoring", label: "Live Monitoring", icon: Radar },
-  { to: "/intelligence", label: "Live Intelligence", icon: Sparkles },
-  { to: "/capital", label: "Capital Growth", icon: Wallet },
-  { to: "/capital-management", label: "Capital Management", icon: Banknote },
-  { to: "/readiness", label: "Mission Control", icon: Gauge },
-  { to: "/portfolio", label: "AI Decision Center", icon: Brain },
-  { to: "/risk", label: "Advanced Risk", icon: Shield },
-  { to: "/market", label: "Market Scanner", icon: LineChart },
-  { to: "/intel", label: "Market Intelligence", icon: Radar },
-  { to: "/altdata", label: "Alternative Data", icon: Layers3 },
-  { to: "/research", label: "Research Lab", icon: FlaskConical },
-  { to: "/multi-asset", label: "Multi-Asset", icon: Globe },
+  { to: "/memecoin", label: "Memecoin Sniper", icon: Rocket },
+  { to: "/autonomous", label: "Autonomous Engine", icon: Bot },
   { to: "/accounts", label: "Connected Accounts", icon: Plug },
   { to: "/signals", label: "AI Signals", icon: Signal },
   { to: "/approvals", label: "Approvals", icon: CheckSquare },
-  { to: "/positions", label: "Positions", icon: Activity },
-  { to: "/strategies", label: "Strategies", icon: Layers },
-  { to: "/lab", label: "Strategy Lab", icon: FlaskConical },
-  { to: "/strategy-lifecycle", label: "Strategy Lifecycle", icon: ShieldCheck },
-  { to: "/optimizer", label: "Optimizer", icon: SlidersHorizontal },
-  { to: "/shadow", label: "Shadow Mode", icon: EyeOff },
-  { to: "/accuracy", label: "AI Accuracy", icon: Target },
-  { to: "/journal", label: "Trade Journal", icon: BookOpen },
+  { to: "/history", label: "Trade History", icon: History },
   { to: "/performance", label: "Performance", icon: TrendingUp },
-  { to: "/history", label: "History", icon: History },
-  { to: "/automation", label: "Automation", icon: Sliders },
-  { to: "/autonomous", label: "Autonomous Engine", icon: Bot },
   { to: "/notifications", label: "Notifications", icon: Bell },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/compliance", label: "Compliance & Data", icon: ScrollText },
-  { to: "/mobile", label: "Mobile & Security", icon: Smartphone },
-  { to: "/reliability", label: "Reliability", icon: HeartPulse },
-  { to: "/validation", label: "AI Validation", icon: Brain },
+  { to: "/mobile", label: "Security & App", icon: Smartphone },
 ] as const;
+
 
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
