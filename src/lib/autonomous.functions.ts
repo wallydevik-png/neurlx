@@ -1086,7 +1086,7 @@ export const runAutonomousCycle = createServerFn({ method: "POST" })
 const AutonomousSettingsSchema = z.object({
   mode: z.enum(["manual", "assisted", "autonomous"]),
   autonomous_min_confidence: z.number().min(0.4).max(0.99),
-  exec_min_confidence: z.number().min(0.5).max(0.99),
+  exec_min_confidence: z.number().min(0.4).max(0.99),
   autonomous_max_open_positions: z.number().int().min(1).max(20),
   autonomous_cooldown_seconds: z.number().int().min(30).max(3600),
   autonomous_max_consecutive_losses: z.number().int().min(1).max(10),

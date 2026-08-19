@@ -91,7 +91,7 @@ export async function loadExecutionConfig(
     : DEFAULT_WEIGHTS;
   return {
     enabled: s?.exec_intel_enabled !== false,
-    minConfidence: Math.max(0.5, Math.min(0.99, Number(s?.exec_min_confidence ?? 0.75))),
+    minConfidence: Math.max(0.4, Math.min(0.99, Number(s?.exec_min_confidence ?? 0.75))),
     sessionFilterEnabled: s?.exec_session_filter_enabled !== false,
     newsFilterEnabled: s?.news_filter_enabled !== false,
     maxSpreadBps: Number(s?.max_spread_bps ?? 30),

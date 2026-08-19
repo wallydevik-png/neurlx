@@ -43,7 +43,7 @@ export const updateExecutionSettings = createServerFn({ method: "POST" })
     if (data.enabled != null) patch.exec_intel_enabled = data.enabled;
     if (data.sessionFilterEnabled != null) patch.exec_session_filter_enabled = data.sessionFilterEnabled;
     if (data.minConfidence != null) {
-      patch.exec_min_confidence = Math.min(0.99, Math.max(0.5, Number(data.minConfidence)));
+      patch.exec_min_confidence = Math.min(0.99, Math.max(0.4, Number(data.minConfidence)));
     }
     if (Object.keys(patch).length) {
       await context.supabase.from("automation_settings").update(patch)
