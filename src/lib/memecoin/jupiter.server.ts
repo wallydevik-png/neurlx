@@ -3,7 +3,11 @@
 // The trading wallet's secret key never leaves the server: it is stored
 // encrypted (AES-256-GCM) and only decrypted inside these handlers to sign a
 // single transaction.
-import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js";
+//
+// All RPC goes over plain HTTP JSON-RPC rather than web3.js's `Connection`,
+// which drags in a websocket subscription client that cannot resolve in the
+// Cloudflare Worker runtime.
+import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -11,6 +15,18 @@ const JUP = "https://lite-api.jup.ag/swap/v1";
 
 export function rpcUrl(): string {
   return process.env["SOLANA_RPC_URL"] || "https://api.mainnet-beta.solana.com";
+}
+
+async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+  const res = await fetch(rpcUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`Solana RPC ${method} failed (${res.status})`);
+  const json = await res.json() as { result?: T; error?: { message: string } };
+  if (json.error) throw new Error(`Solana RPC ${method}: ${json.error.message}`);
+  return json.result as T;
 }
 
 export function keypairFromSecret(secret: string): Keypair {
@@ -22,19 +38,15 @@ export function keypairFromSecret(secret: string): Keypair {
 }
 
 export async function solBalance(pubkey: string): Promise<number> {
-  const conn = new Connection(rpcUrl(), "confirmed");
-  const { PublicKey } = await import("@solana/web3.js");
-  const lamports = await conn.getBalance(new PublicKey(pubkey));
-  return lamports / 1e9;
+  const r = await rpc<{ value: number }>("getBalance", [pubkey, { commitment: "confirmed" }]);
+  return (r?.value ?? 0) / 1e9;
 }
 
 export async function tokenBalance(owner: string, mint: string): Promise<{ amount: number; decimals: number }> {
-  const conn = new Connection(rpcUrl(), "confirmed");
-  const { PublicKey } = await import("@solana/web3.js");
-  const res = await conn.getParsedTokenAccountsByOwner(new PublicKey(owner), { mint: new PublicKey(mint) });
-  const acct = res.value[0]?.account.data as unknown as
-    { parsed?: { info?: { tokenAmount?: { amount: string; decimals: number } } } } | undefined;
-  const raw = acct?.parsed?.info?.tokenAmount;
+  const r = await rpc<{
+    value: Array<{ account: { data: { parsed: { info: { tokenAmount: { amount: string; decimals: number } } } } } }>;
+  }>("getTokenAccountsByOwner", [owner, { mint }, { encoding: "jsonParsed", commitment: "confirmed" }]);
+  const raw = r?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount;
   return { amount: raw ? Number(raw.amount) : 0, decimals: raw?.decimals ?? 0 };
 }
 
@@ -73,8 +85,11 @@ export async function swap(opts: {
   const tx = VersionedTransaction.deserialize(Uint8Array.from(atob(swapTransaction), c => c.charCodeAt(0)));
   tx.sign([kp]);
 
-  const conn = new Connection(rpcUrl(), "confirmed");
-  const signature = await conn.sendRawTransaction(tx.serialize(), { maxRetries: 3, skipPreflight: false });
+  const encoded = btoa(String.fromCharCode(...tx.serialize()));
+  const signature = await rpc<string>("sendTransaction", [
+    encoded, { encoding: "base64", maxRetries: 3, preflightCommitment: "confirmed" },
+  ]);
+
   return {
     signature,
     outAmount: Number(quote.outAmount),
