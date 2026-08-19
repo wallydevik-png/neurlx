@@ -392,10 +392,12 @@ async function runAutonomousCycleCore(
       const rawTradable = await listTradableSymbols(supabase, userId);
       const tradable = filterScanUniverse(rawTradable);
       brokerSymbols = new Set(tradable);
-      const fullUniverse = Array.from(new Set([
-        ...filterScanUniverse(settings.allowed_assets ?? []),
-        ...tradable,
-      ]));
+      // A live broker cycle must only request instruments that broker actually
+      // exposes. Unioning the watchlist added on-chain meme tokens that MT5 did
+      // not list, wasting most of the committee window on guaranteed failures.
+      const fullUniverse = tradable.length
+        ? Array.from(new Set(tradable))
+        : Array.from(new Set(filterScanUniverse(settings.allowed_assets ?? [])));
       // Scan a rotating, bounded slice instead of trying to download hundreds
       // of broker candles inside one serverless request. The most liquid
       // instruments are always checked; the remainder rotates every minute so
@@ -410,26 +412,28 @@ async function runAutonomousCycleCore(
       const memeStart = memes.length
         ? (Math.floor(Date.now() / 60_000) * 4) % memes.length
         : 0;
+      const batchSize = 10;
+      const anchorSlice = anchors.slice(0, batchSize);
+      const memeSlots = Math.max(0, Math.min(6, batchSize - anchorSlice.length));
       const memeSlice = memes.length
-        ? [...memes.slice(memeStart), ...memes.slice(0, memeStart)].slice(0, 6)
+        ? [...memes.slice(memeStart), ...memes.slice(0, memeStart)].slice(0, memeSlots)
         : [];
       const rotating = fullUniverse.filter(
-        symbol => !anchors.includes(symbol) && !memeSlice.includes(symbol),
+        symbol => !anchorSlice.includes(symbol) && !memeSlice.includes(symbol),
       );
       // Ten symbols fit reliably inside the server request budget. The former
       // 22-symbol batch was paired with a 22-second Promise.race that discarded
       // every completed verdict when the slowest broker calls crossed the
       // deadline. Smaller rotating batches complete instead of reporting a
       // misleading zero-result timeout, while still covering the full universe.
-      const batchSize = 10;
-      const rotationSlots = Math.max(0, batchSize - anchors.length - memeSlice.length);
+      const rotationSlots = Math.max(0, batchSize - anchorSlice.length - memeSlice.length);
       const rotationStart = rotating.length
         ? (Math.floor(Date.now() / 60_000) * Math.max(1, rotationSlots)) % rotating.length
         : 0;
       const rotated = rotating.length
         ? [...rotating.slice(rotationStart), ...rotating.slice(0, rotationStart)]
         : [];
-      const universe = [...anchors, ...memeSlice, ...rotated.slice(0, rotationSlots)];
+      const universe = [...anchorSlice, ...memeSlice, ...rotated.slice(0, rotationSlots)];
  
       // "scanned" now means symbols evaluated by the AI committee — the
       // honest metric. Signals produced are reported separately below.

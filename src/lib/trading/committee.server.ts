@@ -134,25 +134,15 @@ export async function runCommittee(
       const symbol = symbols[index];
       if (!symbol) continue;
       try {
-        const remainingMs = deadline - Date.now();
-        if (remainingMs <= 0) break;
-        // A single unavailable broker instrument must not consume the entire
-        // committee window. Five workers can still cover the 14-symbol batch
-        // while slow/missing symbols fail independently.
-        const symbolBudgetMs = Math.min(8_000, remainingMs);
-        let symbolTimer: ReturnType<typeof setTimeout> | undefined;
-        const symbolDeadline = new Promise<never>((_, reject) => {
-          symbolTimer = setTimeout(
-            () => reject(new Error("committee_symbol_deadline")),
-            symbolBudgetMs,
-          );
-        });
-        const { candles, source, isSynthetic } = await Promise.race([
-          fetchCandlesWithSource(supabase, symbol, "15m", 200, userId),
-          symbolDeadline,
-        ]).finally(() => {
-          if (symbolTimer) clearTimeout(symbolTimer);
-        });
+        if (deadline - Date.now() <= 0) break;
+        // Do not race a live broker request against a timer. Promise.race does
+        // not cancel the losing fetch, so timed-out requests continued in the
+        // background and saturated MetaApi's five-request account limit on
+        // every subsequent cycle. The connector already has an account-level
+        // concurrency queue and HTTP timeout; let each admitted request finish.
+        const { candles, source, isSynthetic } = await fetchCandlesWithSource(
+          supabase, symbol, "15m", 200, userId,
+        );
         if (!candles || candles.length < 60) continue;
         const base = analyzeCandles(symbol, candles, source, isSynthetic);
         const votes = voteFor(base);
@@ -187,7 +177,10 @@ export async function runCommittee(
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(5, symbols.length) }, () => worker()));
+  // Match the connector's four-request MetaApi account limit. A fifth worker
+  // only waits in the connector queue and increases the chance of carrying
+  // stale requests into the next cron tick.
+  await Promise.all(Array.from({ length: Math.min(4, symbols.length) }, () => worker()));
   return results
     .filter((r): r is CommitteeVerdict => r !== null)
     .sort((a, b) => b.score - a.score);

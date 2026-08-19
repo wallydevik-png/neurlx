@@ -9,6 +9,11 @@ import {
   scanMemecoinsNow, snipeSignal, exitMemecoinPosition, runMemecoinCycleNow,
 } from "@/lib/memecoin.functions";
 import { Rocket, Wallet, ShieldAlert, RefreshCw, Play } from "lucide-react";
+import {
+  createPhantomConnectUrl,
+  isMobileBrowser,
+  readPhantomConnectResult,
+} from "@/lib/phantom-mobile";
 
 export const Route = createFileRoute("/_authenticated/memecoin")({
   head: () => ({
@@ -48,14 +53,43 @@ function MemecoinDesk() {
 
   useEffect(() => { if (data?.settings) setForm(f => ({ ...f, ...data.settings })); }, [data?.settings]);
 
+  useEffect(() => {
+    if (!window.location.search.includes("phantom_callback=1")) return;
+    let cancelled = false;
+    setBusy("phantom");
+    try {
+      const result = readPhantomConnectResult(window.location.search);
+      const address = result?.public_key;
+      if (!address) throw new Error("Phantom did not return a wallet address.");
+      linkFn({ data: { address } })
+        .then(() => {
+          if (cancelled) return;
+          toast.success("Phantom wallet linked");
+          window.history.replaceState({}, "", "/memecoin");
+          refresh();
+        })
+        .catch(e => { if (!cancelled) fail(e); })
+        .finally(() => { if (!cancelled) setBusy(null); });
+    } catch (e) {
+      fail(e);
+      window.history.replaceState({}, "", "/memecoin");
+      setBusy(null);
+    }
+    return () => { cancelled = true; };
+  }, [linkFn]);
+
   const refresh = () => qc.invalidateQueries({ queryKey: ["memecoin-desk"] });
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : "Something went wrong");
 
   async function connectPhantom() {
     const provider = (window as unknown as { solana?: PhantomProvider }).solana;
     if (!provider?.isPhantom) {
+      if (isMobileBrowser()) {
+        window.location.assign(createPhantomConnectUrl());
+        return;
+      }
       window.open("https://phantom.app/download", "_blank", "noopener");
-      toast.info("Install Phantom, then come back and connect.");
+      toast.info("Install the Phantom browser extension, then connect again.");
       return;
     }
     try {
