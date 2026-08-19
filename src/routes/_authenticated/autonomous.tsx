@@ -147,7 +147,7 @@ function AutonomousPage() {
                     <Link to="/shadow">View shadow trades</Link>
                   </Button>
                 </div>
-                <Input type="range" min={0.5} max={0.99} step={0.01}
+                <Input type="range" min={0.4} max={0.99} step={0.01}
                   value={form.exec_min_confidence}
                   onChange={e => setForm(f => ({ ...f, exec_min_confidence: Number(e.target.value) }))} />
                 <p className="text-xs text-muted-foreground">

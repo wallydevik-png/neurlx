@@ -353,10 +353,16 @@ export async function loadPortfolioContext(
   else mode = "normal";
 
   const pmMinScore = Number(settings["pm_min_score"] ?? 75);
+  // The portfolio manager used to enforce its own hardcoded confidence floors,
+  // which silently overrode whatever the user set on the Autonomous page. The
+  // user's configured floor is now authoritative: the PM never demands more
+  // confidence than the user asked for (except in defensive mode, where it adds
+  // a small safety margin, and paused, which blocks everything).
+  const userFloor = Math.min(0.99, Math.max(0.2, Number(settings["autonomous_min_confidence"] ?? 0.65)));
   const constraintsByMode: Record<PortfolioContext["mode"], PortfolioConstraints> = {
-    aggressive: { minScore: Math.max(55, pmMinScore - 15), minConfidence: 0.55, maxOpenTrades: null, sizeMultiplier: 1.25 },
-    normal: { minScore: pmMinScore, minConfidence: 0.6, maxOpenTrades: null, sizeMultiplier: 1 },
-    defensive: { minScore: Math.min(95, pmMinScore + 15), minConfidence: 0.75, maxOpenTrades: Math.max(1, openPositions.length), sizeMultiplier: 0.5 },
+    aggressive: { minScore: Math.max(55, pmMinScore - 15), minConfidence: userFloor, maxOpenTrades: null, sizeMultiplier: 1.25 },
+    normal: { minScore: pmMinScore, minConfidence: userFloor, maxOpenTrades: null, sizeMultiplier: 1 },
+    defensive: { minScore: Math.min(95, pmMinScore + 15), minConfidence: Math.min(0.95, userFloor + 0.1), maxOpenTrades: Math.max(1, openPositions.length), sizeMultiplier: 0.5 },
     paused: { minScore: 101, minConfidence: 1.01, maxOpenTrades: 0, sizeMultiplier: 0 },
   };
 
