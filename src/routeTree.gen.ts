@@ -33,6 +33,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedMultiAssetRouteImport } from './routes/_authenticated/multi-asset'
 import { Route as AuthenticatedMonitoringRouteImport } from './routes/_authenticated/monitoring'
 import { Route as AuthenticatedMobileRouteImport } from './routes/_authenticated/mobile'
+import { Route as AuthenticatedMemecoinRouteImport } from './routes/_authenticated/memecoin'
 import { Route as AuthenticatedMarketRouteImport } from './routes/_authenticated/market'
 import { Route as AuthenticatedLiveDeskRouteImport } from './routes/_authenticated/live-desk'
 import { Route as AuthenticatedLabRouteImport } from './routes/_authenticated/lab'
@@ -52,6 +53,7 @@ import { Route as AuthenticatedAssistantRouteImport } from './routes/_authentica
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedAltdataRouteImport } from './routes/_authenticated/altdata'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAccuracyRouteImport } from './routes/_authenticated/accuracy'
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts.index'
@@ -184,6 +186,11 @@ const AuthenticatedMobileRoute = AuthenticatedMobileRouteImport.update({
   path: '/mobile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMemecoinRoute = AuthenticatedMemecoinRouteImport.update({
+  id: '/memecoin',
+  path: '/memecoin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedMarketRoute = AuthenticatedMarketRouteImport.update({
   id: '/market',
   path: '/market',
@@ -282,6 +289,11 @@ const AuthenticatedAltdataRoute = AuthenticatedAltdataRouteImport.update({
   path: '/altdata',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAccuracyRoute = AuthenticatedAccuracyRouteImport.update({
   id: '/accuracy',
   path: '/accuracy',
@@ -328,6 +340,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/accuracy': typeof AuthenticatedAccuracyRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/altdata': typeof AuthenticatedAltdataRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
@@ -347,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/lab': typeof AuthenticatedLabRoute
   '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/memecoin': typeof AuthenticatedMemecoinRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -378,6 +392,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/accuracy': typeof AuthenticatedAccuracyRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/altdata': typeof AuthenticatedAltdataRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/approvals': typeof AuthenticatedApprovalsRoute
@@ -397,6 +412,7 @@ export interface FileRoutesByTo {
   '/lab': typeof AuthenticatedLabRoute
   '/live-desk': typeof AuthenticatedLiveDeskRoute
   '/market': typeof AuthenticatedMarketRoute
+  '/memecoin': typeof AuthenticatedMemecoinRoute
   '/mobile': typeof AuthenticatedMobileRoute
   '/monitoring': typeof AuthenticatedMonitoringRoute
   '/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -431,6 +447,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/_authenticated/accuracy': typeof AuthenticatedAccuracyRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/altdata': typeof AuthenticatedAltdataRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
@@ -450,6 +467,7 @@ export interface FileRoutesById {
   '/_authenticated/lab': typeof AuthenticatedLabRoute
   '/_authenticated/live-desk': typeof AuthenticatedLiveDeskRoute
   '/_authenticated/market': typeof AuthenticatedMarketRoute
+  '/_authenticated/memecoin': typeof AuthenticatedMemecoinRoute
   '/_authenticated/mobile': typeof AuthenticatedMobileRoute
   '/_authenticated/monitoring': typeof AuthenticatedMonitoringRoute
   '/_authenticated/multi-asset': typeof AuthenticatedMultiAssetRoute
@@ -484,6 +502,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/accounts'
     | '/accuracy'
+    | '/admin'
     | '/altdata'
     | '/analytics'
     | '/approvals'
@@ -503,6 +522,7 @@ export interface FileRouteTypes {
     | '/lab'
     | '/live-desk'
     | '/market'
+    | '/memecoin'
     | '/mobile'
     | '/monitoring'
     | '/multi-asset'
@@ -534,6 +554,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/accuracy'
+    | '/admin'
     | '/altdata'
     | '/analytics'
     | '/approvals'
@@ -553,6 +574,7 @@ export interface FileRouteTypes {
     | '/lab'
     | '/live-desk'
     | '/market'
+    | '/memecoin'
     | '/mobile'
     | '/monitoring'
     | '/multi-asset'
@@ -586,6 +608,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/accounts'
     | '/_authenticated/accuracy'
+    | '/_authenticated/admin'
     | '/_authenticated/altdata'
     | '/_authenticated/analytics'
     | '/_authenticated/approvals'
@@ -605,6 +628,7 @@ export interface FileRouteTypes {
     | '/_authenticated/lab'
     | '/_authenticated/live-desk'
     | '/_authenticated/market'
+    | '/_authenticated/memecoin'
     | '/_authenticated/mobile'
     | '/_authenticated/monitoring'
     | '/_authenticated/multi-asset'
@@ -810,6 +834,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMobileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/memecoin': {
+      id: '/_authenticated/memecoin'
+      path: '/memecoin'
+      fullPath: '/memecoin'
+      preLoaderRoute: typeof AuthenticatedMemecoinRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/market': {
       id: '/_authenticated/market'
       path: '/market'
@@ -943,6 +974,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAltdataRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/accuracy': {
       id: '/_authenticated/accuracy'
       path: '/accuracy'
@@ -1015,6 +1053,7 @@ const AuthenticatedAccountsRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRouteWithChildren
   AuthenticatedAccuracyRoute: typeof AuthenticatedAccuracyRoute
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAltdataRoute: typeof AuthenticatedAltdataRoute
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
@@ -1034,6 +1073,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLabRoute: typeof AuthenticatedLabRoute
   AuthenticatedLiveDeskRoute: typeof AuthenticatedLiveDeskRoute
   AuthenticatedMarketRoute: typeof AuthenticatedMarketRoute
+  AuthenticatedMemecoinRoute: typeof AuthenticatedMemecoinRoute
   AuthenticatedMobileRoute: typeof AuthenticatedMobileRoute
   AuthenticatedMonitoringRoute: typeof AuthenticatedMonitoringRoute
   AuthenticatedMultiAssetRoute: typeof AuthenticatedMultiAssetRoute
@@ -1060,6 +1100,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountsRoute: AuthenticatedAccountsRouteWithChildren,
   AuthenticatedAccuracyRoute: AuthenticatedAccuracyRoute,
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAltdataRoute: AuthenticatedAltdataRoute,
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
@@ -1079,6 +1120,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLabRoute: AuthenticatedLabRoute,
   AuthenticatedLiveDeskRoute: AuthenticatedLiveDeskRoute,
   AuthenticatedMarketRoute: AuthenticatedMarketRoute,
+  AuthenticatedMemecoinRoute: AuthenticatedMemecoinRoute,
   AuthenticatedMobileRoute: AuthenticatedMobileRoute,
   AuthenticatedMonitoringRoute: AuthenticatedMonitoringRoute,
   AuthenticatedMultiAssetRoute: AuthenticatedMultiAssetRoute,

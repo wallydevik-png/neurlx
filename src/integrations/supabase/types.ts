@@ -1640,6 +1640,213 @@ export type Database = {
         }
         Relationships: []
       }
+      memecoin_positions: {
+        Row: {
+          amount_sol: number
+          closed_at: string | null
+          entry_price_usd: number | null
+          entry_tx: string | null
+          exit_price_usd: number | null
+          exit_reason: string | null
+          exit_tx: string | null
+          id: string
+          mint: string
+          opened_at: string
+          peak_price_usd: number | null
+          pnl_pct: number | null
+          pnl_sol: number | null
+          score: number | null
+          status: string
+          symbol: string
+          tokens: number | null
+          user_id: string
+        }
+        Insert: {
+          amount_sol: number
+          closed_at?: string | null
+          entry_price_usd?: number | null
+          entry_tx?: string | null
+          exit_price_usd?: number | null
+          exit_reason?: string | null
+          exit_tx?: string | null
+          id?: string
+          mint: string
+          opened_at?: string
+          peak_price_usd?: number | null
+          pnl_pct?: number | null
+          pnl_sol?: number | null
+          score?: number | null
+          status?: string
+          symbol: string
+          tokens?: number | null
+          user_id: string
+        }
+        Update: {
+          amount_sol?: number
+          closed_at?: string | null
+          entry_price_usd?: number | null
+          entry_tx?: string | null
+          exit_price_usd?: number | null
+          exit_reason?: string | null
+          exit_tx?: string | null
+          id?: string
+          mint?: string
+          opened_at?: string
+          peak_price_usd?: number | null
+          pnl_pct?: number | null
+          pnl_sol?: number | null
+          score?: number | null
+          status?: string
+          symbol?: string
+          tokens?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memecoin_settings: {
+        Row: {
+          autotrade: boolean
+          buy_amount_sol: number
+          created_at: string
+          enabled: boolean
+          max_daily_loss_sol: number
+          max_open_positions: number
+          min_liquidity_usd: number
+          min_score: number
+          slippage_bps: number
+          stop_loss_pct: number
+          take_profit_pct: number
+          trailing_stop_pct: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          autotrade?: boolean
+          buy_amount_sol?: number
+          created_at?: string
+          enabled?: boolean
+          max_daily_loss_sol?: number
+          max_open_positions?: number
+          min_liquidity_usd?: number
+          min_score?: number
+          slippage_bps?: number
+          stop_loss_pct?: number
+          take_profit_pct?: number
+          trailing_stop_pct?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          autotrade?: boolean
+          buy_amount_sol?: number
+          created_at?: string
+          enabled?: boolean
+          max_daily_loss_sol?: number
+          max_open_positions?: number
+          min_liquidity_usd?: number
+          min_score?: number
+          slippage_bps?: number
+          stop_loss_pct?: number
+          take_profit_pct?: number
+          trailing_stop_pct?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memecoin_signals: {
+        Row: {
+          age_minutes: number | null
+          ai_thesis: string | null
+          buy_sell_ratio: number | null
+          change_1h: number | null
+          change_5m: number | null
+          created_at: string
+          fdv_usd: number | null
+          id: string
+          liquidity_usd: number | null
+          mint: string
+          name: string | null
+          price_usd: number | null
+          reasons: Json
+          risk_flags: Json
+          score: number
+          symbol: string
+          verdict: string
+          volume_24h_usd: number | null
+        }
+        Insert: {
+          age_minutes?: number | null
+          ai_thesis?: string | null
+          buy_sell_ratio?: number | null
+          change_1h?: number | null
+          change_5m?: number | null
+          created_at?: string
+          fdv_usd?: number | null
+          id?: string
+          liquidity_usd?: number | null
+          mint: string
+          name?: string | null
+          price_usd?: number | null
+          reasons?: Json
+          risk_flags?: Json
+          score: number
+          symbol: string
+          verdict?: string
+          volume_24h_usd?: number | null
+        }
+        Update: {
+          age_minutes?: number | null
+          ai_thesis?: string | null
+          buy_sell_ratio?: number | null
+          change_1h?: number | null
+          change_5m?: number | null
+          created_at?: string
+          fdv_usd?: number | null
+          id?: string
+          liquidity_usd?: number | null
+          mint?: string
+          name?: string | null
+          price_usd?: number | null
+          reasons?: Json
+          risk_flags?: Json
+          score?: number
+          symbol?: string
+          verdict?: string
+          volume_24h_usd?: number | null
+        }
+        Relationships: []
+      }
+      memecoin_wallets: {
+        Row: {
+          created_at: string
+          encrypted_secret: string | null
+          label: string | null
+          phantom_address: string | null
+          public_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_secret?: string | null
+          label?: string | null
+          phantom_address?: string | null
+          public_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_secret?: string | null
+          label?: string | null
+          phantom_address?: string | null
+          public_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       model_drift_snapshots: {
         Row: {
           accuracy: number | null
@@ -3613,6 +3820,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_watchlists: {
         Row: {
           created_at: string
@@ -3728,10 +3956,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3858,6 +4092,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const

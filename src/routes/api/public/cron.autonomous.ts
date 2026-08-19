@@ -118,10 +118,33 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
             });
           }
         }
+        // Memecoin sniper: independent of the MT5 autonomous mode, so it runs
+        // for every user who has enabled it in the sniper controls.
+        const memeResults: Array<{ userId: string; entries?: number; exits?: number; skipped?: string; error?: string }> = [];
+        const { data: memeUsers } = await supabaseAdmin.from("memecoin_settings")
+          .select("user_id").eq("enabled", true);
+        if (memeUsers?.length) {
+          const { runMemecoinCycle } = await import("@/lib/memecoin/engine.server");
+          for (const m of memeUsers) {
+            if (Date.now() - requestStartedMs >= requestBudgetMs) break;
+            try {
+              const r = await runMemecoinCycle(supabaseAdmin, m.user_id);
+              memeResults.push({
+                userId: m.user_id, entries: r.entries?.length ?? 0,
+                exits: r.exits?.length ?? 0, skipped: r.skipped,
+              });
+            } catch (e) {
+              memeResults.push({ userId: m.user_id, error: e instanceof Error ? e.message : String(e) });
+            }
+          }
+        }
+
         return Response.json({
           ok: true, users: results.length, results,
           reconciliation: reconcileResults, protection: protectionResults,
+          memecoin: memeResults,
         });
+
       },
     },
   },
