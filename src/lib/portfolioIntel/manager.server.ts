@@ -88,8 +88,8 @@ export async function buildPortfolioRecommendation(
   for (const s of signals) regimeMix[s.regimeLabel] = (regimeMix[s.regimeLabel] ?? 0) + 1;
   const dominantRegime = Object.entries(regimeMix).sort((a,b)=>b[1]-a[1])[0]?.[0] ?? "unknown";
 
-  // Correlation warnings among tradable buys
-  const buys = signals.filter(s => s.direction === "buy" && s.confidence >= env.minConfidence);
+  // Correlation warnings among tradable directional ideas (long AND short).
+  const buys = signals.filter(s => s.direction !== "wait" && s.confidence >= env.minConfidence);
   const candles = await Promise.all(buys.slice(0, env.maxAssets).map(async s => ({
     sym: s.symbol,
     closes: (await fetchCandles(supabase, s.symbol, "1h", 120, userId)).map(c => c.close),

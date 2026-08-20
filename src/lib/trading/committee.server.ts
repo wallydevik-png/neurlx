@@ -107,8 +107,23 @@ function voteFor(base: AiSignal): AnalystVote[] {
 
 function consensus(votes: AnalystVote[]): { direction: Direction; confidence: number; agreement: number } {
   const tally: Record<Direction, number> = { buy: 0, sell: 0, wait: 0 };
-  for (const v of votes) tally[v.direction]++;
-  const direction = (Object.keys(tally) as Direction[]).reduce((a, b) => tally[a] >= tally[b] ? a : b);
+  const sums: Record<Direction, number> = { buy: 0, sell: 0, wait: 0 };
+  for (const v of votes) { tally[v.direction]++; sums[v.direction] += v.confidence; }
+  // Direction-neutral resolution. Object key order used to hand every tie to
+  // "buy"; ties now break on summed conviction, and a dead heat between BUY
+  // and SELL resolves to WAIT rather than an arbitrary side.
+  const order: Direction[] = ["buy", "sell", "wait"];
+  let direction: Direction = "wait";
+  let best = -1;
+  let tiedWith: Direction | null = null;
+  for (const d of order) {
+    const rank = tally[d] * 1000 + sums[d];
+    if (rank > best) { best = rank; direction = d; tiedWith = null; }
+    else if (rank === best) { tiedWith = d; }
+  }
+  if (tiedWith && ((direction === "buy" && tiedWith === "sell") || (direction === "sell" && tiedWith === "buy"))) {
+    direction = "wait";
+  }
   const agree = votes.filter(v => v.direction === direction);
   const confidence = agree.length
     ? agree.reduce((s, v) => s + v.confidence, 0) / agree.length

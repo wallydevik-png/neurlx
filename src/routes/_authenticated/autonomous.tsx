@@ -50,6 +50,8 @@ function AutonomousPage() {
     autonomous_max_consecutive_losses: 3,
     autonomous_live_enabled: false,
     autonomous_default_connection_id: null as string | null,
+    trade_volume_mode: "auto" as "auto" | "fixed",
+    fixed_trade_volume: 0.01,
   });
 
   useEffect(() => {
@@ -63,6 +65,8 @@ function AutonomousPage() {
         autonomous_max_consecutive_losses: data.settings.autonomous_max_consecutive_losses ?? 3,
         autonomous_live_enabled: data.settings.autonomous_live_enabled ?? false,
         autonomous_default_connection_id: data.settings.autonomous_default_connection_id ?? null,
+        trade_volume_mode: (data.settings.trade_volume_mode as "auto" | "fixed" | null) ?? "auto",
+        fixed_trade_volume: Number(data.settings.fixed_trade_volume ?? 0.01),
       });
     }
   }, [data?.settings]);
@@ -169,6 +173,30 @@ function AutonomousPage() {
                     onChange={e => setForm(f => ({ ...f, autonomous_cooldown_seconds: Number(e.target.value) }))} />
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label>Trade volume</Label>
+                <div className="flex gap-2">
+                  {(["auto", "fixed"] as const).map(v => (
+                    <Button key={v}
+                      variant={form.trade_volume_mode === v ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setForm(f => ({ ...f, trade_volume_mode: v }))}>
+                      {v === "auto" ? "Auto (risk-based)" : "Fixed volume"}
+                    </Button>
+                  ))}
+                </div>
+                {form.trade_volume_mode === "fixed" && (
+                  <Input type="number" min={0.001} max={1000} step={0.01}
+                    value={form.fixed_trade_volume}
+                    onChange={e => setForm(f => ({ ...f, fixed_trade_volume: Number(e.target.value) }))} />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Fixed mode sends exactly this lot/volume on every trade. Risk limits,
+                  margin checks and notional caps still apply.
+                </p>
+              </div>
+
 
               <div>
                 <Label>Max consecutive losses (breaker trips at)</Label>

@@ -121,7 +121,10 @@ export function analyzeCandles(
   // Apply regime multiplier
   const rawScore = score;
   const adjScore = Math.max(-1, Math.min(1, score * regime.confidenceMultiplier));
-  const confidence = Math.min(0.99, Math.max(0.05, 0.5 + adjScore / 2));
+  // Confidence measures conviction, not direction. A signed score made every
+  // bearish setup score below 0.5, so SELL signals could never clear the
+  // confidence floors and the engine only ever traded long.
+  const confidence = Math.min(0.99, Math.max(0.05, 0.5 + Math.abs(adjScore) / 2));
 
   const riskFactors: string[] = [];
   if (regime.regime === "extreme_risk") riskFactors.push("Extreme volatility — most strategies underperform.");
