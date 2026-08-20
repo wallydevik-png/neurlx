@@ -23,6 +23,8 @@ import type {
   Quote, RichPosition, TradingConnector,
 } from "./types";
 import { doRequest } from "./rest.server";
+import { withHistorySlot } from "@/lib/marketdata/historyGate.server";
+
  
 const PROVISIONING_BASE = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 function clientBaseFor(region: string): string {
@@ -508,62 +510,17 @@ const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
  
 /**
- * MetaApi hard-caps historical-market-data requests at 5 concurrent per
- * account ("TooManyRequestsError" / HTTP 429 if exceeded). The app scans up
- * to ~90 symbols per autonomous cycle via Promise.all with zero throttling,
- * which blows straight through that cap and returns a wall of 429/504
- * errors instead of candles — this is what was actually causing entry_gate
- * failures, not stale data. A simple per-account queue fixes it: callers
- * still request candles concurrently, but at most MAX_CONCURRENT_HISTORY
- * actual HTTP requests to this endpoint are ever in flight per account at
- * once; the rest wait their turn instead of firing all at once.
- */
-const MAX_CONCURRENT_HISTORY = 4; // stay safely under MetaApi's cap of 5
-const SLOT_LEASE_MS = 10_000;   // longer than the bounded history HTTP call
-const SLOT_WAIT_MS = 3_000;     // fail fast so another symbol can be evaluated
-type QueueState = { leases: number[] };
-const historyQueues = new Map<string, QueueState>();
-
-/**
- * Slots are LEASES, not a counter. The module lives in a Worker isolate that
- * is reused across requests, so a cycle killed mid-flight used to leak its
- * counter permanently: every later request queued on a promise that nobody
- * would ever resolve, and the runtime cancelled the whole invocation with
- * "your Worker's code had hung". Expired leases are now reclaimed, and a
- * waiter never blocks indefinitely.
+ * Historical-market-data concurrency is now owned by ONE shared, account-level
+ * gate (`@/lib/marketdata/historyGate.server`) instead of a per-module pool.
+ * MetaApi caps history at 5 concurrent requests per account; HTF alone fans a
+ * single symbol out to 3 timeframes, so bounding symbols was never enough.
+ * Every history call in this connector goes through the gate, and the gate is
+ * the only thing counting slots, so the account invariant holds globally.
  */
 async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  let state = historyQueues.get(accountId);
-  if (!state) {
-    state = { leases: [] };
-    historyQueues.set(accountId, state);
-  }
-  const s = state;
-  const reclaim = () => {
-    const cutoff = Date.now() - SLOT_LEASE_MS;
-    s.leases = s.leases.filter(started => started > cutoff);
-  };
-  const acquire = async () => {
-    const waitUntil = Date.now() + SLOT_WAIT_MS;
-    for (;;) {
-      reclaim();
-      if (s.leases.length < MAX_CONCURRENT_HISTORY) return;
-      if (Date.now() >= waitUntil) {
-        throw new Error("MetaApi history queue saturated — symbol deferred to the next cycle");
-      }
-      await sleep(100);
-    }
-  };
-  await acquire();
-  const lease = Date.now();
-  s.leases.push(lease);
-  try {
-    return await fn();
-  } finally {
-    const i = s.leases.indexOf(lease);
-    if (i >= 0) s.leases.splice(i, 1);
-  }
+  return withHistorySlot(accountId || "mt5", fn, { waitMs: 15_000, maxHoldMs: 12_000 });
 }
+
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  
@@ -925,6 +882,9 @@ export function createMt5Connector(
         startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
+      // Provisioning/deployment checks must happen OUTSIDE the slot, so a slow
+      // reconnect never occupies one of the account's scarce history slots.
+      await ensureReady();
       const r = await withHistoryLimit(state.accountId, () => marketDataReq<Array<{
         time: string; open: number; high: number; low: number; close: number;
         tickVolume?: number; volume?: number;

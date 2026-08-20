@@ -22,27 +22,35 @@ export interface HtfVerdict {
   side: "buy" | "sell";
   aligned: boolean;
   bias: { d1: HtfState; h4: HtfState; h1: HtfState };
+  /** Why a timeframe is unknown/unavailable: rate_limited, timeout, saturated,
+   *  error, or too_few_candles. Infrastructure state, never a direction. */
+  dataIssues: Partial<Record<"d1" | "h4" | "h1", string>>;
   tally: HtfTally;
   classification: HtfClassification;
   detail: string;
 }
+
 
 async function biasFor(
   supabase: SupabaseClient | null,
   symbol: string,
   interval: "1d" | "4h" | "1h",
   userId?: string | null,
-): Promise<HtfState> {
+): Promise<{ state: HtfState; reason?: string }> {
   try {
     const { candles } = await fetchCandlesWithSource(supabase, symbol, interval, 220, userId);
-    if (!candles || candles.length < 30) return "unknown";
+    if (!candles || candles.length < 30) return { state: "unknown", reason: "too_few_candles" };
     const bias = trendBias(candles.map(c => c.close));
-    return bias === "bullish" || bias === "bearish" ? bias : "neutral";
-  } catch {
-    // Data-plane failure — explicitly NOT a directional opinion.
-    return "unavailable";
+    return { state: bias === "bullish" || bias === "bearish" ? bias : "neutral" };
+  } catch (e) {
+    // Data-plane failure — infrastructure state, explicitly NOT a directional
+    // opinion. The reason distinguishes a rate-limited/timed-out provider from
+    // an instrument the broker genuinely has no history for.
+    const { historyFailureReason } = await import("@/lib/marketdata/historyGate.server");
+    return { state: "unavailable", reason: historyFailureReason(e) };
   }
 }
+
 
 export async function checkHtfAlignment(
   supabase: SupabaseClient | null,
@@ -52,22 +60,31 @@ export async function checkHtfAlignment(
 ): Promise<HtfVerdict> {
   const want = side === "buy" ? "bullish" : "bearish";
   // Independent per-timeframe boundaries: one failing timeframe degrades to
-  // "unavailable" instead of discarding the other two.
+  // "unavailable" instead of discarding the other two. The shared history gate
+  // keeps these three requests inside the provider's account-level cap.
   const [d1, h4, h1] = await Promise.all([
     biasFor(supabase, symbol, "1d", userId),
     biasFor(supabase, symbol, "4h", userId),
     biasFor(supabase, symbol, "1h", userId),
   ]);
-  const bias = { d1, h4, h1 };
+  const bias = { d1: d1.state, h4: h4.state, h1: h1.state };
+  const dataIssues: Partial<Record<"d1" | "h4" | "h1", string>> = {};
+  if (d1.reason) dataIssues.d1 = d1.reason;
+  if (h4.reason) dataIssues.h4 = h4.reason;
+  if (h1.reason) dataIssues.h1 = h1.reason;
+  const issueDetail = Object.entries(dataIssues)
+    .map(([tf, r]) => `${tf}:${r}`).join(",");
   return {
     symbol, side,
     aligned: isHtfAligned(bias, want),
     bias,
+    dataIssues,
     tally: tallyHtf(bias, want),
     classification: classifyHtf(bias, want),
-    detail: htfTelemetry(bias, side),
+    detail: htfTelemetry(bias, side) + (issueDetail ? ` data=${issueDetail}` : ""),
   };
 }
+
 
 /**
  * Filter candidates down to those whose direction agrees with the real higher
