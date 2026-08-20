@@ -100,6 +100,10 @@ async function runAutonomousCycleCore(
   let brokerSymbols = new Set<string>();
   let executed = 0;
   let rejected = 0;
+  // Deferred = never reached a gate (cycle budget). Failed = threw.
+  // Neither is a rejection; conflating them makes safety gates look broken.
+  let deferredCount = 0;
+  let failedCount = 0;
  
   const startedAt = new Date().toISOString();
   // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
@@ -130,6 +134,8 @@ async function runAutonomousCycleCore(
       scanned: 0,
       executed: 0,
       rejected: 0,
+      deferred: 0,
+      failed: 0,
       rejectReasons: {},
       errors: [`skipped:cycle_already_running:${activeRun.id}`],
       skipped: "cycle_already_running",
@@ -155,6 +161,8 @@ async function runAutonomousCycleCore(
       scanned: 0,
       executed: 0,
       rejected: 0,
+      deferred: 0,
+      failed: 0,
       rejectReasons: {},
       errors: ["skipped:cycle_already_running:atomic_lock"],
       skipped: "cycle_already_running",
@@ -170,13 +178,18 @@ async function runAutonomousCycleCore(
     await supabase.from("autonomous_runs").update({
       finished_at: new Date().toISOString(),
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
+      signals_deferred: deferredCount, signals_failed: failedCount,
       reject_reasons: rejectReasons, errors: runErrors, live,
     }).eq("id", runId);
     try {
       const { recordRejectionStages } = await import("@/lib/autonomous/rejectionStats.server");
       await recordRejectionStages(supabase, userId, runErrors, rejectReasons);
     } catch { /* telemetry must never break a cycle */ }
-    return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
+    return {
+      runId, scanned, executed, rejected,
+      deferred: deferredCount, failed: failedCount,
+      rejectReasons, errors: runErrors, skipped,
+    };
   };
  
  
