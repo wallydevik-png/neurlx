@@ -1073,14 +1073,16 @@ async function runAutonomousCycleCore(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`signal_failed:${sig.symbol}:submit_order:${msg}`);
       bump(rejectReasons, "exec:exception");
-      rejected++;
+      // Infrastructure failure, not a risk verdict — counted separately so a
+      // provider outage cannot masquerade as the safety gates rejecting trades.
+      failedCount++;
     }
     } catch (e) {
       // Isolated failure — record it and keep evaluating the other signals.
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`signal_failed:${sig?.symbol ?? "unknown"}:${stage}:${msg}`);
       bump(rejectReasons, `signal_failed:${stage}`);
-      rejected++;
+      failedCount++;
     }
   }
  
