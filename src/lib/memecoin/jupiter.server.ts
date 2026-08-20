@@ -143,9 +143,9 @@ export async function getQuote(inputMint: string, outputMint: string, amountRaw:
 
 /** Quote -> build -> sign -> send. Returns the transaction signature. */
 export async function swap(opts: {
-  secret: string; inputMint: string; outputMint: string; amountRaw: number; slippageBps: number;
+  secret: string; publicKey?: string | null; inputMint: string; outputMint: string; amountRaw: number; slippageBps: number;
 }): Promise<{ signature: string; outAmount: number; priceImpactPct: number }> {
-  const kp = await keypairFromSecret(opts.secret);
+  const kp = await keypairFromSecret(opts.secret, opts.publicKey);
   const quote = await getQuote(opts.inputMint, opts.outputMint, opts.amountRaw, opts.slippageBps);
 
   const buildRes = await fetch(`${JUP}/swap`, {

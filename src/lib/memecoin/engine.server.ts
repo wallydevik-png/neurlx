@@ -66,7 +66,7 @@ export async function buyCandidate(db: DB, userId: string, c: MemeCandidate, s: 
   }
 
   const result = await swap({
-    secret: wallet.secret, inputMint: SOL_MINT, outputMint: c.mint,
+    secret: wallet.secret, publicKey: wallet.publicKey, inputMint: SOL_MINT, outputMint: c.mint,
     amountRaw: Math.floor(s.buy_amount_sol * 1e9), slippageBps: s.slippage_bps,
   });
 
@@ -98,7 +98,7 @@ export async function sellPosition(db: DB, userId: string, positionId: string, r
 
   const settings = await loadSettings(db, userId);
   const result = await swap({
-    secret: wallet.secret, inputMint: pos.mint as string, outputMint: SOL_MINT,
+    secret: wallet.secret, publicKey: wallet.publicKey, inputMint: pos.mint as string, outputMint: SOL_MINT,
     amountRaw: held.amount, slippageBps: Math.max(settings.slippage_bps, 500),
   });
 
