@@ -88,6 +88,9 @@ async function runAutonomousCycleCore(
   supabase: SupabaseClient,
   userId: string,
   trigger: "manual" | "cron" | "signal",
+  /** Lock ownership handle: the watchdog may only close the run row THIS
+   *  invocation created, never whichever row happens to be open. */
+  ownership?: { runId: string | null },
 ): Promise<CycleResult> {
   const cycleStartedMs = Date.now();
   const cycleBudgetMs = 44_000;
@@ -172,6 +175,7 @@ async function runAutonomousCycleCore(
     throw new Error(`autonomous_run_start_failed:${runInsertError?.message ?? "missing run id"}`);
   }
   const runId = runRow?.id as string;
+  if (ownership) ownership.runId = runId;
  
   const finish = async (skipped?: string, live = false) => {
     const runErrors = skipped ? [...errors, withDetail("skipped", skipped)] : errors;
