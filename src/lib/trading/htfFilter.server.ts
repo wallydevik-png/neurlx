@@ -60,22 +60,31 @@ export async function checkHtfAlignment(
 ): Promise<HtfVerdict> {
   const want = side === "buy" ? "bullish" : "bearish";
   // Independent per-timeframe boundaries: one failing timeframe degrades to
-  // "unavailable" instead of discarding the other two.
+  // "unavailable" instead of discarding the other two. The shared history gate
+  // keeps these three requests inside the provider's account-level cap.
   const [d1, h4, h1] = await Promise.all([
     biasFor(supabase, symbol, "1d", userId),
     biasFor(supabase, symbol, "4h", userId),
     biasFor(supabase, symbol, "1h", userId),
   ]);
-  const bias = { d1, h4, h1 };
+  const bias = { d1: d1.state, h4: h4.state, h1: h1.state };
+  const dataIssues: Partial<Record<"d1" | "h4" | "h1", string>> = {};
+  if (d1.reason) dataIssues.d1 = d1.reason;
+  if (h4.reason) dataIssues.h4 = h4.reason;
+  if (h1.reason) dataIssues.h1 = h1.reason;
+  const issueDetail = Object.entries(dataIssues)
+    .map(([tf, r]) => `${tf}:${r}`).join(",");
   return {
     symbol, side,
     aligned: isHtfAligned(bias, want),
     bias,
+    dataIssues,
     tally: tallyHtf(bias, want),
     classification: classifyHtf(bias, want),
-    detail: htfTelemetry(bias, side),
+    detail: htfTelemetry(bias, side) + (issueDetail ? ` data=${issueDetail}` : ""),
   };
 }
+
 
 /**
  * Filter candidates down to those whose direction agrees with the real higher
