@@ -882,6 +882,9 @@ export function createMt5Connector(
         startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
+      // Provisioning/deployment checks must happen OUTSIDE the slot, so a slow
+      // reconnect never occupies one of the account's scarce history slots.
+      await ensureReady();
       const r = await withHistoryLimit(state.accountId, () => marketDataReq<Array<{
         time: string; open: number; high: number; low: number; close: number;
         tickVolume?: number; volume?: number;
