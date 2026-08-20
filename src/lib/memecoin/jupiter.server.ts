@@ -31,15 +31,12 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   return json.result as T;
 }
 
-async function derivePhantomKeypair(mnemonic: string): Promise<Keypair> {
-  if (!validateMnemonic(mnemonic, wordlist)) throw new Error("Invalid recovery phrase");
-  const seed = await mnemonicToSeedWebcrypto(mnemonic);
+async function deriveEd25519(seed: Uint8Array, path: number[]): Promise<Keypair> {
   const masterKey = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode("ed25519 seed"),
     { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
   );
   let key = new Uint8Array(await crypto.subtle.sign("HMAC", masterKey, seed));
-  const path = [44, 501, 0, 0];
   for (const index of path) {
     const data = new Uint8Array(37);
     data[0] = 0;
@@ -54,12 +51,28 @@ async function derivePhantomKeypair(mnemonic: string): Promise<Keypair> {
   return Keypair.fromSeed(key.slice(0, 32));
 }
 
-export async function keypairFromSecret(secret: string): Promise<Keypair> {
-  const trimmed = secret.trim();
-  const words = trimmed.toLowerCase().split(/\s+/);
-  if ([12, 15, 18, 21, 24].includes(words.length)) {
-    return derivePhantomKeypair(words.join(" "));
-  }
+/**
+ * Every keypair a recovery phrase can plausibly map to, in the order wallets
+ * use them: Phantom/Solflare accounts 1-5 (m/44'/501'/i'/0'), the legacy
+ * Sollet-style path (m/44'/501'/i'), and the bare BIP39 seed.
+ */
+async function mnemonicCandidates(mnemonic: string): Promise<Keypair[]> {
+  if (!validateMnemonic(mnemonic, wordlist)) throw new Error("Invalid recovery phrase");
+  const seed = await mnemonicToSeedWebcrypto(mnemonic);
+  const out: Keypair[] = [];
+  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seed, [44, 501, i, 0]));
+  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seed, [44, 501, i]));
+  out.push(Keypair.fromSeed(seed.slice(0, 32)));
+  return out;
+}
+
+/** Words of a recovery phrase, or null when the secret is a raw key. */
+function asMnemonic(secret: string): string | null {
+  const words = secret.trim().toLowerCase().split(/\s+/);
+  return [12, 15, 18, 21, 24].includes(words.length) ? words.join(" ") : null;
+}
+
+function keypairFromRawSecret(trimmed: string): Keypair {
   if (trimmed.startsWith("[")) {
     const parsed = JSON.parse(trimmed) as unknown;
     if (!Array.isArray(parsed) || parsed.length !== 64 || parsed.some(n => !Number.isInteger(n) || n < 0 || n > 255)) {
@@ -69,6 +82,39 @@ export async function keypairFromSecret(secret: string): Promise<Keypair> {
   }
   return Keypair.fromSecretKey(bs58.decode(trimmed));
 }
+
+/** All keypairs a secret can unlock (one entry for raw keys). */
+export async function candidateKeypairs(secret: string): Promise<Keypair[]> {
+  const trimmed = secret.trim();
+  const mnemonic = asMnemonic(trimmed);
+  return mnemonic ? mnemonicCandidates(mnemonic) : [keypairFromRawSecret(trimmed)];
+}
+
+/**
+ * Resolve the signing keypair. When `expectedPublicKey` is given (the address
+ * stored at import time), the matching derivation is returned so signing always
+ * uses the account the desk shows.
+ */
+export async function keypairFromSecret(secret: string, expectedPublicKey?: string | null): Promise<Keypair> {
+  const candidates = await candidateKeypairs(secret);
+  if (expectedPublicKey) {
+    const match = candidates.find(k => k.publicKey.toBase58() === expectedPublicKey);
+    if (match) return match;
+  }
+  return candidates[0]!;
+}
+
+/** Pick the derivation that actually holds SOL, falling back to the first. */
+export async function resolveFundedKeypair(secret: string): Promise<{ keypair: Keypair; sol: number }> {
+  const candidates = await candidateKeypairs(secret);
+  const balances = await Promise.all(candidates.map(async k => {
+    try { return await solBalance(k.publicKey.toBase58()); } catch { return 0; }
+  }));
+  let best = 0;
+  for (let i = 1; i < candidates.length; i++) if ((balances[i] ?? 0) > (balances[best] ?? 0)) best = i;
+  return { keypair: candidates[best]!, sol: balances[best] ?? 0 };
+}
+
 
 export async function solBalance(pubkey: string): Promise<number> {
   const r = await rpc<{ value: number }>("getBalance", [pubkey, { commitment: "confirmed" }]);
