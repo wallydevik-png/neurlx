@@ -27,7 +27,12 @@ interface CycleResult {
   runId: string;
   scanned: number;
   executed: number;
+  /** Signals that reached a gate and were turned down by it (safety working). */
   rejected: number;
+  /** Signals that never reached a gate because the cycle budget ran out. */
+  deferred: number;
+  /** Signals that threw — infrastructure/provider failures, not risk verdicts. */
+  failed: number;
   rejectReasons: Record<string, number>;
   errors: string[];
   skipped?: string; // if the whole cycle was skipped
