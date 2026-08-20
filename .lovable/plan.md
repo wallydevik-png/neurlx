@@ -1,56 +1,53 @@
+# Fix the macro-event blocking and clean up cycle telemetry
 
-# Making NeurlX Actually Trade
+I audited the pipeline against the prompt you pasted. Most of what it asks for was already fixed in the last round: consensus tie-breaking is direction-neutral (BUY/SELL dead heat resolves to WAIT), confidence uses absolute conviction so SELL clears the same thresholds as BUY, the committee scan uses a bounded worker pool with per-symbol isolation (no `Promise.race` discarding completed work), and each signal already runs inside its own error boundary that emits `signal_failed:<symbol>:<stage>:<reason>`. Re-implementing those would be churn and risk, so this plan does not touch them.
 
-You want three things: stop feeling like a demo, link a real broker without MetaApi, and let the AI trade automatically after linking. Here is exactly what I'll ship.
+Two things in the prompt are genuinely unfixed, and one of them is exactly what you're seeing.
 
-## 1. Pick the right broker (direct API, no bridge)
+## The real problem: the "US macro release block"
 
-Since MT5 requires the MetaApi bridge (and you said no), the realistic direct-API options already wired in NeurlX are:
+The event filter does not consult a real economic calendar. It hard-blocks four fixed UTC clock windows every weekday, whether or not any release actually occurs:
 
-| Broker | Assets | Account type | Signup |
-|---|---|---|---|
-| **Alpaca** | US stocks + crypto | Real **paper** account (free) or funded live | alpaca.markets → generate API key/secret |
-| **Binance** | Crypto spot | Live only (funded) | binance.com → API Management |
-| **Bybit** | Crypto spot/perps | Live or Testnet | bybit.com → API |
-| **OANDA** | Forex/CFD | Demo (free) or live | oanda.com → v20 API token |
-| **Kraken / OKX** | Crypto | Live | provider dashboards |
+```text
+08:30 UTC +/-30m   EU macro window
+12:30 UTC +/-30m   "US macro release block (CPI/NFP/PPI window)"
+14:00 UTC +/-30m   US ISM / consumer window
+18:00 UTC +/-30m   FOMC window
+plus: all of Saturday, Friday after 20:00, Sunday before 22:00, and 23:45-00:15 daily
+```
 
-**My recommendation: Alpaca** — it gives you a real broker-issued paper account (real market data, real order flow through Alpaca's matching engine, $100k paper cash) that feels identical to live, then flip the same key to a funded live account when ready. This is the fastest way to see NeurlX actually place orders today.
+Your screenshots are all 12:27-12:33 UTC, sitting inside the 12:30 block. That is roughly 4 hours of every weekday plus most of the weekend where nothing can trade — and it is applied identically to crypto, which trades 24/7 and does not observe a US release calendar or a Friday close. ETH-USD and SOL-USD were the blocked candidates.
 
-## 2. Per-account Demo ↔ Live switch
+This is a legitimate safety control for forex, indices, metals and energy. It is misapplied to crypto.
 
-- Add `account_mode` (`paper` | `live`) to `exchange_connections`, defaulting to `paper`.
-- Account card shows a **Demo / Live** toggle. Switching to Live requires: verified connection, no withdrawal permission, and a one-time confirmation.
-- Execution engine already routes to the right connector; I'll gate live orders on `account_mode === 'live'` and keep paper orders on the internal paper book.
-- Dashboard, positions, P&L, and analytics filter by the active account so the numbers you see are the numbers of the account you're using — no more mixed synthetic feel.
+### Changes
 
-## 3. One-click auto-trade after linking
+1. Make the event window asset-class aware. `checkEventWindow` takes the symbol's asset class:
+   - forex / index / metal / energy / equity: current behaviour unchanged, including weekend and Friday-close blocks.
+   - crypto (including meme coins): scheduled macro release windows narrowed to a genuine risk window (CPI/NFP/PPI and FOMC only, and only for the minutes immediately around the print rather than a full hour), and the weekend/Friday-close/Sunday-pre-open blocks dropped, since crypto liquidity is continuous. The daily-rollover block is kept.
+2. Both call sites (`entryFilters.server.ts` and `executionIntel.server.ts`) pass the symbol so the classification is consistent — the engine cannot block at one gate and allow at the other.
+3. The rejection reason gains the class it was applied under, e.g. `News/event window (forex): US macro release block`, so a block is always attributable.
 
-New flow on `/accounts/[id]`:
+No thresholds, HTF rules, risk gates, wallet checks or broker restrictions are weakened; forex and index behaviour is byte-for-byte the same.
 
-1. **Test Connection** → runs balance + permission scan.
-2. **Enable Auto-Trading** button → sets `automation_settings.mode = 'autonomous'`, `kill_switch_active = false`, binds the strategy to this account, and starts the cron cycle for your user.
-3. Live status strip: "AI trading on {broker} · Demo · last signal 2m ago · next scan 58s".
+## Telemetry: deferred is currently invisible
 
-The autonomous cron (`/api/public/cron/autonomous`) already exists and runs the AI cycle for every user in autonomous mode. I'll wire the account link to it and add a visible "Last cycle ran … · Next in …" indicator so you can see it's alive.
+The cycle already avoids counting budget-exceeded signals as rejected — it breaks out and leaves them pending — but `deferred` is only written into a free-text `errors` string. The dashboard therefore shows `scanned 10 / executed 0 / rejected 1` with three signals silently unaccounted for.
 
-## 4. Kill the "simulation" feel
+### Changes
 
-- Replace synthetic Intel/AltData providers with a clear **"Not connected"** state + a "Connect data source" CTA on `/intel` and `/altdata` so nothing renders fake numbers.
-- Landing dashboard shows real values from your connected account (balance, positions, P&L) or an empty state — no placeholder graphs.
-- Every page gets a short **"What this does"** helper card at the top (1–2 sentences) so features stop feeling opaque.
+- Add `deferred` and `failed` to the cycle result and persist them on the run row.
+- Emit `signal_deferred:<symbol>:cycle_budget` per unstarted signal instead of a single aggregate string.
+- Show scanned / executed / rejected / deferred / failed as distinct counters on the Autonomous Engine page, and render safety rejections (news window, risk gate, portfolio) in a neutral colour rather than the red "errors" style — a macro block is not an infrastructure error and should not read like one.
 
-## 5. Fix the "MT5 linking isn't working"
+## Tests
 
-I'll add a clear banner on the MT5 form: *"MT5 requires a MetaApi.cloud bridge (free tier). Paste your MetaApi token + account ID here, not your MT5 login."* — plus a "Use Alpaca instead" shortcut. This removes the confusion without breaking users who do have MetaApi.
+- `checkEventWindow`: crypto is not blocked at 12:30 UTC or on a Saturday; forex still is; both are blocked during daily rollover.
+- Consensus: BUY majority, SELL majority, WAIT majority, BUY/SELL tie -> WAIT, three-way split -> deterministic (locks in the existing behaviour so it cannot regress).
+- Cycle counters: a budget cut-off produces deferred, not rejected.
 
-## Technical details
+## Technical notes
 
-- **DB migration**: add `account_mode`, `is_active_account` columns to `exchange_connections`; add `user_id` unique on `is_active_account = true`.
-- **Backend**: `setAccountMode`, `setActiveAccount`, `enableAutoTradingForAccount` server functions (all `requireSupabaseAuth`). Execution engine reads active account + mode.
-- **Frontend**: rewrite `accounts.$id.activate.tsx` into a real account detail page with Test / Demo-Live toggle / Enable-AI button / live status. Add a global "Active Account" chip in the AppShell header. Add helper cards to the 8 most-used routes.
-- **Autonomous loop**: bind runs to the active account and log each cycle to `autonomous_runs` with a visible timestamp on the dashboard.
+Files touched: `src/lib/analysis/eventWindow.ts`, `src/lib/trading/entryFilters.server.ts`, `src/lib/execution/executionIntel.server.ts`, `src/lib/autonomous.functions.ts`, `src/routes/_authenticated/autonomous.tsx`, plus a migration adding `signals_deferred` / `signals_failed` to `autonomous_runs`, and test files.
 
-## What I need from you
-
-Just confirm: **Alpaca** for the first real link (free paper account, 2-minute signup), or pick a different broker from the table above. I'll ship the whole slice in one go and you'll be able to press "Enable Auto-Trading" after pasting the API key.
+Not changed: committee consensus, confidence maths, HTF filter, sizing, risk gate, wallet/venue logic, broker filtering. The audit found those already direction-symmetric; if a live SELL still gets corrupted after this, that becomes a separate targeted investigation with a reproduction rather than a speculative rewrite.
