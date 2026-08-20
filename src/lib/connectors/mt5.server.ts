@@ -519,26 +519,57 @@ const SYMBOL_TTL_MS = 30 * 60 * 1000;
  * once; the rest wait their turn instead of firing all at once.
  */
 const MAX_CONCURRENT_HISTORY = 4; // stay safely under MetaApi's cap of 5
-const historyQueues = new Map<string, { active: number; queue: Array<() => void> }>();
- 
+const SLOT_LEASE_MS = 45_000;   // a slot can never be held longer than this
+const SLOT_WAIT_MS = 12_000;    // a caller can never queue longer than this
+type QueueState = { leases: number[]; queue: Array<() => void> };
+const historyQueues = new Map<string, QueueState>();
+
+/**
+ * Slots are LEASES, not a counter. The module lives in a Worker isolate that
+ * is reused across requests, so a cycle killed mid-flight used to leak its
+ * counter permanently: every later request queued on a promise that nobody
+ * would ever resolve, and the runtime cancelled the whole invocation with
+ * "your Worker's code had hung". Expired leases are now reclaimed, and a
+ * waiter never blocks indefinitely.
+ */
 async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
   let state = historyQueues.get(accountId);
   if (!state) {
-    state = { active: 0, queue: [] };
+    state = { leases: [], queue: [] };
     historyQueues.set(accountId, state);
   }
-  if (state.active >= MAX_CONCURRENT_HISTORY) {
-    await new Promise<void>(resolve => state!.queue.push(resolve));
-  }
-  state.active++;
+  const s = state;
+  const reclaim = () => {
+    const cutoff = Date.now() - SLOT_LEASE_MS;
+    s.leases = s.leases.filter(started => started > cutoff);
+  };
+  const acquire = async () => {
+    const waitUntil = Date.now() + SLOT_WAIT_MS;
+    for (;;) {
+      reclaim();
+      if (s.leases.length < MAX_CONCURRENT_HISTORY) return;
+      if (Date.now() >= waitUntil) return; // proceed rather than hang forever
+      await new Promise<void>(resolve => {
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        s.queue.push(finish);
+        setTimeout(finish, 1_000);
+      });
+    }
+  };
+  await acquire();
+  const lease = Date.now();
+  s.leases.push(lease);
   try {
     return await fn();
   } finally {
-    state.active--;
-    const next = state.queue.shift();
+    const i = s.leases.indexOf(lease);
+    if (i >= 0) s.leases.splice(i, 1);
+    const next = s.queue.shift();
     if (next) next();
   }
 }
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  
 /** Retry 429 / 5xx with exponential backoff + jitter; never retry 4xx validation. */
