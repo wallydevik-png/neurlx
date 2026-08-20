@@ -1122,7 +1122,7 @@ export async function runAutonomousCycleFor(
       }).eq("id", openRun.id);
     }
     return {
-      runId, scanned: 0, executed: 0, rejected: 0,
+      runId, scanned: 0, executed: 0, rejected: 0, deferred: 0, failed: 1,
       rejectReasons: {}, errors: [`fatal_cycle_error:${message}`],
       skipped: "fatal_cycle_error",
     };
