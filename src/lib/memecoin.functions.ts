@@ -9,8 +9,11 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
     const { loadSettings } = await import("@/lib/memecoin/engine.server");
     const settings = await loadSettings(supabase, userId);
 
+    // The wallet row is deliberately unreadable under RLS (it holds the
+    // encrypted secret), so read it server-side and return only safe fields.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: wallet }, { data: signals }, { data: positions }, { data: roles }] = await Promise.all([
-      supabase.from("memecoin_wallets").select("public_key,phantom_address,label,encrypted_secret,updated_at")
+      supabaseAdmin.from("memecoin_wallets").select("public_key,phantom_address,label,encrypted_secret,updated_at")
         .eq("user_id", userId).maybeSingle(),
       supabase.from("memecoin_signals").select("*").order("created_at", { ascending: false }).limit(60),
       supabase.from("memecoin_positions").select("*").eq("user_id", userId)
@@ -112,10 +115,13 @@ export const saveTradingWalletKey = createServerFn({ method: "POST" })
     return { secretKey, label: typeof d.label === "string" ? d.label.trim().slice(0, 80) : undefined };
   })
   .handler(async ({ data, context }) => {
-    const { keypairFromSecret } = await import("@/lib/memecoin/jupiter.server");
+    const { resolveFundedKeypair } = await import("@/lib/memecoin/jupiter.server");
     let publicKey: string;
+    let sol = 0;
     try {
-      publicKey = (await keypairFromSecret(data.secretKey)).publicKey.toBase58();
+      const resolved = await resolveFundedKeypair(data.secretKey);
+      publicKey = resolved.keypair.publicKey.toBase58();
+      sol = resolved.sol;
     } catch {
       throw new Error("That wallet could not be read. Enter a valid Phantom recovery phrase or private key.");
     }
@@ -129,7 +135,7 @@ export const saveTradingWalletKey = createServerFn({ method: "POST" })
       label: data.label || "Imported sniper wallet",
     }, { onConflict: "user_id" });
 
-    return { ok: true, publicKey };
+    return { ok: true, publicKey, sol };
   });
 
 /** Admin-only: forget the stored key (trading stops immediately). */
