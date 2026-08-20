@@ -60,7 +60,9 @@ function MemecoinDesk() {
       const result = await importWalletFn({ data: { secretKey: walletSecret } });
       setWalletSecret("");
       setShowImport(false);
-      toast.success(`Wallet imported: ${result.publicKey.slice(0, 6)}…${result.publicKey.slice(-4)}`);
+      toast.success(
+        `Wallet linked: ${result.publicKey.slice(0, 6)}…${result.publicKey.slice(-4)} · ${result.sol.toFixed(4)} SOL`,
+      );
       refresh();
     } catch (e) {
       fail(e);
