@@ -519,9 +519,9 @@ const SYMBOL_TTL_MS = 30 * 60 * 1000;
  * once; the rest wait their turn instead of firing all at once.
  */
 const MAX_CONCURRENT_HISTORY = 4; // stay safely under MetaApi's cap of 5
-const SLOT_LEASE_MS = 45_000;   // a slot can never be held longer than this
-const SLOT_WAIT_MS = 12_000;    // a caller can never queue longer than this
-type QueueState = { leases: number[]; queue: Array<() => void> };
+const SLOT_LEASE_MS = 10_000;   // longer than the bounded history HTTP call
+const SLOT_WAIT_MS = 3_000;     // fail fast so another symbol can be evaluated
+type QueueState = { leases: number[] };
 const historyQueues = new Map<string, QueueState>();
 
 /**
@@ -535,7 +535,7 @@ const historyQueues = new Map<string, QueueState>();
 async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
   let state = historyQueues.get(accountId);
   if (!state) {
-    state = { leases: [], queue: [] };
+    state = { leases: [] };
     historyQueues.set(accountId, state);
   }
   const s = state;
@@ -548,13 +548,10 @@ async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Pro
     for (;;) {
       reclaim();
       if (s.leases.length < MAX_CONCURRENT_HISTORY) return;
-      if (Date.now() >= waitUntil) return; // proceed rather than hang forever
-      await new Promise<void>(resolve => {
-        let done = false;
-        const finish = () => { if (!done) { done = true; resolve(); } };
-        s.queue.push(finish);
-        setTimeout(finish, 1_000);
-      });
+      if (Date.now() >= waitUntil) {
+        throw new Error("MetaApi history queue saturated — symbol deferred to the next cycle");
+      }
+      await sleep(100);
     }
   };
   await acquire();
@@ -565,8 +562,6 @@ async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Pro
   } finally {
     const i = s.leases.indexOf(lease);
     if (i >= 0) s.leases.splice(i, 1);
-    const next = s.queue.shift();
-    if (next) next();
   }
 }
 
@@ -734,14 +729,20 @@ export function createMt5Connector(
  
   async function marketDataReq<T>(path: string): Promise<T> {
     await ensureReady();
-    const send = () => withBackoff(() => doRequest<T>({
+    // Candle scans are opportunistic and process symbols independently. Do not
+    // retry a stalled history request here: four 20-second attempts outlived
+    // the 45-second cycle watchdog and left every later cron tick with zero
+    // completed work. A failed symbol is deferred while the remaining symbols
+    // keep their share of the cycle budget.
+    const send = () => doRequest<T>({
       ctx: logCtx,
       method: "GET",
       path,
       url: `${marketDataBaseFor(state.region)}${path}`,
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       signed: true,
-    }));
+      timeoutMs: 6_000,
+    });
     try {
       return await send();
     } catch (e) {

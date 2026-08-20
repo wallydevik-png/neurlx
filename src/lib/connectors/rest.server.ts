@@ -40,6 +40,9 @@ export interface DoRequestInput {
   body?: string;
   params?: Record<string, unknown>;
   signed?: boolean;
+  /** Per-call deadline. Market-data scans use a shorter value so one stalled
+   * venue cannot consume the autonomous cycle's entire request budget. */
+  timeoutMs?: number;
 }
 
 export async function doRequest<T>(input: DoRequestInput): Promise<T> {
@@ -53,9 +56,9 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
   // ever recover from it. That's the most likely explanation for a whole
   // autonomous cycle getting stuck for 7+ minutes with autonomous_runs left
   // unfinished: one request never resolved, so the cycle never finished.
-  const REQUEST_TIMEOUT_MS = 20_000;
+  const requestTimeoutMs = Math.max(1_000, input.timeoutMs ?? 20_000);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     res = await fetch(url, { method, headers, body, signal: controller.signal });
     text = await res.text();
@@ -73,7 +76,7 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
   } catch (e) {
     const timedOut = e instanceof Error && e.name === "AbortError";
     const err = timedOut
-      ? Object.assign(new Error(`Request to ${ctx.venue} timed out after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`), { retryable: true })
+      ? Object.assign(new Error(`Request to ${ctx.venue} timed out after ${requestTimeoutMs}ms: ${method} ${path}`), { retryable: true })
       : e;
     if (ctx.supabase && ctx.userId) {
       await logApiRequest(ctx.supabase, {
