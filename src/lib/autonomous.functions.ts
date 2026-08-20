@@ -1130,36 +1130,41 @@ export async function runAutonomousCycleFor(
   userId: string,
   trigger: "manual" | "cron" | "signal",
 ): Promise<CycleResult> {
+  // Lock ownership: the watchdog may only close the run row this invocation
+  // created. Closing "the newest open row" could terminate a genuinely active
+  // concurrent cycle belonging to another invocation.
+  const ownership: { runId: string | null } = { runId: null };
   try {
     // Hard watchdog. A provider request that never settles used to leave the
-    // whole invocation pending until the runtime cancelled it ("your Worker's
-    // code had hung"), which left the run row open and made every following
-    // tick report `recovered:stale_unfinished_cycle` with nothing scanned.
-    // The cycle now always produces a response well inside the request budget.
+    // whole invocation pending until the runtime cancelled it, which left the
+    // run row open and blocked every following tick with
+    // `recovered:stale_unfinished_cycle`.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const watchdog = new Promise<CycleResult>(resolve => {
       timer = setTimeout(async () => {
+        const note = "cycle_watchdog_timeout: market data provider did not respond in time";
         const finishedAt = new Date().toISOString();
-        const { data: openRun } = await supabase.from("autonomous_runs")
-          .select("id").eq("user_id", userId).is("finished_at", null)
-          .order("started_at", { ascending: false }).limit(1).maybeSingle();
-        if (openRun?.id) {
+        if (ownership.runId) {
+          // Scoped to our own run id AND still-open, so a row already closed
+          // normally (or owned by another cycle) is never overwritten.
           await supabase.from("autonomous_runs").update({
-            finished_at: finishedAt,
-            errors: ["cycle_watchdog_timeout: market data provider did not respond in time"],
-          }).eq("id", openRun.id);
+            finished_at: finishedAt, errors: [note],
+          }).eq("id", ownership.runId).is("finished_at", null);
         }
         resolve({
-          runId: String(openRun?.id ?? "watchdog"),
+          runId: String(ownership.runId ?? "watchdog"),
           scanned: 0, executed: 0, rejected: 0, deferred: 0, failed: 0,
           rejectReasons: {},
-          errors: ["cycle_watchdog_timeout: market data provider did not respond in time"],
+          errors: [note],
           skipped: "cycle_watchdog_timeout",
         });
       }, 45_000);
     });
     try {
-      return await Promise.race([runAutonomousCycleCore(supabase, userId, trigger), watchdog]);
+      return await Promise.race([
+        runAutonomousCycleCore(supabase, userId, trigger, ownership),
+        watchdog,
+      ]);
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -1172,16 +1177,13 @@ export async function runAutonomousCycleFor(
       .eq("user_id", userId).maybeSingle();
     const live = Boolean(settings?.autonomous_live_enabled)
       && Boolean(settings?.autonomous_default_connection_id);
-    const { data: openRun } = await supabase.from("autonomous_runs")
-      .select("id").eq("user_id", userId).is("finished_at", null)
-      .order("started_at", { ascending: false }).limit(1).maybeSingle();
-    const runId = String(openRun?.id ?? "fatal-cycle");
-    if (openRun?.id) {
+    const runId = String(ownership.runId ?? "fatal-cycle");
+    if (ownership.runId) {
       await supabase.from("autonomous_runs").update({
         finished_at: finishedAt,
         live,
         errors: [`fatal_cycle_error:${message}`],
-      }).eq("id", openRun.id);
+      }).eq("id", ownership.runId).is("finished_at", null);
     }
     return {
       runId, scanned: 0, executed: 0, rejected: 0, deferred: 0, failed: 1,
