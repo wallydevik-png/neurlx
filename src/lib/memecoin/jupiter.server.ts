@@ -31,7 +31,7 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   return json.result as T;
 }
 
-async function deriveEd25519(seed: Uint8Array, path: number[]): Promise<Keypair> {
+async function deriveEd25519(seed: BufferSource, path: number[]): Promise<Keypair> {
   const masterKey = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode("ed25519 seed"),
     { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
@@ -60,8 +60,9 @@ async function mnemonicCandidates(mnemonic: string): Promise<Keypair[]> {
   if (!validateMnemonic(mnemonic, wordlist)) throw new Error("Invalid recovery phrase");
   const seed = await mnemonicToSeedWebcrypto(mnemonic);
   const out: Keypair[] = [];
-  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seed, [44, 501, i, 0]));
-  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seed, [44, 501, i]));
+  const seedBuf = new Uint8Array(seed) as unknown as BufferSource;
+  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seedBuf, [44, 501, i, 0]));
+  for (let i = 0; i < 5; i++) out.push(await deriveEd25519(seedBuf, [44, 501, i]));
   out.push(Keypair.fromSeed(seed.slice(0, 32)));
   return out;
 }
