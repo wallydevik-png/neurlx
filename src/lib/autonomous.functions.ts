@@ -611,9 +611,16 @@ async function runAutonomousCycleCore(
           .insert(toInsert).select();
         signals = inserted ?? [];
         errors.push(`committee_generated:${toInsert.length}:${toInsert.map(s => `${s.symbol}:${s.side}:${Number(s.confidence).toFixed(2)}`).join(",")}`);
-      } else {
-        errors.push(`committee_no_trade:${verdicts.slice(0, 5).map(v => `${v.symbol}:${v.consensusDirection}:${v.consensusConfidence.toFixed(2)}:${v.agreement.toFixed(2)}`).join(",") || "no_verdicts"}`);
+      } else if (picks.length) {
+        // Candidates cleared the committee and HTF but could not be sized.
+        const unsized = picks.length - toInsert.length;
+        rejected += unsized;
+        bump(rejectReasons, "sizing:zero_volume_at_generation");
+        errors.push(
+          `sizing_no_signal:${unsized}:${picks.slice(0, 3).map(v => `${v.symbol}:${v.consensusDirection}`).join(",")}`,
+        );
       }
+
     } catch (e) {
       errors.push(`committee_gen: ${e instanceof Error ? e.message : String(e)}`);
     }
