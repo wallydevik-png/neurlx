@@ -195,8 +195,10 @@ export async function evaluateExecution(
       : `Spread ${timing.volatility.spreadBps?.toFixed(1)} bps exceeds the ${cfg.maxSpreadBps} bps budget`);
   }
   if (cfg.newsFilterEnabled) {
-    const ev = checkEventWindow();
-    if (ev.active) rejections.push(`News/event window: ${ev.reason}`);
+    // Classified by the instrument being traded so this gate cannot disagree
+    // with the entry filter's identical check.
+    const ev = checkEventWindow(new Date(), args.symbol);
+    if (ev.active) rejections.push(`News/event window (${ev.assetClass}): ${ev.reason}`);
   }
   if (cfg.sessionFilterEnabled && timing.sessionScore < 25) {
     rejections.push(`Session "${session.replace(/_/g, " ")}" scores ${timing.sessionScore} — outside tradeable hours`);
