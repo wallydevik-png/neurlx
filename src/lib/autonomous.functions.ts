@@ -1105,7 +1105,39 @@ export async function runAutonomousCycleFor(
   trigger: "manual" | "cron" | "signal",
 ): Promise<CycleResult> {
   try {
-    return await runAutonomousCycleCore(supabase, userId, trigger);
+    // Hard watchdog. A provider request that never settles used to leave the
+    // whole invocation pending until the runtime cancelled it ("your Worker's
+    // code had hung"), which left the run row open and made every following
+    // tick report `recovered:stale_unfinished_cycle` with nothing scanned.
+    // The cycle now always produces a response well inside the request budget.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const watchdog = new Promise<CycleResult>(resolve => {
+      timer = setTimeout(async () => {
+        const finishedAt = new Date().toISOString();
+        const { data: openRun } = await supabase.from("autonomous_runs")
+          .select("id").eq("user_id", userId).is("finished_at", null)
+          .order("started_at", { ascending: false }).limit(1).maybeSingle();
+        if (openRun?.id) {
+          await supabase.from("autonomous_runs").update({
+            finished_at: finishedAt,
+            errors: ["cycle_watchdog_timeout: market data provider did not respond in time"],
+          }).eq("id", openRun.id);
+        }
+        resolve({
+          runId: String(openRun?.id ?? "watchdog"),
+          scanned: 0, executed: 0, rejected: 0, deferred: 0, failed: 0,
+          rejectReasons: {},
+          errors: ["cycle_watchdog_timeout: market data provider did not respond in time"],
+          skipped: "cycle_watchdog_timeout",
+        });
+      }, 45_000);
+    });
+    try {
+      return await Promise.race([runAutonomousCycleCore(supabase, userId, trigger), watchdog]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const finishedAt = new Date().toISOString();
