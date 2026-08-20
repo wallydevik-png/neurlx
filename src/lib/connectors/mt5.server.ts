@@ -23,6 +23,8 @@ import type {
   Quote, RichPosition, TradingConnector,
 } from "./types";
 import { doRequest } from "./rest.server";
+import { withHistorySlot } from "@/lib/marketdata/historyGate.server";
+
  
 const PROVISIONING_BASE = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 function clientBaseFor(region: string): string {
