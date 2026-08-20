@@ -482,23 +482,36 @@ async function runAutonomousCycleCore(
       // to four candidates per available slot; the downstream entry, lifecycle,
       // portfolio, risk and execution gates remain authoritative.
       const candidateLimit = Math.min(12, Math.max(6, capacity * 4));
-      const viable = verdicts
-        .filter(v => v.consensusDirection !== "wait"
-          && canFundVerdict(v.symbol, v.consensusDirection)
-          && v.consensusConfidence >= minConfForGen
-          && v.agreement >= 1 / 2
-          // The latest production failure promoted a unanimous bearish vote
-          // whose underlying 15m MACD histogram was flat. It was the only HTF
-          // candidate and immediately failed the exact same check in
-          // evaluateEntry. Apply that authoritative momentum rule here so the
-          // search continues to the next instrument instead of starving.
-          && v.entryMomentumConfirmed
-          && v.base.regime !== "extreme_risk");
+      // Every directional verdict is dropped for exactly ONE recorded reason.
+      // "committee_no_trade" is reserved for the case where the committee
+      // itself produced no directional opinion — it is never used as a catch
+      // all for funding, momentum, regime or higher-timeframe outcomes.
+      const preHtfDrops: string[] = [];
+      const viable: typeof verdicts = [];
+      let waitVerdicts = 0;
+      for (const v of verdicts) {
+        const dir = v.consensusDirection;
+        if (dir === "wait") { waitVerdicts++; continue; }
+        let reason: string | null = null;
+        if (!canFundVerdict(v.symbol, dir)) reason = `wallet:${dir === "buy" ? "no_stablecoin_available" : "no_base_asset_available"}`;
+        else if (v.consensusConfidence < minConfForGen) reason = `below_generation_confidence:${v.consensusConfidence.toFixed(2)}`;
+        else if (v.agreement < 1 / 2) reason = `committee_no_majority:${v.agreement.toFixed(2)}`;
+        else if (!v.entryMomentumConfirmed) reason = "entry_momentum:not_confirmed";
+        else if (v.base.regime === "extreme_risk") reason = "regime:extreme_risk";
+        if (reason) {
+          preHtfDrops.push(`${v.symbol}:${dir}:${reason}`);
+          bump(rejectReasons, reason.split(":").slice(0, 2).join(":"));
+          rejected++;
+          continue;
+        }
+        viable.push(v);
+      }
+      if (preHtfDrops.length) {
+        errors.push(`candidates_dropped_pre_htf:${preHtfDrops.length}:${preHtfDrops.slice(0, 5).join(" | ")}`);
+      }
       // Counter-trend candidates are guaranteed to fail the entry gate's
       // higher-timeframe alignment check, so they must not consume the batch.
-      // This now uses REAL 1D/4H/1H broker candles (the committee's resampled
-      // 15m proxy silently degraded to an entry-timeframe bias and let
-      // counter-trend ideas through).
+      // Uses REAL 1D/4H/1H broker candles.
       const { filterHtfAligned } = await import("@/lib/trading/htfFilter.server");
       const htf = await filterHtfAligned(
         supabase,
@@ -509,36 +522,38 @@ async function runAutonomousCycleCore(
         2,
       );
       const picks = htf.aligned.slice(0, candidateLimit);
-      if (!picks.length && viable.length) {
-        // Telemetry must be counted from the *measured* verdicts, not from
-        // viable.length (which includes candidates the HTF budget never
-        // inspected) and not from the 3-candidate sample in the log text.
-        // The histogram below is what both the funnel's htf_conflict total and
-        // the severity breakdown are built from, so they always agree.
-        const rejected = htf.verdicts.filter(v => !v.aligned);
-        const hist = [0, 0, 0];
-        for (const v of rejected) {
-          const m = /([0-3])\/3 agree with/.exec(v.detail);
-          const n = m ? Number(m[1]) : -1;
-          if (n >= 0 && n <= 2) hist[n]++;
+      const htfRejected = htf.verdicts.filter(v => !v.aligned);
+      if (htfRejected.length) {
+        // Classification is semantic, not a "N/3 agree" number: an unknown or
+        // unavailable timeframe is recorded as missing evidence, never as a
+        // contradiction.
+        const byClass: Record<string, number> = {};
+        for (const v of htfRejected) {
+          byClass[v.classification] = (byClass[v.classification] ?? 0) + 1;
+          bump(rejectReasons, `htf:${v.classification}`);
+          rejected++;
         }
         errors.push(
-          `htf_conflict:${rejected.length}_candidates_counter_trend:` +
-          rejected.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.detail}`).join(" | "),
+          `htf_rejected:${htfRejected.length}:` +
+          htfRejected.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.classification}:${v.detail}`).join(" | "),
         );
         errors.push(
-          `htf_agree:0=${hist[0]},1=${hist[1]},2=${hist[2]}` +
-          `,unmeasured=${Math.max(0, viable.length - htf.verdicts.length)}`,
+          "htf_class:" + Object.entries(byClass).map(([k, n]) => `${k}=${n}`).join(","),
         );
       }
-      if (!viable.length && verdicts.length) {
-        const momentumMisses = verdicts
-          .filter(v => v.consensusDirection !== "wait" && !v.entryMomentumConfirmed)
-          .slice(0, 3)
-          .map(v => `${v.symbol}:${v.consensusDirection}:${v.entryMomentumDetail}`)
-          .join(" | ");
-        errors.push(`entry_momentum_no_candidates:${momentumMisses || "no_directional_consensus"}`);
+      if (htf.unmeasured > 0) {
+        // Never inspected inside the HTF budget — deferred, not rejected.
+        deferredCount += htf.unmeasured;
+        errors.push(`htf_unmeasured:${htf.unmeasured}:budget`);
       }
+      if (!verdicts.length) {
+        errors.push("committee_no_verdicts:market_data_unavailable_for_universe");
+      } else if (!viable.length && waitVerdicts === verdicts.length) {
+        errors.push(
+          `committee_no_trade:${verdicts.slice(0, 5).map(v => `${v.symbol}:wait:${v.consensusConfidence.toFixed(2)}:${v.agreement.toFixed(2)}`).join(",")}`,
+        );
+      }
+
  
  
       // Scale qty so notional fits the user's per-trade cap. The engine
