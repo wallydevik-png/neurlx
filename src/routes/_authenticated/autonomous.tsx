@@ -310,9 +310,30 @@ function AutonomousPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>htf_conflict breakdown — last 7 days</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Higher-timeframe rejections — last 7 days</CardTitle></CardHeader>
           <CardContent>
-            {(data?.htfSeverity?.total ?? 0) === 0 && (
+            {(data?.htfSeverity?.classTotal ?? 0) > 0 && (
+              <div className="mb-4 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  {data?.htfSeverity?.classTotal} classified by outcome — missing data is no
+                  longer reported as a contradiction.
+                </p>
+                {(data?.htfSeverity?.classes ?? []).map(c => (
+                  <div key={c.key} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-mono">{c.label}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {c.count} · {(c.share * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded bg-muted">
+                      <div className="h-1.5 rounded bg-primary" style={{ width: `${Math.max(2, c.share * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(data?.htfSeverity?.total ?? 0) === 0 && (data?.htfSeverity?.classTotal ?? 0) === 0 && (
               <p className="text-sm text-muted-foreground">
                 No higher-timeframe conflicts recorded yet by the counters. Buckets are now taken
                 from the same rolling telemetry as the funnel, so they start accumulating from the
