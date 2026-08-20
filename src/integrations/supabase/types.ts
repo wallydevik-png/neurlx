@@ -517,7 +517,9 @@ export type Database = {
           id: string
           live: boolean
           reject_reasons: Json
+          signals_deferred: number
           signals_executed: number
+          signals_failed: number
           signals_rejected: number
           signals_scanned: number
           started_at: string
@@ -530,7 +532,9 @@ export type Database = {
           id?: string
           live?: boolean
           reject_reasons?: Json
+          signals_deferred?: number
           signals_executed?: number
+          signals_failed?: number
           signals_rejected?: number
           signals_scanned?: number
           started_at?: string
@@ -543,7 +547,9 @@ export type Database = {
           id?: string
           live?: boolean
           reject_reasons?: Json
+          signals_deferred?: number
           signals_executed?: number
+          signals_failed?: number
           signals_rejected?: number
           signals_scanned?: number
           started_at?: string
