@@ -22,10 +22,14 @@ export interface HtfVerdict {
   side: "buy" | "sell";
   aligned: boolean;
   bias: { d1: HtfState; h4: HtfState; h1: HtfState };
+  /** Why a timeframe is unknown/unavailable: rate_limited, timeout, saturated,
+   *  error, or too_few_candles. Infrastructure state, never a direction. */
+  dataIssues: Partial<Record<"d1" | "h4" | "h1", string>>;
   tally: HtfTally;
   classification: HtfClassification;
   detail: string;
 }
+
 
 async function biasFor(
   supabase: SupabaseClient | null,
