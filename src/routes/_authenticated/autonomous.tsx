@@ -368,6 +368,8 @@ function AutonomousPage() {
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
                       scanned {r.signals_scanned} · executed {r.signals_executed} · rejected {r.signals_rejected}
+                      {(r.signals_deferred ?? 0) > 0 && ` · deferred ${r.signals_deferred}`}
+                      {(r.signals_failed ?? 0) > 0 && ` · failed ${r.signals_failed}`}
                     </div>
                     {Object.keys(r.reject_reasons ?? {}).length > 0 && (
                       <div className="text-xs text-muted-foreground mt-1">
@@ -375,11 +377,29 @@ function AutonomousPage() {
                           .map(([k, v]) => `${k}×${v}`).join(", ")}
                       </div>
                     )}
-                    {Array.isArray(r.errors) && (r.errors as unknown[]).length > 0 && (
-                      <div className="text-xs text-destructive mt-1">
-                        errors: {(r.errors as string[]).join("; ")}
-                      </div>
-                    )}
+                    {(() => {
+                      // A macro-window block or a deferred signal is the system
+                      // working as designed — only genuine failures render red.
+                      const entries = Array.isArray(r.errors) ? (r.errors as string[]) : [];
+                      const isFailure = (e: string) =>
+                        e.startsWith("signal_failed:") || e.startsWith("fatal_cycle_error");
+                      const failures = entries.filter(isFailure);
+                      const notes = entries.filter(e => !isFailure(e));
+                      return (
+                        <>
+                          {notes.length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              notes: {notes.join("; ")}
+                            </div>
+                          )}
+                          {failures.length > 0 && (
+                            <div className="text-xs text-destructive mt-1">
+                              failures: {failures.join("; ")}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
