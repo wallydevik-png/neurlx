@@ -156,6 +156,10 @@ export interface HtfSeverityBreakdown {
   /** Rejected candidates the HTF budget never inspected (conflictTotal - total). */
   unmeasured: number;
   buckets: Array<{ agree: number; label: string; count: number; share: number }>;
+  /** Semantic classification of new-format HTF rejections. Historical rows
+   *  keep their legacy "N/3 agree" buckets above; nothing is rewritten. */
+  classes: Array<{ key: string; label: string; count: number; share: number }>;
+  classTotal: number;
 }
 
 /**
@@ -175,19 +179,36 @@ export async function loadHtfSeverityBreakdown(
   const from = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
   const { data } = await supabase.from("rejection_stage_stats")
     .select("stage,count").eq("user_id", userId).gte("day", from)
-    .in("stage", [...HTF_BUCKET_STAGES, "htf_conflict"]);
+    .in("stage", [...HTF_BUCKET_STAGES, ...HTF_CLASS_STAGES, "htf_conflict", "htf"]);
   const counts = [0, 0, 0];
+  const classCounts = new Map<string, number>();
   let conflictTotal = 0;
   for (const r of data ?? []) {
     const n = Number(r.count) || 0;
     const stage = r.stage as string;
-    if (stage === "htf_conflict") conflictTotal += n;
-    else {
+    if (stage === "htf_conflict" || stage === "htf") conflictTotal += n;
+    else if ((HTF_CLASS_STAGES as readonly string[]).includes(stage)) {
+      classCounts.set(stage, (classCounts.get(stage) ?? 0) + n);
+    } else {
       const idx = Number(stage.slice(-1));
       if (idx >= 0 && idx <= 2) counts[idx] += n;
     }
   }
   const total = counts.reduce((a, b) => a + b, 0);
+  const classLabels: Record<string, string> = {
+    htf_full_contradiction: "full contradiction (2+ timeframes against)",
+    htf_partial_contradiction: "partial contradiction (1 against, none agreeing)",
+    htf_near_miss: "near miss (1 agreeing, 1 against)",
+    htf_insufficient_data: "insufficient data (nothing against, too little confirmation)",
+    htf_unavailable: "higher-timeframe data unavailable",
+  };
+  const classTotal = [...classCounts.values()].reduce((a, b) => a + b, 0);
+  const classes = HTF_CLASS_STAGES.map(key => ({
+    key,
+    label: classLabels[key]!,
+    count: classCounts.get(key) ?? 0,
+    share: classTotal > 0 ? (classCounts.get(key) ?? 0) / classTotal : 0,
+  })).filter(c => c.count > 0);
   const labels = [
     "full contradiction",
     "partial contradiction",
@@ -197,7 +218,9 @@ export async function loadHtfSeverityBreakdown(
     days,
     total,
     conflictTotal,
-    unmeasured: Math.max(0, conflictTotal - total),
+    classes,
+    classTotal,
+    unmeasured: Math.max(0, conflictTotal - total - classTotal),
     buckets: counts.map((count, agree) => ({
       agree, label: labels[agree]!, count, share: total > 0 ? count / total : 0,
     })),
