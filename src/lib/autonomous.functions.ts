@@ -1057,10 +1057,31 @@ async function runAutonomousCycleCore(
         continue;
       }
  
-      // Create position (mirrors approveSignalV2)
-      if (paperAcct) {
-        const filledPrice = result.filledPrice ?? entry;
-        const filledQty = result.filledQty;
+      // Position bookkeeping. A SELL only opens a SHORT on a venue that can
+      // actually short (margin). On a spot venue a SELL is a disposal of the
+      // base asset: it reduces/closes an existing long, and must never create
+      // a synthetic short row.
+      const spotSell = side === "sell" && live && !marginVenue;
+      const filledPrice = result.filledPrice ?? entry;
+      const filledQty = result.filledQty;
+      let positionId: string | null = null;
+      if (spotSell) {
+        const { data: openLong } = await supabase.from("positions")
+          .select("id,qty").eq("user_id", userId).eq("symbol", sig.symbol)
+          .eq("side", "long").eq("status", "open")
+          .order("opened_at", { ascending: true }).limit(1).maybeSingle();
+        if (openLong?.id) {
+          const remaining = +(Number(openLong.qty) - filledQty).toFixed(8);
+          positionId = openLong.id as string;
+          await supabase.from("positions").update(
+            remaining > 0
+              ? { qty: remaining }
+              : { qty: 0, status: "closed", closed_at: new Date().toISOString() },
+          ).eq("id", openLong.id);
+        }
+        // No tracked long: the venue holding was acquired outside the app.
+        // Record the order only — do not fabricate a short position.
+      } else if (paperAcct) {
         const { data: pos } = await supabase.from("positions").insert({
           user_id: userId, account_id: paperAcct.id,
           symbol: sig.symbol, side: side === "buy" ? "long" : "short",
@@ -1074,8 +1095,14 @@ async function runAutonomousCycleCore(
           connection_id: result.isLive ? liveConnectionId ?? null : null,
           external_position_id: result.isLive ? result.positionId : null,
         }).select().single();
-        await supabase.from("orders").update({ position_id: pos?.id })
+        positionId = (pos?.id as string) ?? null;
+      }
+      if (positionId) {
+        await supabase.from("orders").update({ position_id: positionId })
           .eq("id", result.orderId);
+      }
+      if (paperAcct) {
+
         if (!result.isLive) {
           await supabase.from("paper_accounts").update({
             cash_balance: Number(paperAcct.cash_balance) - filledPrice * filledQty - result.fees,
