@@ -128,17 +128,16 @@ function MemecoinDesk() {
               base58 private keys, and 64-byte JSON keys.
             </p>
             <div className="relative mt-3">
-              <textarea
+              <input
                 id="wallet-secret"
+                type={showWalletSecret ? "text" : "password"}
                 value={walletSecret}
                 onChange={e => setWalletSecret(e.target.value)}
-                rows={3}
                 maxLength={500}
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="Enter wallet recovery phrase or private key"
                 className="w-full rounded-md bg-input border border-border px-3 py-2 pr-11 text-sm font-mono outline-none focus:border-primary"
-                style={{ WebkitTextSecurity: showWalletSecret ? "none" : "disc" }}
               />
               <Button type="button" variant="ghost" size="icon" onClick={() => setShowWalletSecret(v => !v)}
                 className="absolute right-1 top-1" aria-label={showWalletSecret ? "Hide wallet secret" : "Show wallet secret"}>
