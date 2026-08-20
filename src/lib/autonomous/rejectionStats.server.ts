@@ -10,7 +10,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const REJECTION_STAGES = [
   "entry_momentum_no_candidates",
   "htf_conflict",
+  "htf",
   "committee_no_trade",
+  "committee_no_majority",
+  "committee_no_verdicts",
+  "below_generation_confidence",
+  "entry_momentum",
+  "regime",
   "below_min_confidence",
   "asset_not_allowed",
   "entry_filter",
@@ -28,9 +34,22 @@ export const REJECTION_STAGES = [
   "htf_agree_0",
   "htf_agree_1",
   "htf_agree_2",
+  // Semantic HTF classification buckets (replace the "N/3 agree" histogram).
+  "htf_full_contradiction",
+  "htf_partial_contradiction",
+  "htf_near_miss",
+  "htf_insufficient_data",
+  "htf_unavailable",
   "other",
 ] as const;
 const HTF_BUCKET_STAGES = ["htf_agree_0", "htf_agree_1", "htf_agree_2"] as const;
+export const HTF_CLASS_STAGES = [
+  "htf_full_contradiction",
+  "htf_partial_contradiction",
+  "htf_near_miss",
+  "htf_insufficient_data",
+  "htf_unavailable",
+] as const;
 export type RejectionStage = (typeof REJECTION_STAGES)[number];
 
 function stageOfKey(key: string): RejectionStage {
@@ -58,7 +77,13 @@ export function summarizeCycle(
       add("htf_conflict", m ? Number(m[1]) : 1);
     } else if (e.startsWith("htf_agree:")) {
       for (const m of e.matchAll(/([0-2])=(\d+)/g)) add(`htf_agree_${m[1]}`, Number(m[2]) || 0);
+    } else if (e.startsWith("htf_class:")) {
+      for (const m of e.slice("htf_class:".length).split(",")) {
+        const [cls, n] = m.split("=");
+        if (cls) add(`htf_${cls}`, Number(n) || 0);
+      }
     } else if (e.startsWith("committee_no_trade")) add("committee_no_trade", 1);
+    else if (e.startsWith("committee_no_verdicts")) add("committee_no_verdicts", 1);
   }
   return out;
 }
@@ -114,6 +139,8 @@ export async function loadRejectionBreakdown(
   // Severity buckets are stored in the same table but are a *sub-division* of
   // htf_conflict, so they must not inflate the funnel totals.
   for (const s of HTF_BUCKET_STAGES) totals.delete(s);
+  // Classification buckets sub-divide the `htf` funnel stage — never inflate it.
+  for (const s of HTF_CLASS_STAGES) totals.delete(s);
   const total = [...totals.values()].reduce((a, b) => a + b, 0);
   const stages = [...totals.entries()]
     .map(([stage, count]) => ({ stage, count, share: total > 0 ? count / total : 0 }))
