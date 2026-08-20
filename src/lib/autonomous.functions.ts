@@ -719,14 +719,16 @@ async function runAutonomousCycleCore(
   const fixedVolume = Number(settings.fixed_trade_volume ?? 0);
 
   let slots = capacity;
-  let deferred = 0;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
     if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
-      deferred = signals.length - signalIndex;
-      errors.push(`cycle_time_budget_exceeded:deferred=${deferred}`);
+      const pending = signals.slice(signalIndex);
+      deferredCount += pending.length;
       // Leave these signals pending for the next bounded cycle rather than
       // falsely rejecting valid setups because broker history was slow.
+      for (const p of pending) {
+        errors.push(`signal_deferred:${p.symbol}:cycle_budget`);
+      }
       break;
     }
     // Per-signal error boundary: one bad symbol must never abort the cycle or
