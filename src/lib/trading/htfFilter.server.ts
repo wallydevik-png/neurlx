@@ -32,17 +32,21 @@ async function biasFor(
   symbol: string,
   interval: "1d" | "4h" | "1h",
   userId?: string | null,
-): Promise<HtfState> {
+): Promise<{ state: HtfState; reason?: string }> {
   try {
     const { candles } = await fetchCandlesWithSource(supabase, symbol, interval, 220, userId);
-    if (!candles || candles.length < 30) return "unknown";
+    if (!candles || candles.length < 30) return { state: "unknown", reason: "too_few_candles" };
     const bias = trendBias(candles.map(c => c.close));
-    return bias === "bullish" || bias === "bearish" ? bias : "neutral";
-  } catch {
-    // Data-plane failure — explicitly NOT a directional opinion.
-    return "unavailable";
+    return { state: bias === "bullish" || bias === "bearish" ? bias : "neutral" };
+  } catch (e) {
+    // Data-plane failure — infrastructure state, explicitly NOT a directional
+    // opinion. The reason distinguishes a rate-limited/timed-out provider from
+    // an instrument the broker genuinely has no history for.
+    const { historyFailureReason } = await import("@/lib/marketdata/historyGate.server");
+    return { state: "unavailable", reason: historyFailureReason(e) };
   }
 }
+
 
 export async function checkHtfAlignment(
   supabase: SupabaseClient | null,
