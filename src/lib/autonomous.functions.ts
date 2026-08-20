@@ -506,7 +506,7 @@ async function runAutonomousCycleCore(
         v => v.consensusDirection as "buy" | "sell",
         userId,
         Math.min(viable.length, 12),
-        6,
+        2,
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       if (!picks.length && viable.length) {
