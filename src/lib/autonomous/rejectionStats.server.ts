@@ -10,7 +10,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const REJECTION_STAGES = [
   "entry_momentum_no_candidates",
   "htf_conflict",
+  "htf",
   "committee_no_trade",
+  "committee_no_majority",
+  "committee_no_verdicts",
+  "below_generation_confidence",
+  "entry_momentum",
+  "regime",
   "below_min_confidence",
   "asset_not_allowed",
   "entry_filter",
@@ -28,9 +34,22 @@ export const REJECTION_STAGES = [
   "htf_agree_0",
   "htf_agree_1",
   "htf_agree_2",
+  // Semantic HTF classification buckets (replace the "N/3 agree" histogram).
+  "htf_full_contradiction",
+  "htf_partial_contradiction",
+  "htf_near_miss",
+  "htf_insufficient_data",
+  "htf_unavailable",
   "other",
 ] as const;
 const HTF_BUCKET_STAGES = ["htf_agree_0", "htf_agree_1", "htf_agree_2"] as const;
+export const HTF_CLASS_STAGES = [
+  "htf_full_contradiction",
+  "htf_partial_contradiction",
+  "htf_near_miss",
+  "htf_insufficient_data",
+  "htf_unavailable",
+] as const;
 export type RejectionStage = (typeof REJECTION_STAGES)[number];
 
 function stageOfKey(key: string): RejectionStage {
@@ -58,7 +77,13 @@ export function summarizeCycle(
       add("htf_conflict", m ? Number(m[1]) : 1);
     } else if (e.startsWith("htf_agree:")) {
       for (const m of e.matchAll(/([0-2])=(\d+)/g)) add(`htf_agree_${m[1]}`, Number(m[2]) || 0);
+    } else if (e.startsWith("htf_class:")) {
+      for (const m of e.slice("htf_class:".length).split(",")) {
+        const [cls, n] = m.split("=");
+        if (cls) add(`htf_${cls}`, Number(n) || 0);
+      }
     } else if (e.startsWith("committee_no_trade")) add("committee_no_trade", 1);
+    else if (e.startsWith("committee_no_verdicts")) add("committee_no_verdicts", 1);
   }
   return out;
 }
@@ -114,6 +139,8 @@ export async function loadRejectionBreakdown(
   // Severity buckets are stored in the same table but are a *sub-division* of
   // htf_conflict, so they must not inflate the funnel totals.
   for (const s of HTF_BUCKET_STAGES) totals.delete(s);
+  // Classification buckets sub-divide the `htf` funnel stage — never inflate it.
+  for (const s of HTF_CLASS_STAGES) totals.delete(s);
   const total = [...totals.values()].reduce((a, b) => a + b, 0);
   const stages = [...totals.entries()]
     .map(([stage, count]) => ({ stage, count, share: total > 0 ? count / total : 0 }))
@@ -129,6 +156,10 @@ export interface HtfSeverityBreakdown {
   /** Rejected candidates the HTF budget never inspected (conflictTotal - total). */
   unmeasured: number;
   buckets: Array<{ agree: number; label: string; count: number; share: number }>;
+  /** Semantic classification of new-format HTF rejections. Historical rows
+   *  keep their legacy "N/3 agree" buckets above; nothing is rewritten. */
+  classes: Array<{ key: string; label: string; count: number; share: number }>;
+  classTotal: number;
 }
 
 /**
@@ -148,19 +179,36 @@ export async function loadHtfSeverityBreakdown(
   const from = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
   const { data } = await supabase.from("rejection_stage_stats")
     .select("stage,count").eq("user_id", userId).gte("day", from)
-    .in("stage", [...HTF_BUCKET_STAGES, "htf_conflict"]);
+    .in("stage", [...HTF_BUCKET_STAGES, ...HTF_CLASS_STAGES, "htf_conflict", "htf"]);
   const counts = [0, 0, 0];
+  const classCounts = new Map<string, number>();
   let conflictTotal = 0;
   for (const r of data ?? []) {
     const n = Number(r.count) || 0;
     const stage = r.stage as string;
-    if (stage === "htf_conflict") conflictTotal += n;
-    else {
+    if (stage === "htf_conflict" || stage === "htf") conflictTotal += n;
+    else if ((HTF_CLASS_STAGES as readonly string[]).includes(stage)) {
+      classCounts.set(stage, (classCounts.get(stage) ?? 0) + n);
+    } else {
       const idx = Number(stage.slice(-1));
       if (idx >= 0 && idx <= 2) counts[idx] += n;
     }
   }
   const total = counts.reduce((a, b) => a + b, 0);
+  const classLabels: Record<string, string> = {
+    htf_full_contradiction: "full contradiction (2+ timeframes against)",
+    htf_partial_contradiction: "partial contradiction (1 against, none agreeing)",
+    htf_near_miss: "near miss (1 agreeing, 1 against)",
+    htf_insufficient_data: "insufficient data (nothing against, too little confirmation)",
+    htf_unavailable: "higher-timeframe data unavailable",
+  };
+  const classTotal = [...classCounts.values()].reduce((a, b) => a + b, 0);
+  const classes = HTF_CLASS_STAGES.map(key => ({
+    key,
+    label: classLabels[key]!,
+    count: classCounts.get(key) ?? 0,
+    share: classTotal > 0 ? (classCounts.get(key) ?? 0) / classTotal : 0,
+  })).filter(c => c.count > 0);
   const labels = [
     "full contradiction",
     "partial contradiction",
@@ -170,7 +218,9 @@ export async function loadHtfSeverityBreakdown(
     days,
     total,
     conflictTotal,
-    unmeasured: Math.max(0, conflictTotal - total),
+    classes,
+    classTotal,
+    unmeasured: Math.max(0, conflictTotal - total - classTotal),
     buckets: counts.map((count, agree) => ({
       agree, label: labels[agree]!, count, share: total > 0 ? count / total : 0,
     })),
