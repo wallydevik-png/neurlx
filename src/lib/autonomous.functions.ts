@@ -420,9 +420,13 @@ async function runAutonomousCycleCore(
       // of broker candles inside one serverless request. The most liquid
       // instruments are always checked; the remainder rotates every minute so
       // the complete crypto/major-FX/index universe is still covered quickly.
+      // Anchors were previously nine names (crypto + majors + indices), which
+      // consumed nine of the ten slots and left crypto/meme rotation starved
+      // while FX/indices sat in mid-session chop. Only the three round-the-clock
+      // crypto majors are permanently anchored now; FX and index CFDs join the
+      // ordinary rotation pool so they still get covered, just not every cycle.
       const anchors = [
-        "BTC-USD", "ETH-USD", "SOL-USD", "EUR-USD", "GBP-USD", "USD-JPY",
-        "US30", "NAS100", "SPX500",
+        "BTC-USD", "ETH-USD", "SOL-USD",
       ].filter(symbol => fullUniverse.includes(symbol));
       // Meme coins get dedicated slots every cycle so high-beta names are
       // never starved by the alphabetical rotation.
@@ -432,7 +436,7 @@ async function runAutonomousCycleCore(
         : 0;
       const batchSize = 10;
       const anchorSlice = anchors.slice(0, batchSize);
-      const memeSlots = Math.max(0, Math.min(6, batchSize - anchorSlice.length));
+      const memeSlots = Math.max(0, Math.min(4, batchSize - anchorSlice.length));
       const memeSlice = memes.length
         ? [...memes.slice(memeStart), ...memes.slice(0, memeStart)].slice(0, memeSlots)
         : [];
