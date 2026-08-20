@@ -33,7 +33,12 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
 
 async function derivePhantomKeypair(mnemonic: string): Promise<Keypair> {
   if (!validateMnemonic(mnemonic, wordlist)) throw new Error("Invalid recovery phrase");
-  let key = await mnemonicToSeedWebcrypto(mnemonic);
+  const seed = await mnemonicToSeedWebcrypto(mnemonic);
+  const masterKey = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode("ed25519 seed"),
+    { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
+  );
+  let key = new Uint8Array(await crypto.subtle.sign("HMAC", masterKey, seed));
   const path = [44, 501, 0, 0];
   for (const index of path) {
     const data = new Uint8Array(37);
@@ -41,7 +46,7 @@ async function derivePhantomKeypair(mnemonic: string): Promise<Keypair> {
     data.set(key.slice(0, 32), 1);
     new DataView(data.buffer).setUint32(33, index + 0x80000000, false);
     const hmacKey = await crypto.subtle.importKey(
-      "raw", key.length === 64 ? new TextEncoder().encode("ed25519 seed") : key.slice(32),
+      "raw", key.slice(32),
       { name: "HMAC", hash: "SHA-512" }, false, ["sign"],
     );
     key = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, data));
