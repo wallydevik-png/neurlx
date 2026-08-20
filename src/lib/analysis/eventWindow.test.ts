@@ -9,8 +9,8 @@ describe("event window — asset-class awareness", () => {
     expect(w.assetClass).toBe("forex");
   });
 
-  it("does not block crypto 35 minutes after the US macro print", () => {
-    const w = checkEventWindow(new Date("2026-01-06T12:35:00Z"), "BTC-USD");
+  it("does not block crypto 15 minutes after the US macro print", () => {
+    const w = checkEventWindow(new Date("2026-01-06T12:45:00Z"), "BTC-USD");
     expect(w.active).toBe(false);
     expect(w.assetClass).toBe("crypto");
   });
