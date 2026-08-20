@@ -201,12 +201,14 @@ export async function evaluateEntry(
   });
 
   // 8. Event window ----------------------------------------------------------
-  const ev = checkEventWindow();
+  const ev = checkEventWindow(new Date(), symbol);
   checks.push({
     name: "News / event window",
     passed: !newsFilterEnabled || !ev.active,
     hard: true,
-    detail: ev.active ? `Blocked: ${ev.reason}` : "No high-impact window",
+    detail: ev.active
+      ? `Blocked (${ev.assetClass}): ${ev.reason}`
+      : `No high-impact window (${ev.assetClass})`,
     weight: 0.05,
   });
 

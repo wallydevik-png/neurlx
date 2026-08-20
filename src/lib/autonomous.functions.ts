@@ -27,7 +27,12 @@ interface CycleResult {
   runId: string;
   scanned: number;
   executed: number;
+  /** Signals that reached a gate and were turned down by it (safety working). */
   rejected: number;
+  /** Signals that never reached a gate because the cycle budget ran out. */
+  deferred: number;
+  /** Signals that threw — infrastructure/provider failures, not risk verdicts. */
+  failed: number;
   rejectReasons: Record<string, number>;
   errors: string[];
   skipped?: string; // if the whole cycle was skipped
@@ -95,6 +100,10 @@ async function runAutonomousCycleCore(
   let brokerSymbols = new Set<string>();
   let executed = 0;
   let rejected = 0;
+  // Deferred = never reached a gate (cycle budget). Failed = threw.
+  // Neither is a rejection; conflating them makes safety gates look broken.
+  let deferredCount = 0;
+  let failedCount = 0;
  
   const startedAt = new Date().toISOString();
   // A 72-symbol broker scan can exceed the one-minute cron interval. Do not
@@ -125,6 +134,8 @@ async function runAutonomousCycleCore(
       scanned: 0,
       executed: 0,
       rejected: 0,
+      deferred: 0,
+      failed: 0,
       rejectReasons: {},
       errors: [`skipped:cycle_already_running:${activeRun.id}`],
       skipped: "cycle_already_running",
@@ -150,6 +161,8 @@ async function runAutonomousCycleCore(
       scanned: 0,
       executed: 0,
       rejected: 0,
+      deferred: 0,
+      failed: 0,
       rejectReasons: {},
       errors: ["skipped:cycle_already_running:atomic_lock"],
       skipped: "cycle_already_running",
@@ -165,13 +178,18 @@ async function runAutonomousCycleCore(
     await supabase.from("autonomous_runs").update({
       finished_at: new Date().toISOString(),
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
+      signals_deferred: deferredCount, signals_failed: failedCount,
       reject_reasons: rejectReasons, errors: runErrors, live,
     }).eq("id", runId);
     try {
       const { recordRejectionStages } = await import("@/lib/autonomous/rejectionStats.server");
       await recordRejectionStages(supabase, userId, runErrors, rejectReasons);
     } catch { /* telemetry must never break a cycle */ }
-    return { runId, scanned, executed, rejected, rejectReasons, errors: runErrors, skipped };
+    return {
+      runId, scanned, executed, rejected,
+      deferred: deferredCount, failed: failedCount,
+      rejectReasons, errors: runErrors, skipped,
+    };
   };
  
  
@@ -701,14 +719,16 @@ async function runAutonomousCycleCore(
   const fixedVolume = Number(settings.fixed_trade_volume ?? 0);
 
   let slots = capacity;
-  let deferred = 0;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
     if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
-      deferred = signals.length - signalIndex;
-      errors.push(`cycle_time_budget_exceeded:deferred=${deferred}`);
+      const pending = signals.slice(signalIndex);
+      deferredCount += pending.length;
       // Leave these signals pending for the next bounded cycle rather than
       // falsely rejecting valid setups because broker history was slow.
+      for (const p of pending) {
+        errors.push(`signal_deferred:${p.symbol}:cycle_budget`);
+      }
       break;
     }
     // Per-signal error boundary: one bad symbol must never abort the cycle or
@@ -1053,14 +1073,16 @@ async function runAutonomousCycleCore(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`signal_failed:${sig.symbol}:submit_order:${msg}`);
       bump(rejectReasons, "exec:exception");
-      rejected++;
+      // Infrastructure failure, not a risk verdict — counted separately so a
+      // provider outage cannot masquerade as the safety gates rejecting trades.
+      failedCount++;
     }
     } catch (e) {
       // Isolated failure — record it and keep evaluating the other signals.
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`signal_failed:${sig?.symbol ?? "unknown"}:${stage}:${msg}`);
       bump(rejectReasons, `signal_failed:${stage}`);
-      rejected++;
+      failedCount++;
     }
   }
  
@@ -1100,7 +1122,7 @@ export async function runAutonomousCycleFor(
       }).eq("id", openRun.id);
     }
     return {
-      runId, scanned: 0, executed: 0, rejected: 0,
+      runId, scanned: 0, executed: 0, rejected: 0, deferred: 0, failed: 1,
       rejectReasons: {}, errors: [`fatal_cycle_error:${message}`],
       skipped: "fatal_cycle_error",
     };

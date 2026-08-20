@@ -105,7 +105,7 @@ function voteFor(base: AiSignal): AnalystVote[] {
   ];
 }
 
-function consensus(votes: AnalystVote[]): { direction: Direction; confidence: number; agreement: number } {
+export function consensus(votes: AnalystVote[]): { direction: Direction; confidence: number; agreement: number } {
   const tally: Record<Direction, number> = { buy: 0, sell: 0, wait: 0 };
   const sums: Record<Direction, number> = { buy: 0, sell: 0, wait: 0 };
   for (const v of votes) { tally[v.direction]++; sums[v.direction] += v.confidence; }
