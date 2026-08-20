@@ -695,16 +695,26 @@ async function runAutonomousCycleCore(
     errors.push(`portfolio_intel: ${e instanceof Error ? e.message : String(e)}`);
   }
  
+  // User-configured trade volume. "fixed" sends exactly the volume/lot the
+  // user set; "auto" keeps risk-based dynamic sizing.
+  const volumeMode = String(settings.trade_volume_mode ?? "auto");
+  const fixedVolume = Number(settings.fixed_trade_volume ?? 0);
+
   let slots = capacity;
+  let deferred = 0;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
     if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
-      const deferred = signals.length - signalIndex;
+      deferred = signals.length - signalIndex;
       errors.push(`cycle_time_budget_exceeded:deferred=${deferred}`);
       // Leave these signals pending for the next bounded cycle rather than
       // falsely rejecting valid setups because broker history was slow.
       break;
     }
+    // Per-signal error boundary: one bad symbol must never abort the cycle or
+    // discard results already produced by other symbols.
+    let stage = "precheck";
+    try {
     if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
     if (Number(sig.confidence) < minConf) {
       bump(rejectReasons, "below_min_confidence"); rejected++;
@@ -737,6 +747,7 @@ async function runAutonomousCycleCore(
     }
  
     // Institutional entry gate — multi-timeframe, regime, structure, news.
+    stage = "entry_filter";
     let execQty = qty;
     let execStop = Number(sig.stop_loss);
     let execTp = Number(sig.take_profit);
@@ -844,6 +855,7 @@ async function runAutonomousCycleCore(
     // correlation, exposure, cost, flow and strategy quality, then allocates
     // a share of the risk budget. Below the minimum score the trade dies here.
     // ---------------------------------------------------------------
+    stage = "portfolio_manager";
     if (pmCtx && settings.pm_enabled !== false) {
       try {
         const verdict = await evaluateOpportunity(supabase, userId, pmCtx, {
@@ -886,10 +898,18 @@ async function runAutonomousCycleCore(
         errors.push(`portfolio_manager: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
- 
+
+    // User-configured fixed volume overrides dynamic sizing (risk gate and
+    // notional caps below still apply — the size is user-chosen, not unchecked).
+    if (volumeMode === "fixed" && fixedVolume > 0) {
+      execQty = fixedVolume;
+      errors.push(`sizing:${sig.symbol}:fixed_volume=${fixedVolume}`);
+    }
+
     // ---------------------------------------------------------------
     // Stage 4 — Risk Engine.
     // ---------------------------------------------------------------
+    stage = "risk_gate";
     const decision = await evaluateRisk(supabase, userId, {
       symbol: sig.symbol, side, qty: execQty, entry,
       stopLoss: execStop, takeProfit: execTp,
@@ -917,6 +937,7 @@ async function runAutonomousCycleCore(
     // session quality, smart order type and dynamic SL/TP. Anything below the
     // confidence floor is downgraded to a shadow trade instead of an order.
     // ---------------------------------------------------------------
+    stage = "execution_intel";
     let execOrderType: "market" | "limit" | "stop" = "market";
     let execLimitPrice: number | null = null;
     let execGrade: string | null = null;
@@ -966,6 +987,7 @@ async function runAutonomousCycleCore(
     }
  
     // Execute
+    stage = "submit_order";
     try {
       const result = await submitOrder(supabase, userId, {
         symbol: sig.symbol, side, qty: execQty,
@@ -991,10 +1013,10 @@ async function runAutonomousCycleCore(
         const filledQty = result.filledQty;
         const { data: pos } = await supabase.from("positions").insert({
           user_id: userId, account_id: paperAcct.id,
-          symbol: sig.symbol, side: sig.side === "buy" ? "long" : "short",
+          symbol: sig.symbol, side: side === "buy" ? "long" : "short",
           qty: filledQty, original_qty: qty, filled_qty: filledQty,
           avg_entry: filledPrice,
-          stop_loss: sig.stop_loss, take_profit: sig.take_profit,
+          stop_loss: execStop, take_profit: execTp,
           trailing_stop_pct: 0.015, status: "open",
           ai_reasoning: sig.reasoning, ai_confidence: sig.confidence,
           ai_regime: sig.market_regime,
@@ -1029,8 +1051,15 @@ async function runAutonomousCycleCore(
       slots--;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      errors.push(msg);
-      bump(rejectReasons, "exception");
+      errors.push(`signal_failed:${sig.symbol}:submit_order:${msg}`);
+      bump(rejectReasons, "exec:exception");
+      rejected++;
+    }
+    } catch (e) {
+      // Isolated failure — record it and keep evaluating the other signals.
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`signal_failed:${sig?.symbol ?? "unknown"}:${stage}:${msg}`);
+      bump(rejectReasons, `signal_failed:${stage}`);
       rejected++;
     }
   }
@@ -1096,6 +1125,8 @@ const AutonomousSettingsSchema = z.object({
   autonomous_max_consecutive_losses: z.number().int().min(1).max(10),
   autonomous_live_enabled: z.boolean(),
   autonomous_default_connection_id: z.string().uuid().nullable(),
+  trade_volume_mode: z.enum(["auto", "fixed"]).optional(),
+  fixed_trade_volume: z.number().min(0.001).max(1000).optional(),
 });
  
 export const updateAutonomousSettings = createServerFn({ method: "POST" })
@@ -1124,6 +1155,8 @@ export const updateAutonomousSettings = createServerFn({ method: "POST" })
       autonomous_max_consecutive_losses: data.autonomous_max_consecutive_losses,
       autonomous_live_enabled: data.autonomous_live_enabled,
       autonomous_default_connection_id: data.autonomous_default_connection_id,
+      ...(data.trade_volume_mode ? { trade_volume_mode: data.trade_volume_mode } : {}),
+      ...(data.fixed_trade_volume !== undefined ? { fixed_trade_volume: data.fixed_trade_volume } : {}),
     }).eq("user_id", context.userId);
     await context.supabase.from("audit_log").insert({
       user_id: context.userId, action: "autonomous.settings_update",

@@ -340,6 +340,7 @@ export type Database = {
           exec_min_confidence: number
           exec_model_version: number
           exec_session_filter_enabled: boolean
+          fixed_trade_volume: number
           kill_switch_active: boolean
           live_consecutive_failures: number
           live_kill_reason: string | null
@@ -374,6 +375,7 @@ export type Database = {
           risk_level: string
           risk_per_trade_pct: number
           sector_limits: Json
+          trade_volume_mode: string
           updated_at: string
           user_id: string
           weekly_lock_active: boolean
@@ -398,6 +400,7 @@ export type Database = {
           exec_min_confidence?: number
           exec_model_version?: number
           exec_session_filter_enabled?: boolean
+          fixed_trade_volume?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -432,6 +435,7 @@ export type Database = {
           risk_level?: string
           risk_per_trade_pct?: number
           sector_limits?: Json
+          trade_volume_mode?: string
           updated_at?: string
           user_id: string
           weekly_lock_active?: boolean
@@ -456,6 +460,7 @@ export type Database = {
           exec_min_confidence?: number
           exec_model_version?: number
           exec_session_filter_enabled?: boolean
+          fixed_trade_volume?: number
           kill_switch_active?: boolean
           live_consecutive_failures?: number
           live_kill_reason?: string | null
@@ -490,6 +495,7 @@ export type Database = {
           risk_level?: string
           risk_per_trade_pct?: number
           sector_limits?: Json
+          trade_volume_mode?: string
           updated_at?: string
           user_id?: string
           weekly_lock_active?: boolean
