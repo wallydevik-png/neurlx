@@ -63,6 +63,11 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
   const requestTimeoutMs = Math.max(1_000, input.timeoutMs ?? 20_000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const onExternalAbort = () => controller.abort();
+  if (input.signal) {
+    if (input.signal.aborted) controller.abort();
+    else input.signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
   try {
     res = await fetch(url, { method, headers, body, signal: controller.signal });
     text = await res.text();
