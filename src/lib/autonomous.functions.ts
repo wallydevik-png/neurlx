@@ -97,9 +97,13 @@ async function runAutonomousCycleCore(
   cycleSignal?: AbortSignal,
 ): Promise<CycleResult> {
   const cycleStartedMs = Date.now();
-  // Budget ladder (must stay ordered):
-  //   provider readiness 8s < committee 20s < HTF 10s < cycle 40s < watchdog 50s
+  // Budget ladder (must stay ordered). Measured provider P95 for 1D history is
+  // ~12s, so any HTF stage budget below that guarantees `htf:cycle_budget`
+  // deferrals no matter how healthy the broker is:
+  //   provider readiness 8s < 1D provider 12s < HTF stage 14s < committee 16s
+  //   < cycle 40s < soft watchdog 42s < hard watchdog 50s
   const cycleBudgetMs = 40_000;
+
   const budgetLeftMs = () => cycleBudgetMs - (Date.now() - cycleStartedMs);
   const outOfBudget = () => Boolean(cycleSignal?.aborted) || budgetLeftMs() <= 0;
   const rejectReasons: Record<string, number> = {};
@@ -502,7 +506,7 @@ async function runAutonomousCycleCore(
       const stages = new StageRecorder();
       const verdicts = await runCommittee(supabase, universe, userId, {
         // Never let the committee outlive the cycle budget.
-        deadlineMs: Math.max(5_000, Math.min(20_000, budgetLeftMs() - 12_000)),
+        deadlineMs: Math.max(5_000, Math.min(16_000, budgetLeftMs() - 18_000)),
         ...(cycleSignal ? { signal: cycleSignal } : {}),
         onStage: (symbol, stage, detail) => stages.record(symbol, stage, detail),
       });
@@ -583,7 +587,7 @@ async function runAutonomousCycleCore(
         2,
         {
           ...(cycleSignal ? { signal: cycleSignal } : {}),
-          deadlineMs: Math.max(3_000, Math.min(10_000, budgetLeftMs() - 8_000)),
+          deadlineMs: Math.max(3_000, Math.min(14_000, budgetLeftMs() - 10_000)),
         },
       );
       const picks = htf.aligned.slice(0, candidateLimit);
@@ -591,17 +595,39 @@ async function runAutonomousCycleCore(
       if (htfRejected.length) {
         // Classification is semantic, not a "N/3 agree" number: an unknown or
         // unavailable timeframe is recorded as missing evidence, never as a
-        // contradiction.
+        // contradiction. Distinct outcome classes are kept apart so infra
+        // failure is never counted as a trade rejection:
+        //   - "unavailable"/"insufficient_data" (all timeframes unfetchable) → data failure
+        //   - any genuine directional contradiction                 → rejection
         const byClass: Record<string, number> = {};
+        const dataFailures: string[] = [];
+        let directionalRejections = 0;
         for (const v of htfRejected) {
           byClass[v.classification] = (byClass[v.classification] ?? 0) + 1;
+          if (v.classification === "unavailable" || v.classification === "insufficient_data") {
+            const why = Object.values(v.dataIssues ?? {})[0] ?? v.detail ?? "no_data";
+            dataFailures.push(`${v.symbol}:${v.side}:${v.detail ?? "no_data"}`);
+            errors.push(`signal_failed:${v.symbol}:htf:${why}`);
+            failedCount++;
+            continue;
+          }
           bump(rejectReasons, `htf:${v.classification}`);
           rejected++;
+          directionalRejections++;
         }
-        errors.push(
-          `htf_rejected:${htfRejected.length}:` +
-          htfRejected.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.classification}:${v.detail}`).join(" | "),
-        );
+        if (directionalRejections > 0) {
+          const dir = htfRejected.filter(v => v.classification !== "unavailable" && v.classification !== "insufficient_data");
+          errors.push(
+            `htf_rejected:${directionalRejections}:` +
+            dir.slice(0, 3).map(v => `${v.symbol}:${v.side}:${v.classification}:${v.detail}`).join(" | "),
+          );
+        }
+        if (dataFailures.length) {
+          errors.push(
+            `htf_data_failure:${dataFailures.length}:` +
+            dataFailures.slice(0, 3).join(" | "),
+          );
+        }
         errors.push(
           "htf_class:" + Object.entries(byClass).map(([k, n]) => `${k}=${n}`).join(","),
         );
