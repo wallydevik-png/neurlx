@@ -861,6 +861,15 @@ async function runAutonomousCycleCore(
     );
     await snapshotHealth(supabase, userId, pmCtx);
     errors.push(`portfolio_health:${pmCtx.health.healthScore}:${pmCtx.mode}`);
+    // Why the Portfolio Manager is as strict as it is right now. Without this
+    // the cycle only reported "below_pm_min_score" with no way to see that the
+    // mode (and therefore the threshold) was elevated by drawdown.
+    errors.push(
+      `pm_constraints:mode=${pmCtx.mode}:min_score=${pmCtx.constraints.minScore}` +
+      `:min_conf=${pmCtx.constraints.minConfidence.toFixed(2)}` +
+      `:size_x${pmCtx.constraints.sizeMultiplier}` +
+      `:dd=${(pmCtx.drawdownPct * 100).toFixed(2)}%:equity=${pmCtx.equity.toFixed(2)}`,
+    );
     const capital = await runCapitalEngine(supabase, userId);
     if (capital.ran) errors.push(`capital_engine:v${capital.version}_shadow`);
     await gradeClosedTrades(supabase, userId);
