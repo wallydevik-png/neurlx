@@ -64,6 +64,7 @@ export async function refreshSignals(db: DB): Promise<{ candidates: MemeCandidat
       change1h: Number(r.change_1h), buySellRatio: Number(r.buy_sell_ratio),
       reasons: (r.reasons as string[]) ?? [], riskFlags: (r.risk_flags as string[]) ?? [],
       aiThesis: (r.ai_thesis as string) ?? undefined,
+      volume5mUsd: 0, change6h: 0, txns24h: 0, url: "",
     } as MemeCandidate));
     const verdicts = { snipe: 0, watch: 0, avoid: 0 };
     for (const c of cached) verdicts[c.verdict]++;
