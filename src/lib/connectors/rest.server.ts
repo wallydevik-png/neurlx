@@ -83,22 +83,34 @@ export async function doRequest<T>(input: DoRequestInput): Promise<T> {
     }
     return (text ? JSON.parse(text) : {}) as T;
   } catch (e) {
-    const timedOut = e instanceof Error && e.name === "AbortError";
-    const err = timedOut
-      ? Object.assign(new Error(`Request to ${ctx.venue} timed out after ${requestTimeoutMs}ms: ${method} ${path}`), { retryable: true })
+    const aborted = e instanceof Error && e.name === "AbortError";
+    // An abort raised by the CALLER's signal is a cancellation, not a provider
+    // timeout — collapsing the two made a cycle-budget deferral look like the
+    // broker failing to answer.
+    const cancelled = aborted && Boolean(input.signal?.aborted);
+    const err = aborted
+      ? Object.assign(
+        new Error(cancelled
+          ? `Request to ${ctx.venue} cancelled: ${method} ${path}`
+          : `Request to ${ctx.venue} timed out after ${requestTimeoutMs}ms: ${method} ${path}`),
+        { retryable: !cancelled, cancelled },
+      )
       : e;
+    // Never await telemetry on the failure path: this runs while the caller
+    // still owns a scarce provider slot.
     if (ctx.supabase && ctx.userId) {
-      await logApiRequest(ctx.supabase, {
+      void logApiRequest(ctx.supabase, {
         userId: ctx.userId, connectionId: ctx.connectionId ?? null,
         orderId: ctx.orderId ?? null, venue: ctx.venue, method, path,
         statusCode: res?.status ?? null, latencyMs: Date.now() - started,
         params: params ?? {}, responseSnippet: text.slice(0, 500),
         error: err instanceof Error ? err.message : String(err),
         isSigned: signed ?? false,
-      });
+      }).catch(() => undefined);
     }
     throw err;
   } finally {
     clearTimeout(timer);
+    if (input.signal) input.signal.removeEventListener("abort", onExternalAbort);
   }
 }
