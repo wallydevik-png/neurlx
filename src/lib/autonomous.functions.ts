@@ -1302,6 +1302,7 @@ async function runAutonomousCycleCore(
       });
  
       executed++;
+      funnel.executed++;
       slots--;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
