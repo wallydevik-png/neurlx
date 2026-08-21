@@ -150,6 +150,24 @@ function join(entry: CacheEntry, signal?: AbortSignal): Promise<CandleFetchResul
   });
 }
 
+/**
+ * Coalescing was previously defeated by the `limit` being part of the cache
+ * key: the committee asked for 200 bars, the HTF filter 220, the portfolio
+ * manager 120 and execution-intel 260 — four distinct keys for the SAME
+ * symbol/timeframe, so one surviving candidate burned 3-4 provider slots per
+ * cycle instead of one. Requests are now normalised onto a canonical bar
+ * count and each caller is served the tail it actually asked for.
+ */
+const CANONICAL_LIMIT = 260;
+function canonicalLimit(limit: number): number {
+  return limit <= CANONICAL_LIMIT ? CANONICAL_LIMIT : limit;
+}
+
+function tailOf(value: CandleFetchResult, limit: number): CandleFetchResult {
+  if (value.candles.length <= limit) return value;
+  return { ...value, candles: value.candles.slice(-limit) };
+}
+
 export async function fetchCandlesWithSource(
   supabase: SupabaseClient | null,
   symbol: string,
@@ -158,12 +176,13 @@ export async function fetchCandlesWithSource(
   userId?: string | null,
   opts?: MarketDataRequestOptions,
 ): Promise<CandleFetchResult> {
-  const key = `${userId ?? "anon"}|${symbol}|${interval}|${limit}`;
+  const fetchLimit = canonicalLimit(limit);
+  const key = `${userId ?? "anon"}|${symbol}|${interval}|${fetchLimit}`;
   const now = Date.now();
   const hit = candleCache.get(key);
   if (hit) {
-    if (hit.value && now - hit.at < hit.ttl) return hit.value;
-    if (hit.inFlight) return join(hit, opts?.signal);
+    if (hit.value && now - hit.at < hit.ttl) return tailOf(hit.value, limit);
+    if (hit.inFlight) return join(hit, opts?.signal).then(v => tailOf(v, limit));
   }
   const ttl = CANDLE_TTL_MS[interval] ?? 60_000;
   // The shared call gets its OWN signal, aborted only when every consumer has
@@ -171,7 +190,7 @@ export async function fetchCandlesWithSource(
   const controller = new AbortController();
   const entry: CacheEntry = { at: now, ttl, controller, consumers: 0, cancelled: 0 };
   const sharedOpts: MarketDataRequestOptions = { ...opts, signal: controller.signal };
-  const inFlight = fetchCandlesUncached(supabase, symbol, interval, limit, userId, sharedOpts)
+  const inFlight = fetchCandlesUncached(supabase, symbol, interval, fetchLimit, userId, sharedOpts)
     .then(value => {
       // Only real broker data is worth reusing. Failures are never cached.
       if (!value.isSynthetic) candleCache.set(key, { at: Date.now(), ttl, value });
@@ -181,8 +200,9 @@ export async function fetchCandlesWithSource(
     .catch(e => { candleCache.delete(key); throw e; });
   entry.inFlight = inFlight;
   candleCache.set(key, entry);
-  return join(entry, opts?.signal);
+  return join(entry, opts?.signal).then(v => tailOf(v, limit));
 }
+
 
 
 async function fetchCandlesUncached(

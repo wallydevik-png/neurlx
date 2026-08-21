@@ -31,6 +31,9 @@ export type HtfClassification =
   | "full_contradiction"
   | "partial_contradiction"
   | "near_miss"
+  /** read successfully, but the higher timeframes simply don't confirm */
+  | "no_confirmation"
+  /** some timeframes could not be read — infrastructure, not a market verdict */
   | "insufficient_data"
   | "unavailable";
 
@@ -70,10 +73,13 @@ export function classifyHtf(bias: HtfBias, want: "bullish" | "bearish"): HtfClas
   if (t.agree >= 2 && t.contradict <= 1) return "aligned";
   if (t.unavailable === 3) return "unavailable";
   if (t.contradict === 0) {
-    // Nothing is actually fighting the trade — there just isn't enough
-    // confirmed higher-timeframe evidence to authorise it.
-    return "insufficient_data";
+    // Nothing is actually fighting the trade. Distinguish "we could not read
+    // the higher timeframes" (an infrastructure failure) from "we read them
+    // and they simply do not confirm" (a legitimate trading rejection).
+    if (t.unavailable > 0 || t.unknown > 0) return "insufficient_data";
+    return "no_confirmation";
   }
+
   if (t.contradict >= 2) return "full_contradiction";
   // Exactly one contradicting timeframe.
   return t.agree >= 1 ? "near_miss" : "partial_contradiction";
