@@ -25,6 +25,36 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+        // Start the independent Solana sniper alongside the slower broker
+        // lifecycle. Previously it ran only after reconciliation, protection,
+        // and the full autonomous scan; the shared 45s request budget often
+        // expired first, so an enabled sniper silently missed every cron tick.
+        const memecoinTask = (async () => {
+          const memeResults: Array<{
+            userId: string; entries?: number; exits?: number; skipped?: string; error?: string;
+            notes?: string[]; scanned?: number; snipeable?: number;
+          }> = [];
+          const { data: memeUsers } = await supabaseAdmin.from("memecoin_settings")
+            .select("user_id").eq("enabled", true);
+          if (!memeUsers?.length) return memeResults;
+          const { runMemecoinCycle } = await import("@/lib/memecoin/engine.server");
+          for (const m of memeUsers) {
+            try {
+              const r = await runMemecoinCycle(supabaseAdmin, m.user_id);
+              memeResults.push({
+                userId: m.user_id, entries: r.entries?.length ?? 0,
+                exits: r.exits?.length ?? 0, skipped: r.skipped,
+                notes: r.notes?.slice(0, 10) ?? [],
+                scanned: r.scan?.universe ?? 0,
+                snipeable: r.scan?.verdicts.snipe ?? 0,
+              });
+            } catch (e) {
+              memeResults.push({ userId: m.user_id, error: e instanceof Error ? e.message : String(e) });
+            }
+          }
+          return memeResults;
+        })();
+
         // Reconciliation runs first: check whether the broker still actually
         // has each position open (margin call, manual close in MT5, etc. can
         // happen outside the app) before profit protection tries to manage
@@ -118,35 +148,7 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
             });
           }
         }
-        // Memecoin sniper: independent of the MT5 autonomous mode, so it runs
-        // for every user who has enabled it in the sniper controls.
-        const memeResults: Array<{
-          userId: string; entries?: number; exits?: number; skipped?: string; error?: string;
-          // The per-candidate rejection reasons used to be computed and then
-          // thrown away, which made a gated cycle indistinguishable from a
-          // dead one.
-          notes?: string[]; scanned?: number; snipeable?: number;
-        }> = [];
-        const { data: memeUsers } = await supabaseAdmin.from("memecoin_settings")
-          .select("user_id").eq("enabled", true);
-        if (memeUsers?.length) {
-          const { runMemecoinCycle } = await import("@/lib/memecoin/engine.server");
-          for (const m of memeUsers) {
-            if (Date.now() - requestStartedMs >= requestBudgetMs) break;
-            try {
-              const r = await runMemecoinCycle(supabaseAdmin, m.user_id);
-              memeResults.push({
-                userId: m.user_id, entries: r.entries?.length ?? 0,
-                exits: r.exits?.length ?? 0, skipped: r.skipped,
-                notes: r.notes?.slice(0, 10) ?? [],
-                scanned: r.scan?.universe ?? 0,
-                snipeable: r.scan?.verdicts.snipe ?? 0,
-              });
-            } catch (e) {
-              memeResults.push({ userId: m.user_id, error: e instanceof Error ? e.message : String(e) });
-            }
-          }
-        }
+        const memeResults = await memecoinTask;
 
         return Response.json({
           ok: true, users: results.length, results,

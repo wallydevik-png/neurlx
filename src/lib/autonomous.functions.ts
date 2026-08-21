@@ -1239,7 +1239,16 @@ async function runAutonomousCycleCore(
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`signal_failed:${sig.symbol}:submit_order:${msg}`);
-      bump(rejectReasons, "exec:exception");
+      if (live && liveConn && isRegionalConnectivityError(e)) {
+        await markConnectionRegionBlocked(supabase, liveConn.id, userId, msg);
+        await supabase.from("automation_settings").update({
+          live_kill_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          live_kill_reason: BYBIT_REGION_BLOCKED_REASON,
+        }).eq("user_id", userId);
+        bump(rejectReasons, "exec:region_blocked");
+      } else {
+        bump(rejectReasons, "exec:exception");
+      }
       // Infrastructure failure, not a risk verdict — counted separately so a
       // provider outage cannot masquerade as the safety gates rejecting trades.
       failedCount++;
