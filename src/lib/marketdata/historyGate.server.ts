@@ -61,23 +61,71 @@ interface GateState {
   /** Requests actually handed to the provider and not yet settled. */
   inFlight: number;
   inFlightPeak: number;
+  /**
+   * Requests we aborted locally. The provider (MetaApi) keeps counting an
+   * aborted historical request against the account for a short while, so a
+   * locally-freed slot is NOT immediately free provider-side. Each entry is
+   * the timestamp until which the slot is still assumed occupied upstream.
+   */
+  draining: number[];
+  /** Set when the provider answered 429: capacity collapses to 1 until then. */
+  penaltyUntil: number;
+  pump: ReturnType<typeof setTimeout> | null;
 }
 
 const gates = new Map<string, GateState>();
 
+/** How long an aborted request is assumed to still occupy a provider slot. */
+export const DRAIN_MS = 4_000;
+/** How long the account stays at capacity 1 after a provider 429. */
+export const RATE_LIMIT_PENALTY_MS = 6_000;
+
+let requestSeq = 0;
+
 function gateFor(key: string): GateState {
   let g = gates.get(key);
   if (!g) {
-    g = { active: 0, queue: [], peak: 0, inFlight: 0, inFlightPeak: 0 };
+    g = {
+      active: 0, queue: [], peak: 0, inFlight: 0, inFlightPeak: 0,
+      draining: [], penaltyUntil: 0, pump: null,
+    };
     gates.set(key, g);
   }
   return g;
 }
 
-function release(g: GateState) {
-  g.active = Math.max(0, g.active - 1);
+function prune(g: GateState) {
+  const now = Date.now();
+  if (g.draining.length) g.draining = g.draining.filter(t => t > now);
+}
+
+/** Slots we may hand out right now, given drains and rate-limit penalty. */
+function capacity(g: GateState): number {
+  prune(g);
+  const now = Date.now();
+  if (g.penaltyUntil > now) return 1;
+  return Math.max(1, MAX_CONCURRENT_HISTORY - g.draining.length);
+}
+
+/** Called when the provider itself reported a rate limit for this account. */
+export function noteRateLimited(accountKey: string) {
+  const g = gateFor(accountKey || "default");
+  g.penaltyUntil = Date.now() + RATE_LIMIT_PENALTY_MS;
+}
+
+function schedulePump(g: GateState) {
+  if (g.pump || !g.queue.length) return;
+  g.pump = setTimeout(() => {
+    g.pump = null;
+    pump(g);
+    schedulePump(g);
+  }, 250);
+  (g.pump as unknown as { unref?: () => void }).unref?.();
+}
+
+function pump(g: GateState) {
   // FIFO hand-off: the longest-waiting caller takes the freed slot.
-  while (g.queue.length && g.active < MAX_CONCURRENT_HISTORY) {
+  while (g.queue.length && g.active < capacity(g)) {
     const w = g.queue.shift()!;
     if (w.done) continue;
     w.done = true;
@@ -86,13 +134,19 @@ function release(g: GateState) {
     g.peak = Math.max(g.peak, g.active);
     w.resolve();
   }
+  schedulePump(g);
+}
+
+function release(g: GateState) {
+  g.active = Math.max(0, g.active - 1);
+  pump(g);
 }
 
 function acquire(g: GateState, queueWaitMs: number, outer?: AbortSignal): Promise<void> {
   if (outer?.aborted) {
     return Promise.reject(new HistoryGateError("cycle aborted before slot admission", "aborted"));
   }
-  if (g.active < MAX_CONCURRENT_HISTORY) {
+  if (g.active < capacity(g)) {
     g.active++;
     g.peak = Math.max(g.peak, g.active);
     return Promise.resolve();
@@ -117,8 +171,10 @@ function acquire(g: GateState, queueWaitMs: number, outer?: AbortSignal): Promis
       "cycle aborted while waiting for a history slot", "aborted",
     )), { once: true });
     g.queue.push(w);
+    schedulePump(g);
   });
 }
+
 
 export interface HistorySlotOptions {
   /** How long a caller may wait for a free slot before deferring. */
