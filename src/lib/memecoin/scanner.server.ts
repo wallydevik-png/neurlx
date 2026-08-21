@@ -51,11 +51,19 @@ type DexPair = {
   info?: { socials?: unknown[]; websites?: unknown[] };
 };
 
-async function getJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
+async function getJson<T>(url: string, timeoutMs = 8000, attempt = 0): Promise<T | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: ctrl.signal, headers: { accept: "application/json" } });
+    // DexScreener rate-limits bursts (a manual scan followed immediately by a
+    // cycle). Without a retry every request returned null and the cycle
+    // honestly reported "looked at 0 tokens" as if the market were empty.
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+      clearTimeout(timer);
+      await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+      return getJson<T>(url, timeoutMs, attempt + 1);
+    }
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
