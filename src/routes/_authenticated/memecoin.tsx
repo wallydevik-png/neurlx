@@ -71,6 +71,23 @@ function MemecoinDesk() {
     }
   }
 
+  // Toggles persist immediately. Previously they only changed local state, so
+  // "Run cycle now" still asked the server — which had the OLD value — and the
+  // cycle answered "skipped: disabled" even though the switch looked on.
+  async function toggle(key: "enabled" | "autotrade", value: boolean) {
+    const next = { ...form, [key]: value };
+    setForm(next);
+    try {
+      setBusy(key);
+      await saveFn({ data: next });
+      toast.success(`${key === "enabled" ? "Sniper" : "Auto-execute"} ${value ? "enabled" : "disabled"}`);
+      refresh();
+    } catch (e) {
+      setForm(form); // roll back so the switch never lies about server state
+      fail(e);
+    } finally { setBusy(null); }
+  }
+
   async function save() {
     try { setBusy("save"); await saveFn({ data: form }); toast.success("Sniper settings saved"); refresh(); }
     catch (e) { fail(e); } finally { setBusy(null); }
@@ -156,6 +173,39 @@ function MemecoinDesk() {
             </div>
           </div>
         )}
+        {data?.wallet?.error && (
+          <p className="mt-4 text-xs text-destructive flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4" /> Balance unavailable: {data.wallet.error}
+          </p>
+        )}
+        {data?.wallet?.public_key && (
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-sm font-medium">Available balance</h3>
+              <span className="font-mono text-sm">
+                {data.wallet.sol != null ? `${data.wallet.sol.toFixed(4)} SOL` : "—"}
+              </span>
+            </div>
+            {data.wallet.holdings?.length ? (
+              <ul className="mt-3 space-y-2">
+                {data.wallet.holdings.map(h => (
+                  <li key={h.mint} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">
+                      {h.symbol ?? `${h.mint.slice(0, 4)}…${h.mint.slice(-4)}`}
+                    </span>
+                    <span className="font-mono text-muted-foreground">
+                      {h.uiAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                No memecoin token balances in this wallet yet.
+              </p>
+            )}
+          </div>
+        )}
         {!canTrade && (
           <p className="mt-4 text-xs text-warning flex items-center gap-2">
             <ShieldAlert className="w-4 h-4" /> No trading wallet configured yet — the sniper can scan but not execute.
@@ -167,9 +217,9 @@ function MemecoinDesk() {
         <h2 className="font-semibold">Sniper controls</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <Toggle label="Sniper enabled" desc="Scans the Solana memecoin market and manages open snipes."
-            value={form.enabled} onChange={v => setForm(f => ({ ...f, enabled: v }))} />
+            value={form.enabled} onChange={v => void toggle("enabled", v)} />
           <Toggle label="Auto-execute (real SOL)" desc="Buys qualifying tokens without asking."
-            value={form.autotrade} onChange={v => setForm(f => ({ ...f, autotrade: v }))} />
+            value={form.autotrade} onChange={v => void toggle("autotrade", v)} />
           <Num label="Buy size (SOL)" step={0.01} value={form.buy_amount_sol} onChange={v => setForm(f => ({ ...f, buy_amount_sol: v }))} />
           <Num label="Max open snipes" value={form.max_open_positions} onChange={v => setForm(f => ({ ...f, max_open_positions: v }))} />
           <Num label="Take profit (%)" value={form.take_profit_pct} onChange={v => setForm(f => ({ ...f, take_profit_pct: v }))} />
