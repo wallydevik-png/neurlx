@@ -205,7 +205,8 @@ export async function withHistorySlot<T>(
   const queueWaitMs = opts.queueWaitMs ?? opts.waitMs ?? 8_000;
   const providerTimeoutMs = opts.providerTimeoutMs ?? opts.maxHoldMs ?? 7_000;
   const abortGraceMs = opts.abortGraceMs ?? 1_000;
-  const g = gateFor(accountKey || "default");
+  const key = accountKey || "default";
+  const g = gateFor(key);
 
   await acquire(g, queueWaitMs, opts.signal);
 
@@ -221,6 +222,9 @@ export async function withHistorySlot<T>(
 
   g.inFlight++;
   g.inFlightPeak = Math.max(g.inFlightPeak, g.inFlight);
+  const rid = `h${++requestSeq}`;
+  const label = opts.label ?? "";
+  console.log(`[historyGate] started ${key}:${label}:${rid} active=${g.active} inFlight=${g.inFlight} queued=${g.queue.length}`);
 
   let settled = false;
   const work = (async () => {
@@ -232,10 +236,18 @@ export async function withHistorySlot<T>(
     }
   })();
   // Never leave an unhandled rejection behind when we stop awaiting `work`.
-  work.catch(() => undefined);
+  work.catch((e) => {
+    // A provider rate limit is account-wide: throttle the whole gate, even if
+    // the caller that observed it has already given up.
+    if (historyFailureReason(e) === "rate_limited") noteRateLimited(key);
+  });
 
   try {
-    if (providerTimeoutMs <= 0) return await work;
+    if (providerTimeoutMs <= 0) {
+      const v = await work;
+      console.log(`[historyGate] finished ${key}:${label}:${rid} active=${g.active}`);
+      return v;
+    }
     const raced = await Promise.race([
       work.then(v => ({ ok: true as const, v })),
       new Promise<{ ok: false }>(resolve => {
@@ -244,7 +256,10 @@ export async function withHistorySlot<T>(
         (t as unknown as { unref?: () => void }).unref?.();
       }),
     ]);
-    if (raced.ok) return raced.v;
+    if (raced.ok) {
+      console.log(`[historyGate] finished ${key}:${label}:${rid} active=${g.active}`);
+      return raced.v;
+    }
     throw new HistoryGateError(
       timedOut
         ? `provider did not respond within ${providerTimeoutMs}ms`
@@ -252,6 +267,12 @@ export async function withHistorySlot<T>(
       timedOut ? "provider_timeout" : "aborted",
     );
   } catch (e) {
+    const reason = e instanceof HistoryGateError ? e.reason
+      : timedOut ? "provider_timeout"
+      : opts.signal?.aborted ? "aborted"
+      : historyFailureReason(e);
+    console.log(`[historyGate] failed ${key}:${label}:${rid} reason=${reason} active=${g.active}`);
+    if (reason === "rate_limited") noteRateLimited(key);
     if (e instanceof HistoryGateError) throw e;
     if (timedOut) {
       throw new HistoryGateError(
@@ -267,11 +288,17 @@ export async function withHistorySlot<T>(
     opts.signal?.removeEventListener("abort", onOuterAbort);
     // Only free the slot once the provider request is genuinely done. If it is
     // still unwinding after the abort grace, release anyway (the request was
-    // aborted, so the provider side is closing) but keep `inFlight` honest.
-    if (!settled) await Promise.race([work.catch(() => undefined), delay(abortGraceMs)]);
+    // aborted, so the provider side is closing) but keep the provider-side
+    // occupancy honest via the drain window: MetaApi keeps counting an
+    // aborted historical request for a short while after we walk away.
+    if (!settled) {
+      await Promise.race([work.catch(() => undefined), delay(abortGraceMs)]);
+      if (!settled) g.draining.push(Date.now() + DRAIN_MS);
+    }
     release(g);
   }
 }
+
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => {
