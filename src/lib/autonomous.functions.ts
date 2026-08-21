@@ -861,6 +861,15 @@ async function runAutonomousCycleCore(
     );
     await snapshotHealth(supabase, userId, pmCtx);
     errors.push(`portfolio_health:${pmCtx.health.healthScore}:${pmCtx.mode}`);
+    // Why the Portfolio Manager is as strict as it is right now. Without this
+    // the cycle only reported "below_pm_min_score" with no way to see that the
+    // mode (and therefore the threshold) was elevated by drawdown.
+    errors.push(
+      `pm_constraints:mode=${pmCtx.mode}:min_score=${pmCtx.constraints.minScore}` +
+      `:min_conf=${pmCtx.constraints.minConfidence.toFixed(2)}` +
+      `:size_x${pmCtx.constraints.sizeMultiplier}` +
+      `:dd=${(pmCtx.drawdownPct * 100).toFixed(2)}%:equity=${pmCtx.equity.toFixed(2)}`,
+    );
     const capital = await runCapitalEngine(supabase, userId);
     if (capital.ran) errors.push(`capital_engine:v${capital.version}_shadow`);
     await gradeClosedTrades(supabase, userId);
@@ -872,6 +881,19 @@ async function runAutonomousCycleCore(
   // user set; "auto" keeps risk-based dynamic sizing.
   const volumeMode = String(settings.trade_volume_mode ?? "auto");
   const fixedVolume = Number(settings.fixed_trade_volume ?? 0);
+
+  // Per-cycle execution funnel. Purely observational: every gate keeps its own
+  // rule, this only records which gate a candidate died at (the FIRST one, since
+  // each rejection short-circuits with `continue`) so the real bottleneck is
+  // visible instead of inferred.
+  const funnel = {
+    candidates: signals.length,
+    precheck: 0, entry_filter: 0, lifecycle: 0,
+    portfolio: 0, risk: 0, execution_intel: 0, executed: 0,
+  };
+  const gateOut = (symbol: string, gate: string, detail: string) => {
+    errors.push(`first_gate:${symbol}:${gate}:${detail}`);
+  };
 
   let slots = capacity;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
@@ -890,9 +912,14 @@ async function runAutonomousCycleCore(
     // discard results already produced by other symbols.
     let stage = "precheck";
     try {
-    if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
+    if (slots === 0) {
+      bump(rejectReasons, "no_open_slots"); rejected++;
+      gateOut(sig.symbol, "precheck", "no_open_slots");
+      continue;
+    }
     if (Number(sig.confidence) < minConf) {
       bump(rejectReasons, "below_min_confidence"); rejected++;
+      gateOut(sig.symbol, "precheck", `confidence ${Number(sig.confidence).toFixed(2)} < ${minConf}`);
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -903,6 +930,7 @@ async function runAutonomousCycleCore(
     // be rejected as "asset_not_allowed".
     if (allowedAssets.size > 0 && !allowedAssets.has(sig.symbol) && !brokerSymbols.has(sig.symbol)) {
       bump(rejectReasons, "asset_not_allowed"); rejected++;
+      gateOut(sig.symbol, "precheck", "asset_not_allowed");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -915,11 +943,13 @@ async function runAutonomousCycleCore(
  
     if (live && notional > perOrderCap) {
       bump(rejectReasons, "over_live_notional_cap"); rejected++;
+      gateOut(sig.symbol, "precheck", `notional ${notional.toFixed(2)} > cap ${perOrderCap}`);
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
       continue;
     }
+    funnel.precheck++;
  
     // Institutional entry gate — multi-timeframe, regime, structure, news.
     stage = "entry_filter";
@@ -945,6 +975,7 @@ async function runAutonomousCycleCore(
     if (!entryEval) {
       bump(rejectReasons, "entry_filter:evaluation_unavailable");
       rejected++;
+      gateOut(sig.symbol, "entry_filter", "evaluation_unavailable");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -953,6 +984,7 @@ async function runAutonomousCycleCore(
     if (entryEval && !entryEval.approved) {
       bump(rejectReasons, `entry_filter:${entryEval.rejections[0] ?? "failed"}`);
       rejected++;
+      gateOut(sig.symbol, "entry_filter", entryEval.rejections[0] ?? "failed");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -991,11 +1023,13 @@ async function runAutonomousCycleCore(
     }
     if (!(execQty > 0)) {
       bump(rejectReasons, "sizing:zero_volume"); rejected++;
+      gateOut(sig.symbol, "entry_filter", "sizing_zero_volume");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
       continue;
     }
+    funnel.entry_filter++;
  
     // ---------------------------------------------------------------
     // Stage 2 — Strategy lifecycle gate.
@@ -1007,6 +1041,7 @@ async function runAutonomousCycleCore(
     if (live && liveGate && !liveGate.allowed) {
       bump(rejectReasons, `lifecycle_gate:${liveGate.reason}`);
       rejected++;
+      gateOut(sig.symbol, "lifecycle_gate", liveGate.reason);
       await supabase.from("shadow_trades").insert({
         user_id: userId,
         strategy_id: liveGate.strategyId,
@@ -1023,6 +1058,7 @@ async function runAutonomousCycleCore(
       }).eq("id", sig.id);
       continue;
     }
+    funnel.lifecycle++;
  
     // ---------------------------------------------------------------
     // Stage 3 — Portfolio Manager AI.
@@ -1048,6 +1084,14 @@ async function runAutonomousCycleCore(
         if (!verdict.approved) {
           bump(rejectReasons, `portfolio_manager:${verdict.rejectReason ?? "rejected"}`);
           rejected++;
+          // Full evidence: the verdict, the threshold it missed, and the
+          // component breakdown that produced the score.
+          gateOut(
+            sig.symbol, "portfolio_manager",
+            `${verdict.rejectReason ?? "rejected"} score=${verdict.score}/${pmCtx.constraints.minScore} ` +
+            `conf=${(entryEval?.confidence ?? Number(sig.confidence)).toFixed(2)}/${pmCtx.constraints.minConfidence.toFixed(2)} ` +
+            `mode=${verdict.mode} components=${Object.entries(verdict.components).map(([k, v]) => `${k}:${v}`).join("|")}`,
+          );
           await supabase.from("signals").update({
             status: "rejected", resolved_at: new Date().toISOString(),
           }).eq("id", sig.id);
@@ -1064,6 +1108,7 @@ async function runAutonomousCycleCore(
         errors.push(`pm:${sig.symbol}:score_${verdict.score.toFixed(1)}:alloc_${(verdict.allocation * 100).toFixed(0)}%:${verdict.mode}`);
         if (!(execQty > 0)) {
           bump(rejectReasons, "portfolio_manager:zero_size_after_allocation"); rejected++;
+          gateOut(sig.symbol, "portfolio_manager", "zero_size_after_allocation");
           await supabase.from("signals").update({
             status: "rejected", resolved_at: new Date().toISOString(),
           }).eq("id", sig.id);
@@ -1073,6 +1118,7 @@ async function runAutonomousCycleCore(
         errors.push(`portfolio_manager: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    funnel.portfolio++;
 
     // User-configured fixed volume overrides dynamic sizing (risk gate and
     // notional caps below still apply — the size is user-chosen, not unchecked).
@@ -1095,6 +1141,7 @@ async function runAutonomousCycleCore(
     if (!decision.allowed) {
       bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
       rejected++;
+      gateOut(sig.symbol, "risk_gate", decision.reason ?? "rejected");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -1105,6 +1152,7 @@ async function runAutonomousCycleCore(
       });
       continue;
     }
+    funnel.risk++;
  
     // ---------------------------------------------------------------
     // Stage 5 — Execution Intelligence (final decision maker).
@@ -1126,6 +1174,7 @@ async function runAutonomousCycleCore(
       if (!xi.approved) {
         bump(rejectReasons, `execution_intel:${xi.rejections[0] ?? xi.action}`);
         rejected++;
+        gateOut(sig.symbol, "execution_intel", `${xi.rejections[0] ?? xi.action} grade=${xi.grade} score=${xi.score.toFixed(1)}`);
         if (xi.shadowOnly) {
           await supabase.from("shadow_trades").insert({
             user_id: userId, strategy_id: liveGate?.strategyId ?? null,
@@ -1160,6 +1209,8 @@ async function runAutonomousCycleCore(
     } catch (e) {
       errors.push(`execution_intel: ${e instanceof Error ? e.message : String(e)}`);
     }
+    funnel.execution_intel++;
+ 
  
     // Execute
     stage = "submit_order";
@@ -1176,6 +1227,7 @@ async function runAutonomousCycleCore(
       if (result.status === "rejected" || result.status === "error") {
         bump(rejectReasons, `exec:${result.message ?? result.status}`);
         rejected++;
+        gateOut(sig.symbol, "broker_execution", result.message ?? result.status);
         await supabase.from("signals").update({
           status: "rejected", resolved_at: new Date().toISOString(),
         }).eq("id", sig.id);
@@ -1250,6 +1302,7 @@ async function runAutonomousCycleCore(
       });
  
       executed++;
+      funnel.executed++;
       slots--;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1277,9 +1330,18 @@ async function runAutonomousCycleCore(
     }
   }
  
+  // Single-line execution funnel: where the candidates actually died.
+  errors.push(
+    `funnel:candidates=${funnel.candidates}>precheck=${funnel.precheck}` +
+    `>entry=${funnel.entry_filter}>lifecycle=${funnel.lifecycle}` +
+    `>portfolio=${funnel.portfolio}>risk=${funnel.risk}` +
+    `>exec_intel=${funnel.execution_intel}>executed=${funnel.executed}`,
+  );
+ 
   await supabase.from("automation_settings")
     .update({ autonomous_last_run_at: new Date().toISOString() })
     .eq("user_id", userId);
+ 
  
   return finish(undefined, live);
 }
