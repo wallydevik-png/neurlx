@@ -94,7 +94,7 @@ function MemecoinDesk() {
   }
 
   async function scan() {
-    try { setBusy("scan"); const r = await scanFn(); toast.success(`Scanned ${r.scanned} tokens`); refresh(); }
+    try { setBusy("scan"); const r = await scanFn(); const s = r.scan; toast.success(`Scanned ${r.scanned} tokens — looked at ${s?.universe ?? "?"} mints, ${s?.verdicts.snipe ?? 0} snipeable`); refresh(); }
     catch (e) { fail(e); } finally { setBusy(null); }
   }
 
@@ -102,7 +102,14 @@ function MemecoinDesk() {
     try {
       setBusy("cycle");
       const r = await cycleFn();
-      toast.success(r.skipped ? `Cycle skipped: ${r.skipped}` : `Entries ${r.entries.length} · exits ${r.exits.length}`);
+      const scanTxt = r.scan
+        ? ` · looked at ${r.scan.universe} tokens, ${r.scan.verdicts.snipe} snipeable`
+        : "";
+      toast.success(r.skipped ? `Cycle skipped: ${r.skipped}${scanTxt}` : `Entries ${r.entries.length} · exits ${r.exits.length}${scanTxt}`);
+      if (r.notes?.length) {
+        const top = r.notes.slice(0, 4).join(" · ");
+        toast.warning(`${r.notes.length} gate(s) blocked: ${top}${r.notes.length > 4 ? " …" : ""}`);
+      }
       refresh();
     } catch (e) { fail(e); } finally { setBusy(null); }
   }

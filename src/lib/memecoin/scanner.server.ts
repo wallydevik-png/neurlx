@@ -65,33 +65,75 @@ async function getJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
   }
 }
 
-/** Pull a broad slice of the live Solana memecoin market. */
-async function fetchSolanaPairs(): Promise<DexPair[]> {
-  // Searching the SOL quote mint returns the most active Solana pairs; the
-  // boosted-token feed surfaces fresh launches that are getting attention.
-  const queries = [
-    `${DEX_BASE}/latest/dex/search?q=SOL`,
-    `${DEX_BASE}/latest/dex/search?q=pump`,
-    `${DEX_BASE}/latest/dex/search?q=WIF`,
-    `${DEX_BASE}/latest/dex/search?q=BONK`,
+/** Rotating search terms. A fixed four-term list returned the same mature,
+ *  high-liquidity pools on every single scan, which is why the candidate list
+ *  never changed and nothing ever cleared the score gate. The rotation is
+ *  seeded by the clock so consecutive cycles explore different slices. */
+const SEARCH_TERMS = [
+  "pump", "bonk", "wif", "moon", "cat", "dog", "inu", "pepe",
+  "meme", "sol", "trump", "ai", "baby", "elon", "chad", "wojak",
+];
+
+function rotatingTerms(count = 4): string[] {
+  const offset = Math.floor(Date.now() / 60_000) % SEARCH_TERMS.length;
+  return Array.from({ length: count }, (_, i) => SEARCH_TERMS[(offset + i * 3) % SEARCH_TERMS.length]!);
+}
+
+/** Fresh-launch and paid-attention feeds. These return token addresses only,
+ *  so the pair data is hydrated in one batched request below. */
+async function fetchDiscoveryMints(): Promise<string[]> {
+  const feeds = [
+    `${DEX_BASE}/token-profiles/latest/v1`,
+    `${DEX_BASE}/token-boosts/latest/v1`,
+    `${DEX_BASE}/token-boosts/top/v1`,
   ];
   const results = await Promise.all(
-    queries.map(q => getJson<{ pairs?: DexPair[] }>(q)),
+    feeds.map(f => getJson<Array<{ chainId?: string; tokenAddress?: string }>>(f)),
   );
-  const seen = new Set<string>();
-  const pairs: DexPair[] = [];
-  for (const r of results) {
-    for (const p of r?.pairs ?? []) {
-      if (p.chainId !== "solana") continue;
-      if (p.quoteToken?.address !== SOL_MINT && p.quoteToken?.symbol !== "USDC") continue;
-      const key = p.baseToken?.address;
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      pairs.push(p);
+  const mints = new Set<string>();
+  for (const list of results) {
+    for (const t of list ?? []) {
+      if (t?.chainId !== "solana" || !t.tokenAddress) continue;
+      mints.add(t.tokenAddress);
     }
   }
-  return pairs;
+  return [...mints];
 }
+
+/** Hydrate raw mints into full pair snapshots (batched, 30 per request). */
+async function hydrateMints(mints: string[]): Promise<DexPair[]> {
+  const batches: string[][] = [];
+  for (let i = 0; i < mints.length; i += 30) batches.push(mints.slice(i, i + 30));
+  const results = await Promise.all(
+    batches.map(b => getJson<{ pairs?: DexPair[] }>(`${DEX_BASE}/latest/dex/tokens/${b.join(",")}`)),
+  );
+  return results.flatMap(r => r?.pairs ?? []);
+}
+
+/** Pull a broad slice of the live Solana memecoin market. */
+async function fetchSolanaPairs(): Promise<DexPair[]> {
+  const [discoveryMints, ...searchResults] = await Promise.all([
+    fetchDiscoveryMints(),
+    ...rotatingTerms().map(q =>
+      getJson<{ pairs?: DexPair[] }>(`${DEX_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)),
+  ]);
+  const hydrated = discoveryMints.length ? await hydrateMints(discoveryMints) : [];
+  const all = [...hydrated, ...searchResults.flatMap(r => r?.pairs ?? [])];
+
+  // One entry per token: keep the deepest pool, which is the one a sniper
+  // would actually route through.
+  const best = new Map<string, DexPair>();
+  for (const p of all) {
+    if (p?.chainId !== "solana") continue;
+    if (p.quoteToken?.address !== SOL_MINT && p.quoteToken?.symbol !== "USDC") continue;
+    const key = p.baseToken?.address;
+    if (!key) continue;
+    const prev = best.get(key);
+    if (!prev || Number(p.liquidity?.usd ?? 0) > Number(prev.liquidity?.usd ?? 0)) best.set(key, p);
+  }
+  return [...best.values()];
+}
+
 
 const STABLE_OR_MAJOR = new Set(["SOL", "WSOL", "USDC", "USDT", "JUP", "JITOSOL", "MSOL", "BSOL", "WBTC", "WETH"]);
 
@@ -174,14 +216,32 @@ export function scoreCandidate(p: DexPair): MemeCandidate | null {
   };
 }
 
-/** Scan the live market and return ranked candidates. */
-export async function scanMemecoins(limit = 20): Promise<MemeCandidate[]> {
+export interface MemeScanResult {
+  candidates: MemeCandidate[];
+  /** How many distinct Solana tokens the discovery feeds returned. */
+  universe: number;
+  /** How many survived basic parsing and were actually scored. */
+  scored: number;
+  /** Distribution of verdicts across everything scored, so the desk can show
+   *  "we looked at 180 tokens, 2 were snipeable" instead of an empty list. */
+  verdicts: { snipe: number; watch: number; avoid: number };
+}
+
+/** Scan the live market and return ranked candidates plus scan telemetry. */
+export async function scanMemecoinsDetailed(limit = 20): Promise<MemeScanResult> {
   const pairs = await fetchSolanaPairs();
   const scored = pairs
     .map(scoreCandidate)
     .filter((c): c is MemeCandidate => c !== null)
     .sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
+  const verdicts = { snipe: 0, watch: 0, avoid: 0 };
+  for (const c of scored) verdicts[c.verdict]++;
+  return { candidates: scored.slice(0, limit), universe: pairs.length, scored: scored.length, verdicts };
+}
+
+/** Scan the live market and return ranked candidates. */
+export async function scanMemecoins(limit = 20): Promise<MemeCandidate[]> {
+  return (await scanMemecoinsDetailed(limit)).candidates;
 }
 
 /** Live price for one mint (used for open-position management). */

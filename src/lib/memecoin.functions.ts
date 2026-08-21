@@ -208,8 +208,8 @@ export const scanMemecoinsNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { refreshSignals } = await import("@/lib/memecoin/engine.server");
-    const found = await refreshSignals(context.supabase);
-    return { scanned: found.length };
+    const { candidates, scan } = await refreshSignals(context.supabase);
+    return { scanned: candidates.length, scan };
   });
 
 /** Manual snipe on a scanned candidate. */

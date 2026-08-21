@@ -120,7 +120,13 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
         }
         // Memecoin sniper: independent of the MT5 autonomous mode, so it runs
         // for every user who has enabled it in the sniper controls.
-        const memeResults: Array<{ userId: string; entries?: number; exits?: number; skipped?: string; error?: string }> = [];
+        const memeResults: Array<{
+          userId: string; entries?: number; exits?: number; skipped?: string; error?: string;
+          // The per-candidate rejection reasons used to be computed and then
+          // thrown away, which made a gated cycle indistinguishable from a
+          // dead one.
+          notes?: string[]; scanned?: number; snipeable?: number;
+        }> = [];
         const { data: memeUsers } = await supabaseAdmin.from("memecoin_settings")
           .select("user_id").eq("enabled", true);
         if (memeUsers?.length) {
@@ -132,6 +138,9 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
               memeResults.push({
                 userId: m.user_id, entries: r.entries?.length ?? 0,
                 exits: r.exits?.length ?? 0, skipped: r.skipped,
+                notes: r.notes?.slice(0, 10) ?? [],
+                scanned: r.scan?.universe ?? 0,
+                snipeable: r.scan?.verdicts.snipe ?? 0,
               });
             } catch (e) {
               memeResults.push({ userId: m.user_id, error: e instanceof Error ? e.message : String(e) });

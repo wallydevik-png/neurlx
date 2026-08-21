@@ -36,11 +36,20 @@ async function loadWalletSecret(db: DB, userId: string): Promise<{ publicKey: st
   return { publicKey: data.public_key as string, secret };
 }
 
+export type ScanTelemetry = { universe: number; scored: number; verdicts: { snipe: number; watch: number; avoid: number } };
+
 /** Refresh the scanned universe and persist the ranked candidates. */
-export async function refreshSignals(db: DB): Promise<MemeCandidate[]> {
-  const candidates = await scanMemecoins(20);
+export async function refreshSignals(db: DB): Promise<{ candidates: MemeCandidate[]; scan: ScanTelemetry }> {
+  const { scanMemecoinsDetailed } = await import("./scanner.server");
+  const res = await scanMemecoinsDetailed(20);
+  const candidates = res.candidates;
   const theses = await aiThesis(candidates);
   if (candidates.length) {
+    // Replace-per-mint rather than blind insert: the old code appended a new
+    // row on every scan, so the same token accumulated dozens of duplicate
+    // rows within the 6h window and the feed looked frozen.
+    const mints = candidates.map(c => c.mint);
+    await db.from("memecoin_signals").delete().in("mint", mints);
     await db.from("memecoin_signals").insert(candidates.map(c => ({
       mint: c.mint, symbol: c.symbol, name: c.name, score: c.score, verdict: c.verdict,
       price_usd: c.priceUsd, liquidity_usd: c.liquidityUsd, volume_24h_usd: c.volume24hUsd,
@@ -52,7 +61,10 @@ export async function refreshSignals(db: DB): Promise<MemeCandidate[]> {
     const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     await db.from("memecoin_signals").delete().lt("created_at", cutoff);
   }
-  return candidates.map(c => ({ ...c, aiThesis: theses[c.symbol] } as MemeCandidate));
+  return {
+    candidates: candidates.map(c => ({ ...c, aiThesis: theses[c.symbol] } as MemeCandidate)),
+    scan: { universe: res.universe, scored: res.scored, verdicts: res.verdicts },
+  };
 }
 
 /** Open a snipe on one candidate. */
@@ -152,14 +164,21 @@ export async function manageOpenPositions(db: DB, userId: string, s: MemeSetting
 /** One full autonomous memecoin cycle for a user. */
 export async function runMemecoinCycle(db: DB, userId: string) {
   const s = await loadSettings(db, userId);
-  if (!s.enabled) return { skipped: "disabled", exits: [] as string[], entries: [] as string[] };
+  if (!s.enabled) return { skipped: "disabled", exits: [] as string[], entries: [] as string[], scan: null };
 
   const exits = await manageOpenPositions(db, userId, s);
   const entries: string[] = [];
   const notes: string[] = [];
 
-  const candidates = await refreshSignals(db);
-  if (!s.autotrade) return { skipped: "autotrade_off", exits, entries, scanned: candidates.length };
+  const refreshed = await refreshSignals(db);
+  const candidates = refreshed.candidates;
+  // Scan telemetry is returned on every path — the user needs to SEE that the
+  // scanner looked at 180 tokens and 2 were snipeable rather than assume the
+  // sniper is dead.
+  const scan = refreshed.scan;
+  if (!s.autotrade) {
+    return { skipped: "autotrade_off", exits, entries, notes, scan, scanned: candidates.length };
+  }
 
   // Daily loss circuit breaker.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -167,7 +186,7 @@ export async function runMemecoinCycle(db: DB, userId: string) {
     .select("pnl_sol").eq("user_id", userId).eq("status", "closed").gte("closed_at", since);
   const realised = (closedToday ?? []).reduce((a: number, r: { pnl_sol: number | null }) => a + Number(r.pnl_sol ?? 0), 0);
   if (realised <= -Math.abs(s.max_daily_loss_sol)) {
-    return { skipped: `daily_loss_cap:${realised.toFixed(3)}SOL`, exits, entries };
+    return { skipped: `daily_loss_cap:${realised.toFixed(3)}SOL`, exits, entries, notes, scan };
   }
 
   const { data: openNow } = await db.from("memecoin_positions").select("id,mint")
@@ -190,5 +209,5 @@ export async function runMemecoinCycle(db: DB, userId: string) {
     }
   }
 
-  return { exits, entries, notes, scanned: candidates.length };
+  return { exits, entries, notes, scan, scanned: candidates.length };
 }
