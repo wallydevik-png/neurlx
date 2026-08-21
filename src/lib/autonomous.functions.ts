@@ -1041,6 +1041,7 @@ async function runAutonomousCycleCore(
     if (live && liveGate && !liveGate.allowed) {
       bump(rejectReasons, `lifecycle_gate:${liveGate.reason}`);
       rejected++;
+      gateOut(sig.symbol, "lifecycle_gate", liveGate.reason);
       await supabase.from("shadow_trades").insert({
         user_id: userId,
         strategy_id: liveGate.strategyId,
@@ -1057,6 +1058,7 @@ async function runAutonomousCycleCore(
       }).eq("id", sig.id);
       continue;
     }
+    funnel.lifecycle++;
  
     // ---------------------------------------------------------------
     // Stage 3 — Portfolio Manager AI.
@@ -1082,6 +1084,14 @@ async function runAutonomousCycleCore(
         if (!verdict.approved) {
           bump(rejectReasons, `portfolio_manager:${verdict.rejectReason ?? "rejected"}`);
           rejected++;
+          // Full evidence: the verdict, the threshold it missed, and the
+          // component breakdown that produced the score.
+          gateOut(
+            sig.symbol, "portfolio_manager",
+            `${verdict.rejectReason ?? "rejected"} score=${verdict.score}/${pmCtx.constraints.minScore} ` +
+            `conf=${(entryEval?.confidence ?? Number(sig.confidence)).toFixed(2)}/${pmCtx.constraints.minConfidence.toFixed(2)} ` +
+            `mode=${verdict.mode} components=${Object.entries(verdict.components).map(([k, v]) => `${k}:${v}`).join("|")}`,
+          );
           await supabase.from("signals").update({
             status: "rejected", resolved_at: new Date().toISOString(),
           }).eq("id", sig.id);
@@ -1098,6 +1108,7 @@ async function runAutonomousCycleCore(
         errors.push(`pm:${sig.symbol}:score_${verdict.score.toFixed(1)}:alloc_${(verdict.allocation * 100).toFixed(0)}%:${verdict.mode}`);
         if (!(execQty > 0)) {
           bump(rejectReasons, "portfolio_manager:zero_size_after_allocation"); rejected++;
+          gateOut(sig.symbol, "portfolio_manager", "zero_size_after_allocation");
           await supabase.from("signals").update({
             status: "rejected", resolved_at: new Date().toISOString(),
           }).eq("id", sig.id);
@@ -1107,6 +1118,7 @@ async function runAutonomousCycleCore(
         errors.push(`portfolio_manager: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    funnel.portfolio++;
 
     // User-configured fixed volume overrides dynamic sizing (risk gate and
     // notional caps below still apply — the size is user-chosen, not unchecked).
