@@ -31,6 +31,9 @@ export type HtfClassification =
   | "full_contradiction"
   | "partial_contradiction"
   | "near_miss"
+  /** read successfully, but the higher timeframes simply don't confirm */
+  | "no_confirmation"
+  /** some timeframes could not be read — infrastructure, not a market verdict */
   | "insufficient_data"
   | "unavailable";
 
