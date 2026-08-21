@@ -196,6 +196,9 @@ export interface HistoryTiming {
   phase: "queue" | "provider";
   outcome: "completed" | "failed";
   reason?: HistoryFailureReason;
+  queuedAt: number;
+  providerStartedAt?: number;
+  finishedAt: number;
 }
 
 const timings: HistoryTiming[] = [];
@@ -232,8 +235,11 @@ export function historyTimingSummarySince(cursor: number) {
   const pct = (arr: number[], f: number) => arr[Math.min(arr.length - 1, Math.floor(arr.length * f))] ?? 0;
   return {
     n: recent.length,
+    queueAvg: Math.round(q.reduce((sum, value) => sum + value, 0) / q.length),
     queueP50: pct(q, 0.5), queueP95: pct(q, 0.95), queueMax: q[q.length - 1] ?? 0,
+    providerAvg: Math.round(p.reduce((sum, value) => sum + value, 0) / p.length),
     providerP50: pct(p, 0.5), providerP95: pct(p, 0.95), providerMax: p[p.length - 1] ?? 0,
+    maxProviderConcurrency: Math.max(...recent.map(t => t.active), 0),
     failed: recent.filter(t => t.outcome === "failed").length,
     queuePhaseFailures: recent.filter(t => t.outcome === "failed" && t.phase === "queue").length,
     providerPhaseFailures: recent.filter(t => t.outcome === "failed" && t.phase === "provider").length,
@@ -289,6 +295,7 @@ export async function withHistorySlot<T>(
       id: rid, account: key, label, queueMs, providerMs: 0, totalMs: queueMs,
       active: g.active, queued: g.queue.length, phase: "queue",
       outcome: "failed", reason,
+      queuedAt: tQueued, finishedAt: Date.now(),
     });
     console.log(`[historyGate] history_request_failed ${key}:${label}:${rid} phase=queue queue_ms=${queueMs} reason=${reason} active=${g.active} queued=${g.queue.length}`);
     throw e;
@@ -316,6 +323,7 @@ export async function withHistorySlot<T>(
       id: rid, account: key, label, queueMs, providerMs, totalMs: now - tQueued,
       active: g.active, queued: g.queue.length, phase: "provider", outcome,
       ...(reason ? { reason } : {}),
+      queuedAt: tQueued, providerStartedAt: tAcquired, finishedAt: now,
     });
     console.log(
       `[historyGate] history_request_finished ${key}:${label}:${rid} ` +

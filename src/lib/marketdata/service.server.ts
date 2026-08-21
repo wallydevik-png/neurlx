@@ -117,8 +117,34 @@ interface CacheEntry {
 }
 const candleCache = new Map<string, CacheEntry>();
 
+export interface CandleCacheEvent {
+  at: number;
+  key: string;
+  kind: "provider_start" | "cache_hit" | "coalesced_join";
+}
+const cacheEvents: CandleCacheEvent[] = [];
+const MAX_CACHE_EVENTS = 800;
+
+function recordCacheEvent(key: string, kind: CandleCacheEvent["kind"]) {
+  cacheEvents.push({ at: Date.now(), key, kind });
+  if (cacheEvents.length > MAX_CACHE_EVENTS) {
+    cacheEvents.splice(0, cacheEvents.length - MAX_CACHE_EVENTS);
+  }
+}
+
+export function candleCacheTelemetryCursor(): number { return cacheEvents.length; }
+
+export function candleCacheTelemetrySince(cursor: number) {
+  const events = cacheEvents.slice(Math.max(0, cursor));
+  return {
+    providerStarts: events.filter(event => event.kind === "provider_start").length,
+    cacheHits: events.filter(event => event.kind === "cache_hit").length,
+    coalescedJoins: events.filter(event => event.kind === "coalesced_join").length,
+  };
+}
+
 /** Test/telemetry hook. */
-export function resetCandleCache() { candleCache.clear(); }
+export function resetCandleCache() { candleCache.clear(); cacheEvents.length = 0; }
 
 /**
  * Joins an already in-flight request. Two properties matter:
@@ -185,14 +211,21 @@ export async function fetchCandlesWithSource(
   const now = Date.now();
   const hit = candleCache.get(key);
   if (hit) {
-    if (hit.value && now - hit.at < hit.ttl) return tailOf(hit.value, limit);
-    if (hit.inFlight) return join(hit, opts?.signal).then(v => tailOf(v, limit));
+    if (hit.value && now - hit.at < hit.ttl) {
+      recordCacheEvent(key, "cache_hit");
+      return tailOf(hit.value, limit);
+    }
+    if (hit.inFlight) {
+      recordCacheEvent(key, "coalesced_join");
+      return join(hit, opts?.signal).then(v => tailOf(v, limit));
+    }
   }
   const ttl = CANDLE_TTL_MS[interval] ?? 60_000;
   // The shared call gets its OWN signal, aborted only when every consumer has
   // walked away — never by whichever consumer happened to time out first.
   const controller = new AbortController();
   const entry: CacheEntry = { at: now, ttl, controller, consumers: 0, cancelled: 0 };
+  recordCacheEvent(key, "provider_start");
   const sharedOpts: MarketDataRequestOptions = { ...opts, signal: controller.signal };
   const inFlight = fetchCandlesUncached(supabase, symbol, interval, fetchLimit, userId, sharedOpts)
     .then(value => {
