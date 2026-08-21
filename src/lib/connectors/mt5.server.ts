@@ -538,7 +538,7 @@ const HISTORY_QUEUE_WAIT_MS = 6_000;   // < HTF per-symbol budget
  * independent 6s budget, and the gate ceiling still bounds the slot.
  */
 const HISTORY_PROVIDER_TIMEOUT_MS: Record<string, number> = {
-  "1m": 6_000, "5m": 6_000, "15m": 6_500, "1h": 8_000, "4h": 10_000, "1d": 12_000,
+  "1m": 6_000, "5m": 6_000, "15m": 6_500, "1h": 9_000, "4h": 12_000, "1d": 15_000,
 };
 const HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS = 7_000;
 const READINESS_TIMEOUT_MS = 8_000;       // < signal budget < cycle budget
@@ -981,16 +981,26 @@ export function createMt5Connector(
       // Exactly ONE provider request per slot. Reconnect + single retry happen
       // after the slot is released, so a reconnect never blocks other symbols.
       const providerBudgetMs = opts?.providerTimeoutMs ?? historyProviderBudget(timeframe);
-      const attempt = () => withHistoryLimit(
+      const queueBudgetMs = opts?.queueWaitMs ?? HISTORY_QUEUE_WAIT_MS;
+      // A reconnect retry shares one logical queue+provider budget with the
+      // first attempt. It must never silently receive a second full window.
+      const logicalDeadline = Date.now() + queueBudgetMs + providerBudgetMs;
+      const attempt = () => {
+        const remainingMs = logicalDeadline - Date.now();
+        if (remainingMs < 1_000) throw new Error(`History request budget exhausted for ${s}:${timeframe}`);
+        const attemptQueueMs = Math.max(250, Math.min(queueBudgetMs, Math.floor(remainingMs / 3)));
+        const attemptProviderMs = Math.max(500, remainingMs - attemptQueueMs);
+        return withHistoryLimit(
         state.accountId,
-        (signal) => marketDataReq<RawCandle[]>(path, signal, providerBudgetMs),
+        (signal) => marketDataReq<RawCandle[]>(path, signal, attemptProviderMs),
         {
           label: `${s}:${timeframe}`,
-          providerTimeoutMs: providerBudgetMs,
+          providerTimeoutMs: attemptProviderMs,
+          queueWaitMs: attemptQueueMs,
           ...(opts?.signal ? { signal: opts.signal } : {}),
-          ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
         },
       );
+      };
 
       let r: RawCandle[];
       try {
