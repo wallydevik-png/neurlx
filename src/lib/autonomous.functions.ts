@@ -1330,9 +1330,18 @@ async function runAutonomousCycleCore(
     }
   }
  
+  // Single-line execution funnel: where the candidates actually died.
+  errors.push(
+    `funnel:candidates=${funnel.candidates}>precheck=${funnel.precheck}` +
+    `>entry=${funnel.entry_filter}>lifecycle=${funnel.lifecycle}` +
+    `>portfolio=${funnel.portfolio}>risk=${funnel.risk}` +
+    `>exec_intel=${funnel.execution_intel}>executed=${funnel.executed}`,
+  );
+ 
   await supabase.from("automation_settings")
     .update({ autonomous_last_run_at: new Date().toISOString() })
     .eq("user_id", userId);
+ 
  
   return finish(undefined, live);
 }
