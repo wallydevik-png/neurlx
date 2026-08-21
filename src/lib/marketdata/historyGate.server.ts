@@ -185,6 +185,8 @@ export interface HistorySlotOptions {
   abortGraceMs?: number;
   /** Cycle-level cancellation. Aborting stops queued and running work. */
   signal?: AbortSignal;
+  /** Telemetry label, e.g. `SOL-USD:1h`. */
+  label?: string;
   /** Legacy aliases (kept so existing callers keep compiling). */
   waitMs?: number;
   maxHoldMs?: number;
@@ -336,12 +338,15 @@ export function historyGateStats(accountKey = "default") {
     peak: g?.peak ?? 0,
     inFlight: g?.inFlight ?? 0,
     inFlightPeak: g?.inFlightPeak ?? 0,
+    draining: g?.draining.filter(t => t > Date.now()).length ?? 0,
+    rateLimited: (g?.penaltyUntil ?? 0) > Date.now(),
   };
 }
 
 export function resetHistoryGate() {
   for (const g of gates.values()) {
     for (const w of g.queue) if (w.timer) clearTimeout(w.timer);
+    if (g.pump) clearTimeout(g.pump);
   }
   gates.clear();
 }
