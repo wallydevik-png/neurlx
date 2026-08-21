@@ -730,28 +730,40 @@ export function createMt5Connector(
     }
   }
  
-  async function marketDataReq<T>(path: string): Promise<T> {
-    await ensureReady();
-    // Candle scans are opportunistic and process symbols independently. Do not
-    // retry a stalled history request here: four 20-second attempts outlived
-    // the 45-second cycle watchdog and left every later cron tick with zero
-    // completed work. A failed symbol is deferred while the remaining symbols
-    // keep their share of the cycle budget.
-    const send = () => doRequest<T>({
+  /**
+   * ONE historical-market-data request. Deliberately does nothing else:
+   *  - no readiness check (that runs before the slot is acquired)
+   *  - no reconnect / resync (that runs after the slot is released)
+   *  - no retry loop
+   * Anything extra in here executes while a scarce provider slot is held, which
+   * is precisely how a 20s provisioning call used to consume a 12s slot budget
+   * and starve every other symbol in the cycle.
+   */
+  async function marketDataReq<T>(path: string, signal?: AbortSignal): Promise<T> {
+    return doRequest<T>({
       ctx: logCtx,
       method: "GET",
       path,
       url: `${marketDataBaseFor(state.region)}${path}`,
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       signed: true,
-      timeoutMs: 6_000,
+      timeoutMs: HISTORY_REQUEST_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
     });
+  }
+
+  /** Readiness with its OWN bounded timeout, independent of the history gate
+   *  and of the cycle watchdog. A provider that cannot be made ready fails
+   *  fast for this symbol instead of hanging the cycle. */
+  async function ensureReadyBounded(): Promise<void> {
     try {
-      return await send();
+      await withDeadline(ensureReady(), READINESS_TIMEOUT_MS, "MT provider readiness");
     } catch (e) {
-      if (!isNotConnectedError(e)) throw e;
-      await syncAccountMeta(true);
-      try { return await send(); } catch (e2) { throw explain(e2); }
+      if (e instanceof ProviderReadinessError) throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new ProviderReadinessError(
+        /deploy|provision/i.test(msg) ? "provisioning_error" : "connection_error", msg,
+      );
     }
   }
  
@@ -912,7 +924,12 @@ export function createMt5Connector(
     // ---- Market data (real candle history for signal generation) ---------
     // Powers the AI engine directly off this account's live broker feed,
     // instead of the synthetic/paper fallback.
-    async getCandles(symbol: string, interval: string, limit: number) {
+    async getCandles(
+      symbol: string, interval: string, limit: number,
+      opts?: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number },
+    ) {
+      // Readiness FIRST and outside the slot, with its own bounded timeout.
+      await ensureReadyBounded();
       const s = await resolveSymbol(symbol);
       const timeframe = MT_TIMEFRAME[interval] ?? interval;
  
@@ -928,15 +945,31 @@ export function createMt5Connector(
         startTime: new Date(nextBoundary).toISOString(),
         limit: String(Math.min(limit, 1000)),
       }).toString();
-      // Provisioning/deployment checks must happen OUTSIDE the slot, so a slow
-      // reconnect never occupies one of the account's scarce history slots.
-      await ensureReady();
-      const r = await withHistoryLimit(state.accountId, () => marketDataReq<Array<{
+      type RawCandle = {
         time: string; open: number; high: number; low: number; close: number;
         tickVolume?: number; volume?: number;
-      }>>(
-        `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`,
-      ));
+      };
+      const path =
+        `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`;
+      // Exactly ONE provider request per slot. Reconnect + single retry happen
+      // after the slot is released, so a reconnect never blocks other symbols.
+      const attempt = () => withHistoryLimit(
+        state.accountId,
+        (signal) => marketDataReq<RawCandle[]>(path, signal),
+        {
+          ...(opts?.signal ? { signal: opts.signal } : {}),
+          ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
+          ...(opts?.providerTimeoutMs ? { providerTimeoutMs: opts.providerTimeoutMs } : {}),
+        },
+      );
+      let r: RawCandle[];
+      try {
+        r = await attempt();
+      } catch (e) {
+        if (!isNotConnectedError(e)) throw e;
+        await syncAccountMeta(true); // outside the slot, by construction
+        try { r = await attempt(); } catch (e2) { throw explain(e2); }
+      }
       const candles = (r ?? [])
         .map(c => ({
           ts: new Date(c.time).getTime(),

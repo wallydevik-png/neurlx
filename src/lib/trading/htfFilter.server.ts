@@ -36,9 +36,16 @@ async function biasFor(
   symbol: string,
   interval: "1d" | "4h" | "1h",
   userId?: string | null,
+  opts?: { signal?: AbortSignal; queueWaitMs?: number },
 ): Promise<{ state: HtfState; reason?: string }> {
   try {
-    const { candles } = await fetchCandlesWithSource(supabase, symbol, interval, 220, userId);
+    // Each timeframe has its OWN bounded request. A slow 1D can never block
+    // the 4H/1H of the same symbol, nor any other symbol: they are independent
+    // promises with independent budgets.
+    const { candles } = await fetchCandlesWithSource(supabase, symbol, interval, 220, userId, {
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
+    });
     if (!candles || candles.length < 30) return { state: "unknown", reason: "too_few_candles" };
     const bias = trendBias(candles.map(c => c.close));
     return { state: bias === "bullish" || bias === "bearish" ? bias : "neutral" };
@@ -57,15 +64,16 @@ export async function checkHtfAlignment(
   symbol: string,
   side: "buy" | "sell",
   userId?: string | null,
+  opts?: { signal?: AbortSignal; queueWaitMs?: number },
 ): Promise<HtfVerdict> {
   const want = side === "buy" ? "bullish" : "bearish";
   // Independent per-timeframe boundaries: one failing timeframe degrades to
   // "unavailable" instead of discarding the other two. The shared history gate
   // keeps these three requests inside the provider's account-level cap.
   const [d1, h4, h1] = await Promise.all([
-    biasFor(supabase, symbol, "1d", userId),
-    biasFor(supabase, symbol, "4h", userId),
-    biasFor(supabase, symbol, "1h", userId),
+    biasFor(supabase, symbol, "1d", userId, opts),
+    biasFor(supabase, symbol, "4h", userId, opts),
+    biasFor(supabase, symbol, "1h", userId, opts),
   ]);
   const bias = { d1: d1.state, h4: h4.state, h1: h1.state };
   const dataIssues: Partial<Record<"d1" | "h4" | "h1", string>> = {};
@@ -100,17 +108,29 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   userId?: string | null,
   budget = 20,
   concurrency = 4,
-): Promise<{ aligned: T[]; verdicts: HtfVerdict[]; unmeasured: number }> {
+  opts?: { signal?: AbortSignal; deadlineMs?: number },
+): Promise<{ aligned: T[]; verdicts: HtfVerdict[]; unmeasured: number; deferred: string[] }> {
   const slice = candidates.slice(0, budget);
   const verdicts: Array<HtfVerdict | null> = new Array(slice.length).fill(null);
+  const deferred: string[] = [];
   let next = 0;
-  const deadline = Date.now() + 13_000;
+  // Budget comes from the caller (the cycle owns the clock) instead of a
+  // hardcoded 13s that could outlive the remaining cycle budget.
+  const deadline = Date.now() + Math.max(3_000, opts?.deadlineMs ?? 13_000);
   const worker = async () => {
-    while (next < slice.length && Date.now() < deadline) {
+    while (next < slice.length) {
       const i = next++;
       const c = slice[i]!;
+      // Out of budget or cancelled: DEFERRED (never evaluated), not rejected.
+      if (opts?.signal?.aborted || Date.now() >= deadline) {
+        deferred.push(c.symbol);
+        continue;
+      }
       try {
-        verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId);
+        verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId, {
+          ...(opts?.signal ? { signal: opts.signal } : {}),
+          queueWaitMs: Math.max(1_000, Math.min(6_000, deadline - Date.now())),
+        });
       } catch {
         // A slow/unavailable broker symbol must not discard verdicts already
         // completed in this bounded batch.
@@ -120,5 +140,9 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   await Promise.all(Array.from({ length: Math.min(concurrency, slice.length) }, () => worker()));
   const aligned = slice.filter((_, i) => verdicts[i]?.aligned);
   const measured = verdicts.filter((v): v is HtfVerdict => v !== null);
-  return { aligned, verdicts: measured, unmeasured: candidates.length - measured.length };
+  return {
+    aligned, verdicts: measured,
+    unmeasured: candidates.length - measured.length,
+    deferred,
+  };
 }

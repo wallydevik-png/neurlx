@@ -90,10 +90,18 @@ async function runAutonomousCycleCore(
   trigger: "manual" | "cron" | "signal",
   /** Lock ownership handle: the watchdog may only close the run row THIS
    *  invocation created, never whichever row happens to be open. */
-  ownership?: { runId: string | null },
+  ownership?: { runId: string | null; abandoned?: boolean },
+  /** Cycle-level cancellation. When it fires, the engine stops STARTING new
+   *  work (market data, HTF, order submission) but keeps everything already
+   *  completed. It is the mechanism that makes the watchdog safe. */
+  cycleSignal?: AbortSignal,
 ): Promise<CycleResult> {
   const cycleStartedMs = Date.now();
-  const cycleBudgetMs = 44_000;
+  // Budget ladder (must stay ordered):
+  //   provider readiness 8s < committee 20s < HTF 10s < cycle 40s < watchdog 50s
+  const cycleBudgetMs = 40_000;
+  const budgetLeftMs = () => cycleBudgetMs - (Date.now() - cycleStartedMs);
+  const outOfBudget = () => Boolean(cycleSignal?.aborted) || budgetLeftMs() <= 0;
   const rejectReasons: Record<string, number> = {};
   const errors: string[] = [];
   let scanned = 0;
@@ -184,7 +192,9 @@ async function runAutonomousCycleCore(
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
       signals_deferred: deferredCount, signals_failed: failedCount,
       reject_reasons: rejectReasons, errors: runErrors, live,
-    }).eq("id", runId);
+      // A cycle the hard watchdog already abandoned must not rewrite the row it
+      // closed; `.is(finished_at, null)` makes this update a no-op in that case.
+    }).eq("id", runId).is("finished_at", null);
     try {
       const { recordRejectionStages } = await import("@/lib/autonomous/rejectionStats.server");
       await recordRejectionStages(supabase, userId, runErrors, rejectReasons);
@@ -472,7 +482,33 @@ async function runAutonomousCycleCore(
       // completed. Do not wrap it in an outer Promise.race: that left broker
       // requests running after the cycle had been marked failed, causing the
       // next manual/cron invocation to collide with an unfinished cycle.
-      const verdicts = await runCommittee(supabase, universe, userId, { deadlineMs: 24_000 });
+      const { StageRecorder, assessCoverage } = await import("@/lib/marketdata/symbolTelemetry");
+      const stages = new StageRecorder();
+      const verdicts = await runCommittee(supabase, universe, userId, {
+        // Never let the committee outlive the cycle budget.
+        deadlineMs: Math.max(5_000, Math.min(20_000, budgetLeftMs() - 12_000)),
+        ...(cycleSignal ? { signal: cycleSignal } : {}),
+        onStage: (symbol, stage, detail) => stages.record(symbol, stage, detail),
+      });
+      // Per-symbol market-data telemetry: the actual stage each symbol reached,
+      // never a single global error.
+      errors.push(`market_data_stages:${stages.summary()}`);
+      const coverage = assessCoverage(stages.all());
+      errors.push(
+        `market_data_coverage:${coverage.completed}/${coverage.attempted}` +
+        `:failures=${coverage.dataFailures}:deferred=${coverage.deferred}`,
+      );
+      if (coverage.deferred > 0) {
+        deferredCount += coverage.deferred;
+        for (const st of stages.all().filter(x => x.stage === "deferred")) {
+          errors.push(`signal_deferred:${st.symbol}:market_data:cycle_budget`);
+        }
+      }
+      for (const st of stages.all()) {
+        if (st.stage !== "completed" && st.stage !== "deferred") {
+          errors.push(`signal_failed:${st.symbol}:market_data:${st.detail ?? st.stage}`);
+        }
+      }
       const canFundVerdict = (symbol: string, side: "buy" | "sell" | "wait") => {
         if (side === "wait") return true;
         return canFundLiveSignal(symbol, side);
@@ -524,6 +560,10 @@ async function runAutonomousCycleCore(
         userId,
         Math.min(viable.length, 12),
         2,
+        {
+          ...(cycleSignal ? { signal: cycleSignal } : {}),
+          deadlineMs: Math.max(3_000, Math.min(10_000, budgetLeftMs() - 8_000)),
+        },
       );
       const picks = htf.aligned.slice(0, candidateLimit);
       const htfRejected = htf.verdicts.filter(v => !v.aligned);
@@ -549,9 +589,25 @@ async function runAutonomousCycleCore(
         // Never inspected inside the HTF budget — deferred, not rejected.
         deferredCount += htf.unmeasured;
         errors.push(`htf_unmeasured:${htf.unmeasured}:budget`);
+        for (const sym of htf.deferred) errors.push(`signal_deferred:${sym}:htf:cycle_budget`);
       }
       if (!verdicts.length) {
-        errors.push("committee_no_verdicts:market_data_unavailable_for_universe");
+        // The global "whole universe unavailable" state is only claimed when
+        // measured coverage says so. Budget deferrals and partial failures are
+        // reported as exactly that instead of being disguised as a total
+        // market-data outage.
+        if (coverage.globalFailure) {
+          errors.push(
+            `committee_no_verdicts:market_data_unavailable_for_universe:` +
+            `coverage=0/${coverage.attempted}`,
+          );
+        } else {
+          errors.push(
+            `committee_no_verdicts:partial_market_data:` +
+            `completed=${coverage.completed}:failures=${coverage.dataFailures}` +
+            `:deferred=${coverage.deferred}`,
+          );
+        }
       } else if (!viable.length && waitVerdicts === verdicts.length) {
         errors.push(
           `committee_no_trade:${verdicts.slice(0, 5).map(v => `${v.symbol}:wait:${v.consensusConfidence.toFixed(2)}:${v.agreement.toFixed(2)}`).join(",")}`,
@@ -751,7 +807,7 @@ async function runAutonomousCycleCore(
   let slots = capacity;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
-    if (Date.now() - cycleStartedMs >= cycleBudgetMs) {
+    if (outOfBudget()) {
       const pending = signals.slice(signalIndex);
       deferredCount += pending.length;
       // Leave these signals pending for the next bounded cycle rather than
@@ -1160,20 +1216,28 @@ export async function runAutonomousCycleFor(
   // Lock ownership: the watchdog may only close the run row this invocation
   // created. Closing "the newest open row" could terminate a genuinely active
   // concurrent cycle belonging to another invocation.
-  const ownership: { runId: string | null } = { runId: null };
+  const ownership: { runId: string | null; abandoned?: boolean } = { runId: null };
   try {
-    // Hard watchdog. A provider request that never settles used to leave the
-    // whole invocation pending until the runtime cancelled it, which left the
-    // run row open and blocked every following tick with
-    // `recovered:stale_unfinished_cycle`.
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Two-stage watchdog.
+    //
+    // Stage 1 (soft, 42s): cancel the cycle's AbortController. The engine stops
+    // starting new provider work, in-flight requests are aborted, and the cycle
+    // finishes normally with whatever it measured — a graceful stop, not a kill.
+    //
+    // Stage 2 (hard, 50s): only if the graceful stop itself did not settle. It
+    // closes OUR run row (scoped by run id AND still-open) and marks the cycle
+    // abandoned, so any late completion never rewrites it. It can never steal a
+    // healthy concurrent cycle's lock.
+    const controller = new AbortController();
+    let softTimer: ReturnType<typeof setTimeout> | undefined;
+    let hardTimer: ReturnType<typeof setTimeout> | undefined;
+    softTimer = setTimeout(() => controller.abort(), 42_000);
     const watchdog = new Promise<CycleResult>(resolve => {
-      timer = setTimeout(async () => {
-        const note = "cycle_watchdog_timeout: market data provider did not respond in time";
+      hardTimer = setTimeout(async () => {
+        ownership.abandoned = true;
+        const note = "cycle_watchdog_timeout:graceful_cancel_did_not_settle";
         const finishedAt = new Date().toISOString();
         if (ownership.runId) {
-          // Scoped to our own run id AND still-open, so a row already closed
-          // normally (or owned by another cycle) is never overwritten.
           await supabase.from("autonomous_runs").update({
             finished_at: finishedAt, errors: [note],
           }).eq("id", ownership.runId).is("finished_at", null);
@@ -1185,16 +1249,19 @@ export async function runAutonomousCycleFor(
           errors: [note],
           skipped: "cycle_watchdog_timeout",
         });
-      }, 45_000);
+      }, 50_000);
     });
     try {
       return await Promise.race([
-        runAutonomousCycleCore(supabase, userId, trigger, ownership),
+        runAutonomousCycleCore(supabase, userId, trigger, ownership, controller.signal),
         watchdog,
       ]);
     } finally {
-      if (timer) clearTimeout(timer);
+      if (softTimer) clearTimeout(softTimer);
+      if (hardTimer) clearTimeout(hardTimer);
+      controller.abort();
     }
+
 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
