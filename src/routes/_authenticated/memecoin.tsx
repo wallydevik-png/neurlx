@@ -94,7 +94,7 @@ function MemecoinDesk() {
   }
 
   async function scan() {
-    try { setBusy("scan"); const r = await scanFn(); toast.success(`Scanned ${r.scanned} tokens`); refresh(); }
+    try { setBusy("scan"); const r = await scanFn(); const s = r.scan; toast.success(`Scanned ${r.scanned} tokens — looked at ${s?.universe ?? "?"} mints, ${s?.verdicts.snipe ?? 0} snipeable`); refresh(); }
     catch (e) { fail(e); } finally { setBusy(null); }
   }
 
