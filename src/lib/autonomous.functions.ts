@@ -186,7 +186,23 @@ async function runAutonomousCycleCore(
   if (ownership) ownership.runId = runId;
  
   const finish = async (skipped?: string, live = false) => {
-    const runErrors = skipped ? [...errors, withDetail("skipped", skipped)] : errors;
+    // Where the cycle's market-data time actually went: queue wait vs provider
+    // latency, measured per request. This is what tells a saturated gate apart
+    // from a slow broker without guessing.
+    let timingNote: string | null = null;
+    try {
+      const { historyTimingSummary } = await import("@/lib/marketdata/historyGate.server");
+      const s = historyTimingSummary();
+      if (s) {
+        timingNote =
+          `history_timing:n=${s.n}:queue_p50=${s.queueP50}:queue_p95=${s.queueP95}` +
+          `:provider_p50=${s.providerP50}:provider_p95=${s.providerP95}:provider_max=${s.providerMax}` +
+          `:failed=${s.failed}(queue=${s.queuePhaseFailures},provider=${s.providerPhaseFailures})`;
+      }
+    } catch { /* telemetry only */ }
+    const base = timingNote ? [...errors, timingNote] : errors;
+    const runErrors = skipped ? [...base, withDetail("skipped", skipped)] : base;
+
     await supabase.from("autonomous_runs").update({
       finished_at: new Date().toISOString(),
       signals_scanned: scanned, signals_executed: executed, signals_rejected: rejected,
@@ -494,10 +510,15 @@ async function runAutonomousCycleCore(
       // never a single global error.
       errors.push(`market_data_stages:${stages.summary()}`);
       const coverage = assessCoverage(stages.all());
+      // Scoped deliberately: this is the COMMITTEE stage's coverage only. HTF,
+      // momentum and the entry gate fetch their own timeframes afterwards and
+      // report their own availability — a "10/10" here never meant that every
+      // required symbol/timeframe downstream was available.
       errors.push(
-        `market_data_coverage:${coverage.completed}/${coverage.attempted}` +
+        `committee_data_coverage:${coverage.completed}/${coverage.attempted}` +
         `:failures=${coverage.dataFailures}:deferred=${coverage.deferred}`,
       );
+
       if (coverage.deferred > 0) {
         deferredCount += coverage.deferred;
         for (const st of stages.all().filter(x => x.stage === "deferred")) {

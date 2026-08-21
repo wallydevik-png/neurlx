@@ -176,6 +176,59 @@ function acquire(g: GateState, queueWaitMs: number, outer?: AbortSignal): Promis
 }
 
 
+/**
+ * Full-lifecycle timing for ONE history request. This is what makes the
+ * difference between "the queue made us late" and "the provider was slow"
+ * measurable instead of guessed.
+ */
+export interface HistoryTiming {
+  id: string;
+  account: string;
+  label: string;
+  /** Time spent waiting for a slot, before any provider work started. */
+  queueMs: number;
+  /** Time the provider request itself was in flight. */
+  providerMs: number;
+  totalMs: number;
+  active: number;
+  queued: number;
+  /** Where the request ended up: which phase owns the outcome. */
+  phase: "queue" | "provider";
+  outcome: "completed" | "failed";
+  reason?: HistoryFailureReason;
+}
+
+const timings: HistoryTiming[] = [];
+const MAX_TIMINGS = 400;
+
+function recordTiming(t: HistoryTiming) {
+  timings.push(t);
+  if (timings.length > MAX_TIMINGS) timings.splice(0, timings.length - MAX_TIMINGS);
+}
+
+/** Recent per-request timings (newest last). Test/telemetry hook. */
+export function historyTimings(): HistoryTiming[] {
+  return timings.slice();
+}
+
+/** Aggregate view used in cycle notes: is queueing or the provider the cost? */
+export function historyTimingSummary() {
+  if (!timings.length) return null;
+  const q = timings.map(t => t.queueMs).sort((a, b) => a - b);
+  const p = timings.map(t => t.providerMs).sort((a, b) => a - b);
+  const pct = (arr: number[], f: number) => arr[Math.min(arr.length - 1, Math.floor(arr.length * f))] ?? 0;
+  return {
+    n: timings.length,
+    queueP50: pct(q, 0.5), queueP95: pct(q, 0.95), queueMax: q[q.length - 1] ?? 0,
+    providerP50: pct(p, 0.5), providerP95: pct(p, 0.95), providerMax: p[p.length - 1] ?? 0,
+    failed: timings.filter(t => t.outcome === "failed").length,
+    queuePhaseFailures: timings.filter(t => t.outcome === "failed" && t.phase === "queue").length,
+    providerPhaseFailures: timings.filter(t => t.outcome === "failed" && t.phase === "provider").length,
+  };
+}
+
+export function resetHistoryTimings() { timings.length = 0; }
+
 export interface HistorySlotOptions {
   /** How long a caller may wait for a free slot before deferring. */
   queueWaitMs?: number;
@@ -210,7 +263,25 @@ export async function withHistorySlot<T>(
   const key = accountKey || "default";
   const g = gateFor(key);
 
-  await acquire(g, queueWaitMs, opts.signal);
+  const rid = `h${++requestSeq}`;
+  const label = opts.label ?? "";
+  const tQueued = Date.now();
+  console.log(`[historyGate] history_request_queued ${key}:${label}:${rid} active=${g.active} queued=${g.queue.length}`);
+  try {
+    await acquire(g, queueWaitMs, opts.signal);
+  } catch (e) {
+    const reason = historyFailureReason(e);
+    const queueMs = Date.now() - tQueued;
+    recordTiming({
+      id: rid, account: key, label, queueMs, providerMs: 0, totalMs: queueMs,
+      active: g.active, queued: g.queue.length, phase: "queue",
+      outcome: "failed", reason,
+    });
+    console.log(`[historyGate] history_request_failed ${key}:${label}:${rid} phase=queue queue_ms=${queueMs} reason=${reason} active=${g.active} queued=${g.queue.length}`);
+    throw e;
+  }
+  const tAcquired = Date.now();
+  const queueMs = tAcquired - tQueued;
 
   const controller = new AbortController();
   const onOuterAbort = () => controller.abort();
@@ -224,9 +295,22 @@ export async function withHistorySlot<T>(
 
   g.inFlight++;
   g.inFlightPeak = Math.max(g.inFlightPeak, g.inFlight);
-  const rid = `h${++requestSeq}`;
-  const label = opts.label ?? "";
-  console.log(`[historyGate] started ${key}:${label}:${rid} active=${g.active} inFlight=${g.inFlight} queued=${g.queue.length}`);
+  console.log(`[historyGate] history_provider_started ${key}:${label}:${rid} queue_ms=${queueMs} active=${g.active} inFlight=${g.inFlight} queued=${g.queue.length}`);
+  const finish = (outcome: "completed" | "failed", reason?: HistoryFailureReason) => {
+    const now = Date.now();
+    const providerMs = now - tAcquired;
+    recordTiming({
+      id: rid, account: key, label, queueMs, providerMs, totalMs: now - tQueued,
+      active: g.active, queued: g.queue.length, phase: "provider", outcome,
+      ...(reason ? { reason } : {}),
+    });
+    console.log(
+      `[historyGate] history_request_finished ${key}:${label}:${rid} ` +
+      `queue_ms=${queueMs} provider_ms=${providerMs} total_ms=${now - tQueued} ` +
+      `active=${g.active} queued=${g.queue.length} outcome=${outcome}${reason ? ` reason=${reason}` : ""}`,
+    );
+  };
+
 
   let settled = false;
   const work = (async () => {
@@ -247,7 +331,7 @@ export async function withHistorySlot<T>(
   try {
     if (providerTimeoutMs <= 0) {
       const v = await work;
-      console.log(`[historyGate] finished ${key}:${label}:${rid} active=${g.active}`);
+      finish("completed");
       return v;
     }
     const raced = await Promise.race([
@@ -259,7 +343,7 @@ export async function withHistorySlot<T>(
       }),
     ]);
     if (raced.ok) {
-      console.log(`[historyGate] finished ${key}:${label}:${rid} active=${g.active}`);
+      finish("completed");
       return raced.v;
     }
     throw new HistoryGateError(
@@ -273,7 +357,8 @@ export async function withHistorySlot<T>(
       : timedOut ? "provider_timeout"
       : opts.signal?.aborted ? "aborted"
       : historyFailureReason(e);
-    console.log(`[historyGate] failed ${key}:${label}:${rid} reason=${reason} active=${g.active}`);
+    finish("failed", reason);
+
     if (reason === "rate_limited") noteRateLimited(key);
     if (e instanceof HistoryGateError) throw e;
     if (timedOut) {
@@ -349,4 +434,6 @@ export function resetHistoryGate() {
     if (g.pump) clearTimeout(g.pump);
   }
   gates.clear();
+  resetHistoryTimings();
 }
+
