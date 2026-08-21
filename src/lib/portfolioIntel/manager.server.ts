@@ -459,15 +459,22 @@ export async function evaluateOpportunity(
 
   let regime: string | null = null;
   let regimeScore = 60;
-  try {
-    const { data: recentRegime } = await supabase.from("market_regime_snapshots")
-      .select("regime, tradable, confidence").eq("user_id", userId).eq("symbol", candidate.symbol)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (recentRegime) {
-      regime = recentRegime.regime as string;
-      regimeScore = recentRegime.tradable ? 60 + Number(recentRegime.confidence) * 40 : 25;
-    }
-  } catch { /* best-effort — regime data is a scoring input, not a hard requirement */ }
+  if (candidate.regimeNow) {
+    regime = candidate.regimeNow.regime;
+    regimeScore = candidate.regimeNow.tradable
+      ? 60 + Math.max(0, Math.min(1, candidate.regimeNow.confidence)) * 40
+      : 25;
+  } else {
+    try {
+      const { data: recentRegime } = await supabase.from("market_regime_snapshots")
+        .select("regime, tradable, confidence").eq("user_id", userId).eq("symbol", candidate.symbol)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (recentRegime) {
+        regime = recentRegime.regime as string;
+        regimeScore = recentRegime.tradable ? 60 + Number(recentRegime.confidence) * 40 : 25;
+      }
+    } catch { /* best-effort — regime data is a scoring input, not a hard requirement */ }
+  }
 
   const maxCorr = ctx.open.length
     ? Math.max(...ctx.open.map(o => assumedCorrelation(candidate.symbol, o.symbol)))
