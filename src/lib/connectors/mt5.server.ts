@@ -510,15 +510,61 @@ const specCache = new Map<string, { at: number; spec: MtSymbolSpec }>();  // `${
 const SYMBOL_TTL_MS = 30 * 60 * 1000;
  
 /**
- * Historical-market-data concurrency is now owned by ONE shared, account-level
- * gate (`@/lib/marketdata/historyGate.server`) instead of a per-module pool.
- * MetaApi caps history at 5 concurrent requests per account; HTF alone fans a
- * single symbol out to 3 timeframes, so bounding symbols was never enough.
- * Every history call in this connector goes through the gate, and the gate is
- * the only thing counting slots, so the account invariant holds globally.
+ * Historical-market-data concurrency is owned by ONE shared, account-level gate
+ * (`@/lib/marketdata/historyGate.server`). MetaApi caps history at 5 concurrent
+ * requests per account; HTF alone fans a single symbol out to 3 timeframes, so
+ * bounding symbols was never enough.
+ *
+ * Two things are deliberately kept OUT of the slot, because neither consumes
+ * the provider's historical-request allowance and both are slow:
+ *   - readiness (`ensureReady` / `syncAccountMeta`, provisioning-API calls)
+ *   - reconnect + retry after a "not connected" error
+ * Holding a scarce history slot across a 20s provisioning call is what starved
+ * the remaining symbols and produced the queue saturation seen in telemetry.
  */
-async function withHistoryLimit<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
-  return withHistorySlot(accountId || "mt5", fn, { waitMs: 15_000, maxHoldMs: 12_000 });
+const HISTORY_QUEUE_WAIT_MS = 6_000;   // < HTF per-symbol budget
+const HISTORY_PROVIDER_TIMEOUT_MS = 7_000;
+const HISTORY_REQUEST_TIMEOUT_MS = 6_000; // fires before the gate's own ceiling
+const READINESS_TIMEOUT_MS = 8_000;       // < signal budget < cycle budget
+
+async function withHistoryLimit<T>(
+  accountId: string,
+  fn: (signal: AbortSignal) => Promise<T>,
+  opts: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number } = {},
+): Promise<T> {
+  return withHistorySlot(accountId || "mt5", fn, {
+    queueWaitMs: opts.queueWaitMs ?? HISTORY_QUEUE_WAIT_MS,
+    providerTimeoutMs: opts.providerTimeoutMs ?? HISTORY_PROVIDER_TIMEOUT_MS,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+}
+
+/** Provider readiness must be independently bounded: an un-deployed or slowly
+ *  reconnecting account may never block the whole autonomous cycle. */
+export class ProviderReadinessError extends Error {
+  reason: string;
+  constructor(reason: string, message: string) {
+    super(message);
+    this.name = "ProviderReadinessError";
+    this.reason = reason;
+  }
+}
+
+async function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new ProviderReadinessError("provisioning_error", `${label} exceeded ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 
