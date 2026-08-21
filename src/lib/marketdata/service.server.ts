@@ -91,7 +91,59 @@ export async function fetchCandles(
 /** Same as fetchCandles, but also reports which provider actually served the
  *  data so callers (the AI engine, in particular) can stamp signals with
  *  provenance instead of silently treating synthetic data as real. */
+// ---- Per-cycle request coalescing + short-TTL cache -----------------------
+// The same symbol/timeframe is requested by the committee, the HTF filter, the
+// momentum check and the entry gate within one cycle. Each of those used to be
+// an independent provider request, which is what pushed MetaApi past its
+// 5-concurrent-history-request account cap. Identical requests now share ONE
+// in-flight provider call, and a completed result is reused for a fraction of
+// the bar interval. Failures are never cached, and each symbol/timeframe has
+// its own entry, so one symbol's timeout cannot affect another's.
+const CANDLE_TTL_MS: Record<string, number> = {
+  "1m": 20_000, "5m": 45_000, "15m": 120_000,
+  "1h": 300_000, "4h": 900_000, "1d": 1_800_000,
+};
+
+interface CacheEntry {
+  at: number;
+  ttl: number;
+  value?: CandleFetchResult;
+  inFlight?: Promise<CandleFetchResult>;
+}
+const candleCache = new Map<string, CacheEntry>();
+
+/** Test/telemetry hook. */
+export function resetCandleCache() { candleCache.clear(); }
+
 export async function fetchCandlesWithSource(
+  supabase: SupabaseClient | null,
+  symbol: string,
+  interval: Interval,
+  limit = 200,
+  userId?: string | null,
+  opts?: MarketDataRequestOptions,
+): Promise<CandleFetchResult> {
+  const key = `${userId ?? "anon"}|${symbol}|${interval}|${limit}`;
+  const now = Date.now();
+  const hit = candleCache.get(key);
+  if (hit) {
+    if (hit.value && now - hit.at < hit.ttl) return hit.value;
+    if (hit.inFlight) return hit.inFlight;
+  }
+  const ttl = CANDLE_TTL_MS[interval] ?? 60_000;
+  const inFlight = fetchCandlesUncached(supabase, symbol, interval, limit, userId, opts)
+    .then(value => {
+      // Only real broker data is worth reusing.
+      if (!value.isSynthetic) candleCache.set(key, { at: Date.now(), ttl, value });
+      else candleCache.delete(key);
+      return value;
+    })
+    .catch(e => { candleCache.delete(key); throw e; });
+  candleCache.set(key, { at: now, ttl, inFlight });
+  return inFlight;
+}
+
+async function fetchCandlesUncached(
   supabase: SupabaseClient | null,
   symbol: string,
   interval: Interval,

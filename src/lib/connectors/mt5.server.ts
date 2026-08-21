@@ -530,11 +530,12 @@ const READINESS_TIMEOUT_MS = 8_000;       // < signal budget < cycle budget
 async function withHistoryLimit<T>(
   accountId: string,
   fn: (signal: AbortSignal) => Promise<T>,
-  opts: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number } = {},
+  opts: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number; label?: string } = {},
 ): Promise<T> {
   return withHistorySlot(accountId || "mt5", fn, {
     queueWaitMs: opts.queueWaitMs ?? HISTORY_QUEUE_WAIT_MS,
     providerTimeoutMs: opts.providerTimeoutMs ?? HISTORY_PROVIDER_TIMEOUT_MS,
+    ...(opts.label ? { label: opts.label } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }
@@ -957,6 +958,7 @@ export function createMt5Connector(
         state.accountId,
         (signal) => marketDataReq<RawCandle[]>(path, signal),
         {
+          label: `${s}:${timeframe}`,
           ...(opts?.signal ? { signal: opts.signal } : {}),
           ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
           ...(opts?.providerTimeoutMs ? { providerTimeoutMs: opts.providerTimeoutMs } : {}),
