@@ -36,14 +36,43 @@ async function loadWalletSecret(db: DB, userId: string): Promise<{ publicKey: st
   return { publicKey: data.public_key as string, secret };
 }
 
-export type ScanTelemetry = { universe: number; scored: number; verdicts: { snipe: number; watch: number; avoid: number } };
+export type ScanTelemetry = {
+  universe: number; scored: number;
+  verdicts: { snipe: number; watch: number; avoid: number };
+  /** True when the live scan came back empty (provider rate-limit/outage) and
+   *  the recently persisted feed was reused instead. */
+  stale?: boolean;
+};
 
 /** Refresh the scanned universe and persist the ranked candidates. */
 export async function refreshSignals(db: DB): Promise<{ candidates: MemeCandidate[]; scan: ScanTelemetry }> {
   const { scanMemecoinsDetailed } = await import("./scanner.server");
   const res = await scanMemecoinsDetailed(20);
+  if (!res.candidates.length) {
+    // A rate-limited provider must not look like an empty market. Reuse the
+    // recent persisted feed so exits/entries can still be evaluated, and say
+    // so through telemetry.
+    const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const { data } = await db.from("memecoin_signals").select("*")
+      .gte("created_at", since).order("score", { ascending: false }).limit(20);
+    const cached: MemeCandidate[] = (data ?? []).map((r: Record<string, unknown>) => ({
+      mint: r.mint as string, symbol: r.symbol as string, name: (r.name as string) ?? "",
+      score: Number(r.score), verdict: r.verdict as MemeCandidate["verdict"],
+      priceUsd: Number(r.price_usd), liquidityUsd: Number(r.liquidity_usd),
+      volume24hUsd: Number(r.volume_24h_usd), fdvUsd: Number(r.fdv_usd),
+      ageMinutes: Number(r.age_minutes), change5m: Number(r.change_5m),
+      change1h: Number(r.change_1h), buySellRatio: Number(r.buy_sell_ratio),
+      reasons: (r.reasons as string[]) ?? [], riskFlags: (r.risk_flags as string[]) ?? [],
+      aiThesis: (r.ai_thesis as string) ?? undefined,
+      volume5mUsd: 0, change6h: 0, txns24h: 0, url: "",
+    } as MemeCandidate));
+    const verdicts = { snipe: 0, watch: 0, avoid: 0 };
+    for (const c of cached) verdicts[c.verdict]++;
+    return { candidates: cached, scan: { universe: cached.length, scored: cached.length, verdicts, stale: true } };
+  }
   const candidates = res.candidates;
   const theses = await aiThesis(candidates);
+
   if (candidates.length) {
     // Replace-per-mint rather than blind insert: the old code appended a new
     // row on every scan, so the same token accumulated dozens of duplicate

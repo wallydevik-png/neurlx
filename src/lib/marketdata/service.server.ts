@@ -16,6 +16,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Candle, Interval, MarketDataProvider, MarketDataRequestOptions } from "./types";
 import { createSyntheticProvider } from "./synthetic.server";
+import { HistoryGateError } from "./historyGate.server";
 import { listSupportedSymbols as listStaticSymbols } from "./symbols";
 import {
   resolveUserMt5Connector,
@@ -133,14 +134,14 @@ function join(entry: CacheEntry, signal?: AbortSignal): Promise<CandleFetchResul
   if (signal.aborted) {
     entry.cancelled = (entry.cancelled ?? 0) + 1;
     if (entry.cancelled >= (entry.consumers ?? 1)) entry.controller?.abort();
-    return Promise.reject(new Error("market-data request cancelled"));
+    return Promise.reject(new HistoryGateError("market-data request cancelled", "aborted"));
   }
   return new Promise<CandleFetchResult>((resolve, reject) => {
     const onAbort = () => {
       entry.cancelled = (entry.cancelled ?? 0) + 1;
       // Only the LAST interested consumer may cancel the underlying request.
       if (entry.cancelled >= (entry.consumers ?? 1)) entry.controller?.abort();
-      reject(new Error("market-data request cancelled"));
+      reject(new HistoryGateError("market-data request cancelled", "aborted"));
     };
     signal.addEventListener("abort", onAbort, { once: true });
     shared.then(
