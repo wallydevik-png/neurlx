@@ -130,6 +130,39 @@ export async function tokenBalance(owner: string, mint: string): Promise<{ amoun
   return { amount: raw ? Number(raw.amount) : 0, decimals: raw?.decimals ?? 0 };
 }
 
+/** Every SPL / Token-2022 balance the wallet actually holds, so the desk can
+ *  show real memecoin holdings and not only the SOL balance. */
+export async function listTokenHoldings(owner: string): Promise<
+  Array<{ mint: string; amount: number; uiAmount: number; decimals: number }>
+> {
+  const programs = [
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",      // SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",      // Token-2022
+  ];
+  type Acc = { account: { data: { parsed: { info: {
+    mint: string; tokenAmount: { amount: string; decimals: number; uiAmount: number | null };
+  } } } } };
+  const out: Array<{ mint: string; amount: number; uiAmount: number; decimals: number }> = [];
+  for (const programId of programs) {
+    let r: { value?: Acc[] } | null = null;
+    try {
+      r = await rpc<{ value: Acc[] }>("getTokenAccountsByOwner",
+        [owner, { programId }, { encoding: "jsonParsed", commitment: "confirmed" }]);
+    } catch { continue; } // one program failing must not hide the other
+    for (const acc of r?.value ?? []) {
+      const info = acc?.account?.data?.parsed?.info;
+      if (!info) continue;
+      const ui = info.tokenAmount.uiAmount ?? Number(info.tokenAmount.amount) / 10 ** info.tokenAmount.decimals;
+      if (!ui || ui <= 0) continue;
+      out.push({
+        mint: info.mint, amount: Number(info.tokenAmount.amount),
+        uiAmount: ui, decimals: info.tokenAmount.decimals,
+      });
+    }
+  }
+  return out.sort((a, b) => b.uiAmount - a.uiAmount);
+}
+
 type Quote = { outAmount: string; inAmount: string; priceImpactPct?: string; routePlan?: unknown[] };
 
 export async function getQuote(inputMint: string, outputMint: string, amountRaw: number, slippageBps: number): Promise<Quote> {
