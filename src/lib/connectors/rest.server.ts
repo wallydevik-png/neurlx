@@ -43,6 +43,10 @@ export interface DoRequestInput {
   /** Per-call deadline. Market-data scans use a shorter value so one stalled
    * venue cannot consume the autonomous cycle's entire request budget. */
   timeoutMs?: number;
+  /** External cancellation (history gate slot budget / cycle abort). Aborting
+   * this really cancels the socket, which is what keeps the provider's
+   * concurrency accounting honest. */
+  signal?: AbortSignal;
 }
 
 export async function doRequest<T>(input: DoRequestInput): Promise<T> {
