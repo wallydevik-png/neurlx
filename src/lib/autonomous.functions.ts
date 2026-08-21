@@ -100,7 +100,9 @@ async function runAutonomousCycleCore(
   // Snapshot the process-global history telemetry so this run reports only its
   // own provider work rather than accumulating every earlier cron invocation.
   const { historyTimingCursor } = await import("@/lib/marketdata/historyGate.server");
+  const { candleCacheTelemetryCursor } = await import("@/lib/marketdata/service.server");
   const historyCursor = historyTimingCursor();
+  const cacheCursor = candleCacheTelemetryCursor();
   // Budget ladder (must stay ordered). Measured provider P95 for 1D history is
   // ~12s, so any HTF stage budget below that guarantees `htf:cycle_budget`
   // deferrals no matter how healthy the broker is:
@@ -200,13 +202,18 @@ async function runAutonomousCycleCore(
     let timingNote: string | null = null;
     try {
       const { historyTimingSummarySince } = await import("@/lib/marketdata/historyGate.server");
+      const { candleCacheTelemetrySince } = await import("@/lib/marketdata/service.server");
       const s = historyTimingSummarySince(historyCursor);
       if (s) {
         timingNote =
-          `history_timing:n=${s.n}:queue_p50=${s.queueP50}:queue_p95=${s.queueP95}` +
-          `:provider_p50=${s.providerP50}:provider_p95=${s.providerP95}:provider_max=${s.providerMax}` +
+          `history_timing:n=${s.n}:queue_avg=${s.queueAvg}:queue_p50=${s.queueP50}:queue_p95=${s.queueP95}` +
+          `:provider_avg=${s.providerAvg}:provider_p50=${s.providerP50}:provider_p95=${s.providerP95}:provider_max=${s.providerMax}` +
+          `:provider_concurrency_max=${s.maxProviderConcurrency}` +
           `:failed=${s.failed}(queue=${s.queuePhaseFailures},provider=${s.providerPhaseFailures})`;
       }
+      const cache = candleCacheTelemetrySince(cacheCursor);
+      errors.push(`candle_reuse:provider=${cache.providerStarts}:cache=${cache.cacheHits}:coalesced=${cache.coalescedJoins}`);
+      errors.push(`cycle_elapsed_ms:${Date.now() - cycleStartedMs}`);
     } catch { /* telemetry only */ }
     const base = timingNote ? [...errors, timingNote] : errors;
     const runErrors = skipped ? [...base, withDetail("skipped", skipped)] : base;
@@ -588,15 +595,23 @@ async function runAutonomousCycleCore(
         v => v.consensusDirection as "buy" | "sell",
         userId,
         Math.min(viable.length, 12),
-        // One symbol fans out to exactly three timeframe requests. Keeping one
-        // symbol in flight uses three of four provider slots and eliminates the
-        // guaranteed queueing caused by two symbols (six requests) at once.
-        1,
+        // Four task workers fill the four-slot history gate without bypassing
+        // it. Work is scheduled per timeframe, so one slow symbol cannot block
+        // every timeframe for all later candidates.
+        4,
         {
           ...(cycleSignal ? { signal: cycleSignal } : {}),
           deadlineMs: Math.max(3_000, Math.min(17_000, budgetLeftMs() - 10_000)),
         },
       );
+      errors.push(`htf_coverage:completed=${htf.verdicts.length}:deferred=${htf.deferred.length}:failed=${htf.failed.length}`);
+      for (const [symbol, timing] of Object.entries(htf.timings)) {
+        const detail = (["d1", "h4", "h1"] as const).map(tf => {
+          const t = timing[tf];
+          return t ? `${tf}[q=${t.queueMs},p=${t.providerMs},t=${t.totalMs},${t.outcome}${t.reason ? `:${t.reason}` : ""}]` : `${tf}[not_started]`;
+        }).join(";");
+        errors.push(`htf_timing:${symbol}:${detail}`);
+      }
       const picks = htf.aligned.slice(0, candidateLimit);
       const htfRejected = htf.verdicts.filter(v => !v.aligned);
       if (htfRejected.length) {

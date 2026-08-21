@@ -16,6 +16,24 @@ import {
   isHtfAligned, tallyHtf, classifyHtf, htfTelemetry,
   type HtfTally, type HtfClassification, type HtfState,
 } from "@/lib/trading/htfAlignment";
+import {
+  historyFailureReason, historyTimingCursor, historyTimings,
+  isDeferralReason, MAX_CONCURRENT_HISTORY, type HistoryFailureReason,
+} from "@/lib/marketdata/historyGate.server";
+
+type HtfKey = "d1" | "h4" | "h1";
+type HtfInterval = "1d" | "4h" | "1h";
+
+export interface HtfTimeframeTiming {
+  timeframe: HtfInterval;
+  startedAt: number;
+  completedAt: number;
+  queueMs: number;
+  providerMs: number;
+  totalMs: number;
+  outcome: "completed" | "failed" | "deferred";
+  reason?: string;
+}
 
 export interface HtfVerdict {
   symbol: string;
@@ -28,6 +46,7 @@ export interface HtfVerdict {
   tally: HtfTally;
   classification: HtfClassification;
   detail: string;
+  timings?: Partial<Record<HtfKey, HtfTimeframeTiming>>;
 }
 
 
@@ -54,7 +73,6 @@ async function biasFor(
     // Data-plane failure — infrastructure state, explicitly NOT a directional
     // opinion. The reason distinguishes a rate-limited/timed-out provider from
     // an instrument the broker genuinely has no history for.
-    const { historyFailureReason } = await import("@/lib/marketdata/historyGate.server");
     return { state: "unavailable", reason: historyFailureReason(e) };
   }
 }
@@ -110,11 +128,15 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   budget = 20,
   concurrency = 4,
   opts?: { signal?: AbortSignal; deadlineMs?: number },
-): Promise<{ aligned: T[]; verdicts: HtfVerdict[]; unmeasured: number; deferred: string[] }> {
+): Promise<{ aligned: T[]; verdicts: HtfVerdict[]; unmeasured: number; deferred: string[]; failed: string[]; timings: Record<string, Partial<Record<HtfKey, HtfTimeframeTiming>>> }> {
   const slice = candidates.slice(0, budget);
-  const verdicts: Array<HtfVerdict | null> = new Array(slice.length).fill(null);
+  const states = slice.map(() => ({
+    d1: null, h4: null, h1: null,
+  } as Record<HtfKey, { state: HtfState; reason?: string } | null>));
+  const timingBySymbol: Record<string, Partial<Record<HtfKey, HtfTimeframeTiming>>> = {};
+  const startedAtByTask = new Map<string, number>();
   const deferred: string[] = [];
-  let next = 0;
+  const failed: string[] = [];
   // Budget comes from the caller (the cycle owns the clock) instead of a
   // hardcoded 13s that could outlive the remaining cycle budget.
   const deadline = Date.now() + Math.max(3_000, opts?.deadlineMs ?? 13_000);
@@ -126,39 +148,110 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   if (opts?.signal?.aborted) abortStage();
   else opts?.signal?.addEventListener("abort", abortStage, { once: true });
   const deadlineTimer = setTimeout(abortStage, Math.max(1, deadline - Date.now()));
+  const intervals: Array<{ key: HtfKey; interval: HtfInterval }> = [
+    { key: "d1", interval: "1d" }, { key: "h4", interval: "4h" }, { key: "h1", interval: "1h" },
+  ];
+  // Candidate-major ordering preserves committee rank. Four task workers fill
+  // all four gate slots; a slow timeframe occupies only its own worker instead
+  // of blocking every timeframe of every later symbol.
+  const tasks = slice.flatMap((candidate, index) =>
+    intervals.map(({ key, interval }) => ({ candidate, index, key, interval })));
+  let next = 0;
+  const historyCursor = historyTimingCursor();
   const worker = async () => {
-    while (next < slice.length) {
+    while (next < tasks.length) {
       const i = next++;
-      const c = slice[i]!;
+      const task = tasks[i];
+      if (!task) continue;
+      const { candidate: c, index, key, interval } = task;
       // Out of budget or cancelled: DEFERRED (never evaluated), not rejected.
-      if (opts?.signal?.aborted || Date.now() >= deadline) {
-        deferred.push(c.symbol);
+      if (opts?.signal?.aborted || stageController.signal.aborted || Date.now() >= deadline) {
         continue;
       }
-      try {
-        const remainingMs = Math.max(1_000, deadline - Date.now());
-        verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId, {
+      const taskId = `${c.symbol}:${interval}`;
+      const startedAt = Date.now();
+      startedAtByTask.set(taskId, startedAt);
+      const remainingMs = deadline - startedAt;
+      if (remainingMs < 1_000) continue;
+      const result = await biasFor(supabase, c.symbol, interval, userId, {
           signal: stageController.signal,
           queueWaitMs: Math.max(1_000, Math.min(6_000, remainingMs - 500)),
           providerTimeoutMs: Math.max(1_000, remainingMs - 500),
-        });
-      } catch {
-        // A slow/unavailable broker symbol must not discard verdicts already
-        // completed in this bounded batch.
-      }
+      });
+      states[index]![key] = result;
     }
   };
   try {
-    await Promise.all(Array.from({ length: Math.min(concurrency, slice.length) }, () => worker()));
+    const taskConcurrency = Math.min(MAX_CONCURRENT_HISTORY, Math.max(1, concurrency), tasks.length);
+    await Promise.all(Array.from({ length: taskConcurrency }, () => worker()));
   } finally {
     clearTimeout(deadlineTimer);
     opts?.signal?.removeEventListener("abort", abortStage);
   }
-  const aligned = slice.filter((_, i) => verdicts[i]?.aligned);
-  const measured = verdicts.filter((v): v is HtfVerdict => v !== null);
+  const history = historyTimings().slice(historyCursor);
+  const verdicts: HtfVerdict[] = [];
+  for (let index = 0; index < slice.length; index++) {
+    const candidate = slice[index]!;
+    const state = states[index]!;
+    const symbolTimings: Partial<Record<HtfKey, HtfTimeframeTiming>> = {};
+    let hasDeferred = false;
+    let hasFailure = false;
+    for (const { key, interval } of intervals) {
+      const result = state[key];
+      const taskStart = startedAtByTask.get(`${candidate.symbol}:${interval}`);
+      const providerTiming = history.find(t =>
+        t.label.endsWith(`:${interval}`)
+        && (t.label.startsWith(candidate.symbol) || t.label.replace(/[^A-Z0-9]/gi, "").startsWith(candidate.symbol.replace(/[^A-Z0-9]/gi, ""))));
+      const reason = result?.reason as HistoryFailureReason | undefined;
+      const wasDeferred = !result || (reason ? isDeferralReason(reason) : false);
+      hasDeferred ||= wasDeferred;
+      hasFailure ||= Boolean(reason && !isDeferralReason(reason) && reason !== "too_few_candles");
+      if (taskStart || providerTiming) {
+        const completedAt = providerTiming?.finishedAt ?? Date.now();
+        symbolTimings[key] = {
+          timeframe: interval,
+          startedAt: taskStart ?? providerTiming?.queuedAt ?? completedAt,
+          completedAt,
+          queueMs: providerTiming?.queueMs ?? 0,
+          providerMs: providerTiming?.providerMs ?? 0,
+          totalMs: providerTiming?.totalMs ?? Math.max(0, completedAt - (taskStart ?? completedAt)),
+          outcome: wasDeferred ? "deferred" : reason ? "failed" : "completed",
+          ...(reason ? { reason } : {}),
+        };
+      }
+    }
+    timingBySymbol[candidate.symbol] = symbolTimings;
+    const bias = {
+      d1: state.d1?.state ?? "unavailable",
+      h4: state.h4?.state ?? "unavailable",
+      h1: state.h1?.state ?? "unavailable",
+    };
+    const want = sideOf(candidate) === "buy" ? "bullish" : "bearish";
+    const alignedNow = isHtfAligned(bias, want);
+    // A partial result is final only when it already satisfies the unchanged
+    // 2-of-3 rule. Otherwise an aborted/unstarted sibling could still change
+    // the classification, so preserve it as deferred rather than rejecting it.
+    if (hasDeferred && !alignedNow) {
+      deferred.push(candidate.symbol);
+      continue;
+    }
+    if (hasFailure && !alignedNow) failed.push(candidate.symbol);
+    const dataIssues: Partial<Record<HtfKey, string>> = {};
+    for (const key of ["d1", "h4", "h1"] as const) if (state[key]?.reason) dataIssues[key] = state[key]?.reason ?? "unknown_error";
+    const side = sideOf(candidate);
+    const detail = htfTelemetry(bias, side)
+      + (Object.keys(dataIssues).length ? ` data=${Object.entries(dataIssues).map(([tf, reason]) => `${tf}:${reason}`).join(",")}` : "");
+    verdicts.push({
+      symbol: candidate.symbol, side, aligned: alignedNow, bias, dataIssues,
+      tally: tallyHtf(bias, want), classification: classifyHtf(bias, want), detail,
+      timings: symbolTimings,
+    });
+  }
+  const alignedSymbols = new Set(verdicts.filter(verdict => verdict.aligned).map(verdict => verdict.symbol));
+  const aligned = slice.filter(candidate => alignedSymbols.has(candidate.symbol));
   return {
-    aligned, verdicts: measured,
-    unmeasured: candidates.length - measured.length,
-    deferred,
+    aligned, verdicts,
+    unmeasured: candidates.length - verdicts.length,
+    deferred: [...new Set(deferred)], failed: [...new Set(failed)], timings: timingBySymbol,
   };
 }
