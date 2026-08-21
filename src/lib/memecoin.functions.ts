@@ -29,12 +29,30 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
       return true;
     }).slice(0, 15);
 
+    // Live on-chain balances for the linked wallet: SOL plus every token it
+    // actually holds. A failure here is reported, never silently shown as "—".
     let walletSol: number | null = null;
+    let walletError: string | null = null;
+    let holdings: Array<{ mint: string; symbol: string | null; uiAmount: number }> = [];
     if (wallet?.public_key) {
-      try {
-        const { solBalance } = await import("@/lib/memecoin/jupiter.server");
-        walletSol = await solBalance(wallet.public_key);
-      } catch { walletSol = null; }
+      const { solBalance, listTokenHoldings } = await import("@/lib/memecoin/jupiter.server");
+      const [solRes, tokRes] = await Promise.allSettled([
+        solBalance(wallet.public_key),
+        listTokenHoldings(wallet.public_key),
+      ]);
+      if (solRes.status === "fulfilled") walletSol = solRes.value;
+      else walletError = solRes.reason instanceof Error ? solRes.reason.message : "Solana RPC unavailable";
+      if (tokRes.status === "fulfilled") {
+        // Name what we can from this user's snipes and the scanned feed.
+        const names = new Map<string, string>();
+        for (const p of positions ?? []) if (p.mint && p.symbol) names.set(p.mint, p.symbol);
+        for (const s of signals ?? []) if (s.mint && s.symbol) names.set(s.mint, s.symbol);
+        holdings = tokRes.value.map(t => ({
+          mint: t.mint, symbol: names.get(t.mint) ?? null, uiAmount: t.uiAmount,
+        }));
+      } else if (!walletError) {
+        walletError = tokRes.reason instanceof Error ? tokRes.reason.message : "Token balances unavailable";
+      }
     }
 
     const open = (positions ?? []).filter(p => p.status === "open");
@@ -51,6 +69,8 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
         updated_at: wallet.updated_at,
         hasKey: Boolean(wallet.encrypted_secret),
         sol: walletSol,
+        error: walletError,
+        holdings,
       } : null,
       signals: latestSignals,
       open, closed,
