@@ -417,6 +417,7 @@ export function historyFailureReason(e: unknown): HistoryFailureReason {
   if (/not supported|unsupported symbol|unknown symbol/i.test(msg)) return "symbol_unavailable";
   if (/provisioning|deploy/i.test(msg)) return "provisioning_error";
   if (/not connected|not deployed|does not match the account region/i.test(msg)) return "connection_error";
+  if (/cancelled|canceled|aborted/i.test(msg)) return "aborted";
   if (err?.name === "AbortError" || /timed out|timeout/i.test(msg)) return "provider_timeout";
   if ((err?.httpStatus ?? 0) >= 500) return "provider_unavailable";
   return "unknown_error";
