@@ -135,6 +135,7 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   } as Record<HtfKey, { state: HtfState; reason?: string } | null>));
   const timingBySymbol: Record<string, Partial<Record<HtfKey, HtfTimeframeTiming>>> = {};
   const startedAtByTask = new Map<string, number>();
+  const historyCursorByTask = new Map<string, number>();
   const deferred: string[] = [];
   const failed: string[] = [];
   // Budget comes from the caller (the cycle owns the clock) instead of a
@@ -171,6 +172,7 @@ export async function filterHtfAligned<T extends { symbol: string }>(
       const taskId = `${c.symbol}:${interval}`;
       const startedAt = Date.now();
       startedAtByTask.set(taskId, startedAt);
+      historyCursorByTask.set(taskId, historyTimingCursor());
       const remainingMs = deadline - startedAt;
       if (remainingMs < 1_000) continue;
       const result = await biasFor(supabase, c.symbol, interval, userId, {
@@ -198,8 +200,10 @@ export async function filterHtfAligned<T extends { symbol: string }>(
     let hasFailure = false;
     for (const { key, interval } of intervals) {
       const result = state[key];
-      const taskStart = startedAtByTask.get(`${candidate.symbol}:${interval}`);
-      const providerTiming = history.find(t =>
+      const taskId = `${candidate.symbol}:${interval}`;
+      const taskStart = startedAtByTask.get(taskId);
+      const taskHistoryCursor = historyCursorByTask.get(taskId) ?? historyCursor;
+      const providerTiming = historyTimings().slice(taskHistoryCursor).find(t =>
         t.label.endsWith(`:${interval}`)
         && (t.label.startsWith(candidate.symbol) || t.label.replace(/[^A-Z0-9]/gi, "").startsWith(candidate.symbol.replace(/[^A-Z0-9]/gi, ""))));
       const reason = result?.reason as HistoryFailureReason | undefined;
@@ -251,7 +255,7 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   const aligned = slice.filter(candidate => alignedSymbols.has(candidate.symbol));
   return {
     aligned, verdicts,
-    unmeasured: candidates.length - verdicts.length,
+    unmeasured: candidates.length - slice.length + deferred.length,
     deferred: [...new Set(deferred)], failed: [...new Set(failed)], timings: timingBySymbol,
   };
 }

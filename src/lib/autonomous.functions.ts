@@ -654,10 +654,10 @@ async function runAutonomousCycleCore(
           "htf_class:" + Object.entries(byClass).map(([k, n]) => `${k}=${n}`).join(","),
         );
       }
-      if (htf.unmeasured > 0) {
+      if (htf.deferred.length > 0) {
         // Never inspected inside the HTF budget — deferred, not rejected.
-        deferredCount += htf.unmeasured;
-        errors.push(`htf_unmeasured:${htf.unmeasured}:budget`);
+        deferredCount += htf.deferred.length;
+        errors.push(`htf_unmeasured:${htf.deferred.length}:budget`);
         for (const sym of htf.deferred) errors.push(`signal_deferred:${sym}:htf:cycle_budget`);
       }
       if (!verdicts.length) {
