@@ -38,7 +38,7 @@ describe("candle request coalescing", () => {
 
   it("starts fresh work instead of joining a shared request already aborted by all consumers", async () => {
     let calls = 0;
-    mockGetCandles.mockImplementation(async (_symbol, _interval, _limit, opts) => {
+    getCandles.mockImplementation(async (_symbol, _interval, _limit, opts) => {
       calls++;
       if (calls === 1) {
         await new Promise<void>((resolve, reject) => {
@@ -49,7 +49,7 @@ describe("candle request coalescing", () => {
           }, { once: true });
         });
       }
-      return candles;
+      return bars(40);
     });
     const firstController = new AbortController();
     const first = fetchCandlesWithSource(null, "BTC-USD", "1h", 200, "u1", { signal: firstController.signal });
@@ -57,7 +57,7 @@ describe("candle request coalescing", () => {
     const replacement = fetchCandlesWithSource(null, "BTC-USD", "1h", 200, "u1");
 
     await expect(first).rejects.toMatchObject({ reason: "aborted" });
-    await expect(replacement).resolves.toMatchObject({ candles });
+    await expect(replacement).resolves.toMatchObject({ candles: bars(40) });
     expect(calls).toBe(2);
   });
 
