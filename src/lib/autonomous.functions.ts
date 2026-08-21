@@ -1023,11 +1023,13 @@ async function runAutonomousCycleCore(
     }
     if (!(execQty > 0)) {
       bump(rejectReasons, "sizing:zero_volume"); rejected++;
+      gateOut(sig.symbol, "entry_filter", "sizing_zero_volume");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
       continue;
     }
+    funnel.entry_filter++;
  
     // ---------------------------------------------------------------
     // Stage 2 — Strategy lifecycle gate.
