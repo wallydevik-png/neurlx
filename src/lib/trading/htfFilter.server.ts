@@ -190,7 +190,6 @@ export async function filterHtfAligned<T extends { symbol: string }>(
     clearTimeout(deadlineTimer);
     opts?.signal?.removeEventListener("abort", abortStage);
   }
-  const history = historyTimings().slice(historyCursor);
   const verdicts: HtfVerdict[] = [];
   for (let index = 0; index < slice.length; index++) {
     const candidate = slice[index]!;

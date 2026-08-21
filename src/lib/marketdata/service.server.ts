@@ -215,10 +215,14 @@ export async function fetchCandlesWithSource(
       recordCacheEvent(key, "cache_hit");
       return tailOf(hit.value, limit);
     }
-    if (hit.inFlight) {
+    if (hit.inFlight && !hit.controller?.signal.aborted) {
       recordCacheEvent(key, "coalesced_join");
       return join(hit, opts?.signal).then(v => tailOf(v, limit));
     }
+    // Every prior consumer abandoned this shared request. Do not attach a
+    // fresh cycle/stage to an already-doomed promise while its rejection is
+    // still unwinding and waiting to clear the cache entry.
+    if (hit.inFlight && hit.controller?.signal.aborted) candleCache.delete(key);
   }
   const ttl = CANDLE_TTL_MS[interval] ?? 60_000;
   // The shared call gets its OWN signal, aborted only when every consumer has
@@ -234,7 +238,12 @@ export async function fetchCandlesWithSource(
       else candleCache.delete(key);
       return value;
     })
-    .catch(e => { candleCache.delete(key); throw e; });
+    .catch(e => {
+      // A replacement request may have been installed after this one aborted.
+      // Never let the old promise's cleanup delete the fresh cache entry.
+      if (candleCache.get(key) === entry) candleCache.delete(key);
+      throw e;
+    });
   entry.inFlight = inFlight;
   candleCache.set(key, entry);
   return join(entry, opts?.signal).then(v => tailOf(v, limit));
