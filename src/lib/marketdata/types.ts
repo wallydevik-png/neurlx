@@ -8,7 +8,10 @@ export interface MarketDataProvider {
   id: string;
   displayName: string;
   supports(symbol: string): boolean;
-  getCandles(symbol: string, interval: Interval, limit: number): Promise<Candle[]>;
+  getCandles(
+    symbol: string, interval: Interval, limit: number,
+    opts?: MarketDataRequestOptions,
+  ): Promise<Candle[]>;
   getLastPrice(symbol: string): Promise<number>;
 }
 
