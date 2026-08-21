@@ -882,6 +882,19 @@ async function runAutonomousCycleCore(
   const volumeMode = String(settings.trade_volume_mode ?? "auto");
   const fixedVolume = Number(settings.fixed_trade_volume ?? 0);
 
+  // Per-cycle execution funnel. Purely observational: every gate keeps its own
+  // rule, this only records which gate a candidate died at (the FIRST one, since
+  // each rejection short-circuits with `continue`) so the real bottleneck is
+  // visible instead of inferred.
+  const funnel = {
+    candidates: signals.length,
+    precheck: 0, entry_filter: 0, lifecycle: 0,
+    portfolio: 0, risk: 0, execution_intel: 0, executed: 0,
+  };
+  const gateOut = (symbol: string, gate: string, detail: string) => {
+    errors.push(`first_gate:${symbol}:${gate}:${detail}`);
+  };
+
   let slots = capacity;
   for (let signalIndex = 0; signalIndex < signals.length; signalIndex++) {
     const sig = signals[signalIndex];
@@ -899,9 +912,14 @@ async function runAutonomousCycleCore(
     // discard results already produced by other symbols.
     let stage = "precheck";
     try {
-    if (slots === 0) { bump(rejectReasons, "no_open_slots"); rejected++; continue; }
+    if (slots === 0) {
+      bump(rejectReasons, "no_open_slots"); rejected++;
+      gateOut(sig.symbol, "precheck", "no_open_slots");
+      continue;
+    }
     if (Number(sig.confidence) < minConf) {
       bump(rejectReasons, "below_min_confidence"); rejected++;
+      gateOut(sig.symbol, "precheck", `confidence ${Number(sig.confidence).toFixed(2)} < ${minConf}`);
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -912,6 +930,7 @@ async function runAutonomousCycleCore(
     // be rejected as "asset_not_allowed".
     if (allowedAssets.size > 0 && !allowedAssets.has(sig.symbol) && !brokerSymbols.has(sig.symbol)) {
       bump(rejectReasons, "asset_not_allowed"); rejected++;
+      gateOut(sig.symbol, "precheck", "asset_not_allowed");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -924,11 +943,13 @@ async function runAutonomousCycleCore(
  
     if (live && notional > perOrderCap) {
       bump(rejectReasons, "over_live_notional_cap"); rejected++;
+      gateOut(sig.symbol, "precheck", `notional ${notional.toFixed(2)} > cap ${perOrderCap}`);
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
       continue;
     }
+    funnel.precheck++;
  
     // Institutional entry gate — multi-timeframe, regime, structure, news.
     stage = "entry_filter";
