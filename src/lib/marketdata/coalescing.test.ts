@@ -36,6 +36,31 @@ describe("candle request coalescing", () => {
     expect(all.every(r => r.candles.length === 50)).toBe(true);
   });
 
+  it("starts fresh work instead of joining a shared request already aborted by all consumers", async () => {
+    let calls = 0;
+    getCandles.mockImplementation(async (_symbol, _interval, _limit, opts) => {
+      calls++;
+      if (calls === 1) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 100);
+          opts?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            queueMicrotask(() => reject(new Error("aborted")));
+          }, { once: true });
+        });
+      }
+      return bars(40);
+    });
+    const firstController = new AbortController();
+    const first = fetchCandlesWithSource(null, "BTC-USD", "1h", 200, "u1", { signal: firstController.signal });
+    firstController.abort();
+    const replacement = fetchCandlesWithSource(null, "BTC-USD", "1h", 200, "u1");
+
+    await expect(first).rejects.toMatchObject({ reason: "aborted" });
+    await expect(replacement).resolves.toMatchObject({ candles: bars(40) });
+    expect(calls).toBe(2);
+  });
+
   it("keeps the shared request alive when one consumer cancels", async () => {
     let sawAbort = false;
     getCandles.mockImplementation(async (_s, _i, _l, opts?: { signal?: AbortSignal }) => {
