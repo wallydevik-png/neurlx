@@ -1174,6 +1174,7 @@ async function runAutonomousCycleCore(
       if (!xi.approved) {
         bump(rejectReasons, `execution_intel:${xi.rejections[0] ?? xi.action}`);
         rejected++;
+        gateOut(sig.symbol, "execution_intel", `${xi.rejections[0] ?? xi.action} grade=${xi.grade} score=${xi.score.toFixed(1)}`);
         if (xi.shadowOnly) {
           await supabase.from("shadow_trades").insert({
             user_id: userId, strategy_id: liveGate?.strategyId ?? null,
