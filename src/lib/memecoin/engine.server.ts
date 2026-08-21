@@ -36,11 +36,20 @@ async function loadWalletSecret(db: DB, userId: string): Promise<{ publicKey: st
   return { publicKey: data.public_key as string, secret };
 }
 
+export type ScanTelemetry = { universe: number; scored: number; verdicts: { snipe: number; watch: number; avoid: number } };
+
 /** Refresh the scanned universe and persist the ranked candidates. */
-export async function refreshSignals(db: DB): Promise<MemeCandidate[]> {
-  const candidates = await scanMemecoins(20);
+export async function refreshSignals(db: DB): Promise<{ candidates: MemeCandidate[]; scan: ScanTelemetry }> {
+  const { scanMemecoinsDetailed } = await import("./scanner.server");
+  const res = await scanMemecoinsDetailed(20);
+  const candidates = res.candidates;
   const theses = await aiThesis(candidates);
   if (candidates.length) {
+    // Replace-per-mint rather than blind insert: the old code appended a new
+    // row on every scan, so the same token accumulated dozens of duplicate
+    // rows within the 6h window and the feed looked frozen.
+    const mints = candidates.map(c => c.mint);
+    await db.from("memecoin_signals").delete().in("mint", mints);
     await db.from("memecoin_signals").insert(candidates.map(c => ({
       mint: c.mint, symbol: c.symbol, name: c.name, score: c.score, verdict: c.verdict,
       price_usd: c.priceUsd, liquidity_usd: c.liquidityUsd, volume_24h_usd: c.volume24hUsd,
@@ -52,7 +61,10 @@ export async function refreshSignals(db: DB): Promise<MemeCandidate[]> {
     const cutoff = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     await db.from("memecoin_signals").delete().lt("created_at", cutoff);
   }
-  return candidates.map(c => ({ ...c, aiThesis: theses[c.symbol] } as MemeCandidate));
+  return {
+    candidates: candidates.map(c => ({ ...c, aiThesis: theses[c.symbol] } as MemeCandidate)),
+    scan: { universe: res.universe, scored: res.scored, verdicts: res.verdicts },
+  };
 }
 
 /** Open a snipe on one candidate. */
