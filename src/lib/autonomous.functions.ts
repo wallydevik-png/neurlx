@@ -1227,6 +1227,7 @@ async function runAutonomousCycleCore(
       if (result.status === "rejected" || result.status === "error") {
         bump(rejectReasons, `exec:${result.message ?? result.status}`);
         rejected++;
+        gateOut(sig.symbol, "broker_execution", result.message ?? result.status);
         await supabase.from("signals").update({
           status: "rejected", resolved_at: new Date().toISOString(),
         }).eq("id", sig.id);
