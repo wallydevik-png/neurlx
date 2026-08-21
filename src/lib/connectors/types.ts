@@ -225,7 +225,10 @@ export interface TradingConnector {
   closeLivePosition?(brokerPositionId: string, volume?: number): Promise<{ fillPrice?: number | null }>;
   /** Optional: connector can also serve as a real market-data source
    *  (candle history + broker symbol list) for signal generation. */
-  getCandles?(symbol: string, interval: ConnectorInterval, limit: number): Promise<ConnectorCandle[]>;
+  getCandles?(
+    symbol: string, interval: ConnectorInterval, limit: number,
+    opts?: ConnectorHistoryOptions,
+  ): Promise<ConnectorCandle[]>;
   listSymbols?(): Promise<string[]>;
 }
 
@@ -258,8 +261,19 @@ export type ConnectorInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
  *  does not implement this, the market-data layer falls back to whatever
  *  other providers are registered (and ultimately synthetic data, flagged as
  *  such — never silently). */
+/** Cancellation + budget controls for historical-data requests. Threaded from
+ *  the autonomous cycle so an expired cycle stops consuming provider slots. */
+export interface ConnectorHistoryOptions {
+  signal?: AbortSignal;
+  queueWaitMs?: number;
+  providerTimeoutMs?: number;
+}
+
 export interface MarketDataCapableConnector {
-  getCandles(symbol: string, interval: ConnectorInterval, limit: number): Promise<ConnectorCandle[]>;
+  getCandles(
+    symbol: string, interval: ConnectorInterval, limit: number,
+    opts?: ConnectorHistoryOptions,
+  ): Promise<ConnectorCandle[]>;
   /** The broker's full tradable instrument list, in NeurlX symbol form where
    *  resolvable (e.g. "EUR-USD", "BTC-USD"), used to scan beyond the fixed
    *  hardcoded universe. */

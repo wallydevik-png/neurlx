@@ -10,7 +10,7 @@
 // decrypts credentials, and hands back a ready MarketDataProvider plus the
 // broker's real tradable symbol list.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MarketDataProvider, Interval } from "./types";
+import type { MarketDataProvider, Interval, MarketDataRequestOptions } from "./types";
 import type { TradingConnector } from "@/lib/connectors/types";
 
 const MT_ROUTED = new Set([
@@ -83,8 +83,14 @@ export function createMt5MarketDataProvider(connector: TradingConnector): Market
     id: `mt5:${connector.id}`,
     displayName: `${connector.displayName} (live)`,
     supports: () => true,
-    async getCandles(symbol: string, interval: Interval, limit: number) {
-      const candles = await getCandles(symbol, interval, limit);
+    async getCandles(
+      symbol: string, interval: Interval, limit: number,
+      opts?: MarketDataRequestOptions,
+    ) {
+      // Cancellation/budget flows straight through to the connector so an
+      // expired cycle really cancels the provider request instead of leaving
+      // it running into the next cron tick.
+      const candles = await getCandles(symbol, interval, limit, opts);
       return candles;
     },
     async getLastPrice(symbol: string) {

@@ -14,7 +14,7 @@
 // all its fallback hosts and silently land on synthetic data with no
 // indication anywhere in the app.
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Candle, Interval, MarketDataProvider } from "./types";
+import type { Candle, Interval, MarketDataProvider, MarketDataRequestOptions } from "./types";
 import { createSyntheticProvider } from "./synthetic.server";
 import { listSupportedSymbols as listStaticSymbols } from "./symbols";
 import {
@@ -82,8 +82,9 @@ export async function fetchCandles(
   interval: Interval,
   limit = 200,
   userId?: string | null,
+  opts?: MarketDataRequestOptions,
 ): Promise<Candle[]> {
-  const result = await fetchCandlesWithSource(supabase, symbol, interval, limit, userId);
+  const result = await fetchCandlesWithSource(supabase, symbol, interval, limit, userId, opts);
   return result.candles;
 }
 
@@ -96,11 +97,12 @@ export async function fetchCandlesWithSource(
   interval: Interval,
   limit = 200,
   userId?: string | null,
+  opts?: MarketDataRequestOptions,
 ): Promise<CandleFetchResult> {
   let lastError: unknown = null;
   for (const provider of await resolveProvidersFor(supabase, userId, symbol)) {
     try {
-      const candles = await provider.getCandles(symbol, interval, limit);
+      const candles = await provider.getCandles(symbol, interval, limit, opts);
       if (!candles.length) continue;
       const isSynthetic = provider.id === "synthetic";
       if (isSynthetic) {

@@ -10,6 +10,8 @@ import { analyzeCandles, type AiSignal, type Direction } from "@/lib/trading/aiE
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { trendBias } from "@/lib/analysis/institutional";
 import { ema, macd, rsi } from "@/lib/analysis/indicators";
+import { historyFailureReason } from "@/lib/marketdata/historyGate.server";
+import { stageForReason, type MarketDataStage } from "@/lib/marketdata/symbolTelemetry";
 
 /** Resample a 15m close series into 4h buckets (16 bars each) so we can read
  *  a higher-timeframe bias without an extra broker request per symbol. */
@@ -131,11 +133,20 @@ export function consensus(votes: AnalystVote[]): { direction: Direction; confide
   return { direction, confidence, agreement: agree.length / votes.length };
 }
 
+export interface CommitteeOptions {
+  deadlineMs?: number;
+  /** Cycle-level cancellation: stops STARTING new symbol work. Work already
+   *  completed is always kept. */
+  signal?: AbortSignal;
+  /** Per-symbol market-data stage callback (requested/started/completed/…). */
+  onStage?: (symbol: string, stage: MarketDataStage, detail?: string) => void;
+}
+
 export async function runCommittee(
   supabase: SupabaseClient | null,
   symbols: string[],
   userId?: string | null,
-  options?: { deadlineMs?: number },
+  options?: CommitteeOptions,
 ): Promise<CommitteeVerdict[]> {
   // MetaApi rate-limits large bursts. Scan with a small worker pool instead of
   // firing the entire broker universe at once; one failed symbol remains
@@ -143,22 +154,36 @@ export async function runCommittee(
   const results: Array<CommitteeVerdict | null> = new Array(symbols.length).fill(null);
   let nextIndex = 0;
   const deadline = Date.now() + Math.max(5_000, options?.deadlineMs ?? 30_000);
+  const stage = options?.onStage ?? (() => {});
+  for (const s of symbols) stage(s, "requested");
+  const budgetLeft = () => deadline - Date.now();
   const worker = async () => {
-    while (nextIndex < symbols.length && Date.now() < deadline) {
+    while (nextIndex < symbols.length) {
       const index = nextIndex++;
       const symbol = symbols[index];
       if (!symbol) continue;
+      // Budget/abort checks mark the symbol DEFERRED, never rejected: it was
+      // simply never asked about.
+      if (options?.signal?.aborted || budgetLeft() <= 0) {
+        stage(symbol, "deferred", "cycle_budget");
+        continue;
+      }
       try {
-        if (deadline - Date.now() <= 0) break;
-        // Do not race a live broker request against a timer. Promise.race does
-        // not cancel the losing fetch, so timed-out requests continued in the
-        // background and saturated MetaApi's five-request account limit on
-        // every subsequent cycle. The connector already has an account-level
-        // concurrency queue and HTTP timeout; let each admitted request finish.
+        stage(symbol, "started");
+        // The request carries the cycle signal, so an expired cycle really
+        // cancels it instead of leaving it in flight against the provider's
+        // concurrency cap for the following tick.
         const { candles, source, isSynthetic } = await fetchCandlesWithSource(
           supabase, symbol, "15m", 200, userId,
+          {
+            ...(options?.signal ? { signal: options.signal } : {}),
+            queueWaitMs: Math.max(1_000, Math.min(6_000, budgetLeft())),
+          },
         );
-        if (!candles || candles.length < 60) continue;
+        if (!candles || candles.length < 60) {
+          stage(symbol, "too_few_candles", String(candles?.length ?? 0));
+          continue;
+        }
         const base = analyzeCandles(symbol, candles, source, isSynthetic);
         const votes = voteFor(base);
         const c = consensus(votes);
@@ -183,10 +208,15 @@ export async function runCommittee(
           entryMomentumConfirmed: momentum.confirmed,
           entryMomentumDetail: momentum.detail,
         } as CommitteeVerdict;
+        stage(symbol, "completed");
       } catch (e) {
-        if (Date.now() >= deadline) break;
+        // Isolated, per-symbol failure. Other symbols keep their completed
+        // results and the pool keeps working — one bad symbol never converts
+        // into a universe-wide market-data failure.
+        const reason = historyFailureReason(e);
+        stage(symbol, stageForReason(reason), reason);
         console.warn(
-          `[committee] skipped ${symbol}: live candles unavailable:`,
+          `[committee] ${symbol}: live candles unavailable (${reason}):`,
           e instanceof Error ? e.message : String(e),
         );
       }
