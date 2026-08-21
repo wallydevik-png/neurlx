@@ -1,56 +1,48 @@
-# Stabilize autonomous execution and memecoin sniper
+# Fix HTF cycle-budget exhaustion
 
 ## Objective
-Make the live engines operational and auditable without weakening any confidence, HTF, momentum, portfolio, risk, sizing, wallet, execution, or kill-switch rule.
+Make HTF scheduling use the existing four-slot account history limit efficiently so most eligible symbols receive a measured classification within the current cycle budget, without changing any trading or safety rule.
 
-## Autonomous engine
+## Root cause to address
+- The autonomous cycle calls the HTF filter with symbol concurrency forced to `1`.
+- Each symbol launches 1D, 4H, and 1H together, so only three of four allowed provider slots are used while every later symbol waits behind the current symbol.
+- The HTF stage has a shared abort deadline; once it expires, queued symbols are marked deferred even though the provider and committee were healthy.
+- Current telemetry aggregates all history calls and does not expose HTF symbol/timeframe lifecycle or coalescing counts, making queue starvation hard to distinguish from provider latency.
 
-1. **Correct HTF outcome semantics**
-   - Keep each candidate’s original BUY/SELL direction separate from HTF data state.
-   - Classify provider/queue/readiness failures as `signal_failed`, cycle exhaustion as `signal_deferred`, and only measured directional conflicts as `signal_rejected`.
-   - Preserve successful 1D/4H/1H results when another timeframe fails and preserve completed symbols when peers time out.
+## Implementation
 
-2. **Align timeout hierarchy with measured provider behavior**
-   - Make provider request, HTF stage, cycle, and watchdog deadlines explicitly ordered.
-   - Give the HTF stage enough room for the existing per-timeframe provider ceilings while retaining the bounded cycle and stale-cycle fence.
-   - Do not hold history slots during readiness, reconnection, scoring, or other non-history work.
+1. **Add cycle-scoped request telemetry**
+   - Extend history timings with queued, provider-start, completion/cancellation timestamps and retain queue/provider/total durations, outcome, reason, active count, and peak concurrency.
+   - Add candle-cache telemetry for provider starts, cache hits, and in-flight coalesced joins, scoped by cursor so each cycle reports its own counts.
+   - Emit HTF per-symbol/per-timeframe timing and outcome summaries plus cycle elapsed time.
 
-3. **Fix candle reuse and cancellation accounting**
-   - Audit all committee, HTF, entry, momentum, portfolio, lifecycle, and execution candle calls.
-   - Reuse real broker candles by account + symbol + timeframe + requested range/limit within a short freshness window.
-   - Correct shared-request consumer accounting so completed/cancelled consumers cannot incorrectly abort work still needed elsewhere.
-   - Never cache synthetic data or failures as successful broker data.
+2. **Replace serial HTF processing with fair bounded scheduling**
+   - Keep the account history gate and its maximum of four provider requests unchanged.
+   - Schedule eligible symbols concurrently with a small bounded pool while the gate remains the sole provider concurrency authority.
+   - Use fair per-symbol progression so one slow symbol cannot monopolize the stage; do not start work that cannot fit inside the remaining stage/cycle reserve.
+   - Preserve committee ranking/order as the only candidate priority; do not add profitability prediction or change eligibility.
 
-4. **Make per-symbol telemetry explicit**
-   - Record each symbol through market data, committee, HTF, momentum, entry, portfolio, risk, execution, deferred, failed, rejected, or executed.
-   - Include HTF per-timeframe timing/reason and portfolio score components in cycle traces.
-   - Keep legitimate momentum and portfolio-manager failures as rejections with their existing thresholds.
+3. **Preserve partial timeframe and symbol results**
+   - Track 1D, 4H, and 1H independently with settled results rather than losing completed timeframes when a sibling is cancelled.
+   - Keep completed verdicts from other symbols when one symbol is slow.
+   - Treat never-started or stage-cancelled measurement as `signal_deferred`; keep genuine provider failures as infrastructure failures and measured contradictions as rejections.
+   - Leave HTF alignment/classification rules unchanged.
 
-5. **Verify directional symmetry and execution persistence**
-   - Audit BUY → long and SELL → short through generation, HTF, momentum, portfolio, risk, broker submission, and stored positions.
-   - Retain spot SELL base-balance enforcement and margin short capability checks.
+4. **Correct budget accounting**
+   - Derive the HTF deadline from the cycle’s actual remaining time and an explicit downstream reserve.
+   - Bound queue/provider budgets to the remaining HTF window instead of granting each late request a fresh full timeout.
+   - Keep the 40-second cycle budget and existing watchdog unchanged.
 
-## Memecoin sniper
+5. **Verify candle reuse**
+   - Audit committee, HTF, entry, momentum, portfolio, risk, and execution-intel requests against the canonical account + symbol + timeframe cache key.
+   - Preserve one in-flight real broker request per canonical key, tail slicing for smaller callers, and no caching of synthetic data or failures.
+   - Fix only duplicate/cancellation accounting defects found by tests; do not alter analytical logic.
 
-1. **Use a real rotating discovery universe**
-   - Replace repeated `SOL/pump/WIF/BONK` search-only discovery with broader live Solana token discovery feeds, deduplicated by mint and best-liquidity pool.
-   - Keep the existing liquidity, momentum, rug-risk, score, wallet, loss-cap, and position-limit gates unchanged.
+## Tests and verification
+- Add tests for fair bounded scheduling, four-slot maximum, slow-symbol isolation, partial 1D/4H retention, completed-symbol retention, deferred-vs-failed semantics, remaining-budget propagation, and duplicate/coalesced request counting.
+- Run the focused HTF/history/coalescing tests and the full test suite; confirm the generated build remains healthy.
+- Run several authenticated back-to-back live autonomous cycles and report per cycle: scanned, committee completed, HTF completed/deferred/failed, queue average/p95, provider average/p95, peak provider concurrency, cache/coalescing counts, and elapsed time.
+- Compare before/after HTF completion and defer rates. A trade is never forced.
 
-2. **Expose actual cycle activity**
-   - Persist and display the current cycle’s scanned candidates, qualified targets, skipped reasons, attempted entries, failures, and successful swaps.
-   - Separate the live target list from older observations so users can see which memecoins the sniper is actively evaluating and trading.
-
-3. **Harden wallet and execution paths**
-   - Bound RPC calls and record endpoint-specific failures without hiding a successful fallback.
-   - Verify funded wallet selection, SOL/token balances, Jupiter quote/build/send, and position persistence end to end.
-
-## Tests and live verification
-
-- Add focused tests for provider concurrency, coalescing/account isolation, cancellation isolation, per-timeframe HTF retention, failure/deferred/rejection classification, completed-result retention, BUY/SELL symmetry, portfolio/momentum symmetry, and spot-vs-margin SELL behavior.
-- Add sniper tests for rotating discovery, mint deduplication, settings persistence, candidate classification, wallet/RPC fallback, and execution outcome reporting.
-- Run the complete test suite; the platform automatically checks type safety and build health.
-- Mint a safe authenticated preview session, run several back-to-back autonomous and sniper cycles against current live data, inspect server/database traces after each cycle, and iterate on infrastructure/code errors only.
-- A successful order will only be submitted when the unchanged trading gates produce a valid setup; no trade will be forced merely to satisfy testing.
-
-## Deliverable
-Report exact root causes, files changed, architecture changes, tests and counts, type/build results, BUY/SELL verification, live-cycle outcomes, and explicitly confirm that no trading threshold or risk gate changed.
+## Guardrail confirmation
+No confidence threshold, HTF confirmation rule, momentum rule, portfolio-manager threshold, risk rule, sizing rule, wallet rule, execution rule, kill switch, or watchdog duration will be changed.
