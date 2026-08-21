@@ -414,6 +414,13 @@ export interface TradeCandidate {
   stopLoss: number;
   takeProfit: number;
   confidence: number; // 0..1
+  /**
+   * Live regime classification measured by the entry gate in THIS cycle.
+   * Preferred over the stored snapshot: the snapshot is written after the
+   * fact, so on a fresh symbol it was absent and the score silently fell back
+   * to a flat 60 that no real setup could ever beat.
+   */
+  regimeNow?: { regime: string; tradable: boolean; confidence: number } | null;
 }
 
 export interface PortfolioVerdict {
