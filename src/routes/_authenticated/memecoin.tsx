@@ -136,7 +136,7 @@ function MemecoinDesk() {
       <section className="panel p-6 mt-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="font-semibold flex items-center gap-2"><Wallet className="w-4 h-4" /> Wallet</h2>
+            <h2 className="font-semibold flex items-center gap-2"><Wallet className="w-4 h-4" /> Wallet Vault</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-xl">
               Import a dedicated Phantom wallet to fund and trade directly. Its secret is encrypted immediately,
               never returned to this screen, and only decrypted server-side when signing a swap.
