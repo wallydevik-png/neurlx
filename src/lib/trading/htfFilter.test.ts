@@ -17,7 +17,7 @@ vi.mock("@/lib/marketdata/service.server", async importOriginal => {
         }, { once: true });
       });
       const rising = symbol !== "SELL";
-      const candles: Candle[] = Array.from({ length: 40 }, (_, i) => ({
+      const candles: Candle[] = Array.from({ length: 80 }, (_, i) => ({
         ts: i, open: rising ? i + 1 : 100 - i, high: rising ? i + 2 : 101 - i,
         low: rising ? i : 99 - i, close: rising ? i + 1.5 : 99.5 - i, volume: 1,
       }));
