@@ -138,6 +138,9 @@ export const Route = createFileRoute("/api/public/cron/autonomous")({
               memeResults.push({
                 userId: m.user_id, entries: r.entries?.length ?? 0,
                 exits: r.exits?.length ?? 0, skipped: r.skipped,
+                notes: r.notes?.slice(0, 10) ?? [],
+                scanned: r.scan?.universe ?? 0,
+                snipeable: r.scan?.verdicts.snipe ?? 0,
               });
             } catch (e) {
               memeResults.push({ userId: m.user_id, error: e instanceof Error ? e.message : String(e) });
