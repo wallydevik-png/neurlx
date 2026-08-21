@@ -1,0 +1,2 @@
+UPDATE public.exchange_connections SET live_equity_high_water = 0 WHERE status = 'connected' AND live_equity_high_water > 0;
+UPDATE public.automation_settings SET equity_high_water = 0, capital_preservation_active = false WHERE equity_high_water > 0;

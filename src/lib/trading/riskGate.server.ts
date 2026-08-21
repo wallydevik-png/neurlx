@@ -41,7 +41,9 @@ export async function evaluateRisk(
   }
 
   const notional = input.qty * input.entry;
-  if (notional > Number(settings.max_trade_size)) {
+  // Cent-level tolerance so floating-point noise on a size deliberately set
+  // AT the cap cannot read as "exceeds the cap". The limit itself is unchanged.
+  if (notional > Number(settings.max_trade_size) + 0.005) {
     return { allowed: false, reason: `Position size $${notional.toFixed(2)} exceeds max trade size $${settings.max_trade_size}.` };
   }
   if (settings.allowed_assets && settings.allowed_assets.length > 0 &&

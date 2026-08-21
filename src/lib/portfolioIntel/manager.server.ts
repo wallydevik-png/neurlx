@@ -414,6 +414,13 @@ export interface TradeCandidate {
   stopLoss: number;
   takeProfit: number;
   confidence: number; // 0..1
+  /**
+   * Live regime classification measured by the entry gate in THIS cycle.
+   * Preferred over the stored snapshot: the snapshot is written after the
+   * fact, so on a fresh symbol it was absent and the score silently fell back
+   * to a flat 60 that no real setup could ever beat.
+   */
+  regimeNow?: { regime: string; tradable: boolean; confidence: number } | null;
 }
 
 export interface PortfolioVerdict {
@@ -452,15 +459,22 @@ export async function evaluateOpportunity(
 
   let regime: string | null = null;
   let regimeScore = 60;
-  try {
-    const { data: recentRegime } = await supabase.from("market_regime_snapshots")
-      .select("regime, tradable, confidence").eq("user_id", userId).eq("symbol", candidate.symbol)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (recentRegime) {
-      regime = recentRegime.regime as string;
-      regimeScore = recentRegime.tradable ? 60 + Number(recentRegime.confidence) * 40 : 25;
-    }
-  } catch { /* best-effort — regime data is a scoring input, not a hard requirement */ }
+  if (candidate.regimeNow) {
+    regime = candidate.regimeNow.regime;
+    regimeScore = candidate.regimeNow.tradable
+      ? 60 + Math.max(0, Math.min(1, candidate.regimeNow.confidence)) * 40
+      : 25;
+  } else {
+    try {
+      const { data: recentRegime } = await supabase.from("market_regime_snapshots")
+        .select("regime, tradable, confidence").eq("user_id", userId).eq("symbol", candidate.symbol)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (recentRegime) {
+        regime = recentRegime.regime as string;
+        regimeScore = recentRegime.tradable ? 60 + Number(recentRegime.confidence) * 40 : 25;
+      }
+    } catch { /* best-effort — regime data is a scoring input, not a hard requirement */ }
+  }
 
   const maxCorr = ctx.open.length
     ? Math.max(...ctx.open.map(o => assumedCorrelation(candidate.symbol, o.symbol)))
@@ -480,11 +494,34 @@ export async function evaluateOpportunity(
   const base = candidate.symbol.split(/[-/]/)[0]?.toUpperCase() ?? candidate.symbol;
   const costScore = ["BTC", "ETH", "EUR", "GBP", "USD", "XAU"].includes(base) ? 80 : 60;
 
+  // Strategy quality. Prefer the strategy's own score; when it has none yet,
+  // fall back to its measured shadow/paper record instead of a flat 60 that
+  // is unreachable-by-design in defensive mode.
   let strategyScore = 60;
   if (candidate.strategyId) {
     const { data: strat } = await supabase.from("strategies").select("score")
       .eq("id", candidate.strategyId).maybeSingle();
     if (strat?.score != null) strategyScore = Number(strat.score);
+  }
+  if (strategyScore === 60) {
+    try {
+      let q = supabase.from("shadow_trades")
+        .select("pnl, strategy_id, symbol")
+        .eq("user_id", userId).eq("status", "closed")
+        .order("created_at", { ascending: false }).limit(40);
+      q = candidate.strategyId
+        ? q.eq("strategy_id", candidate.strategyId)
+        : q.eq("symbol", candidate.symbol);
+      const { data: shadow } = await q;
+      const pnls = (shadow ?? []).map(s => Number((s as { pnl: number | null }).pnl ?? 0));
+      if (pnls.length >= 5) {
+        const wins = pnls.filter(p => p > 0).length;
+        const winRate = wins / pnls.length;
+        // 0% win rate -> 30, 50% -> 60, 100% -> 90. Evidence-scaled, not flat.
+        strategyScore = 30 + winRate * 60;
+        notes.push(`Strategy record: ${wins}/${pnls.length} shadow wins (${(winRate * 100).toFixed(0)}%).`);
+      }
+    } catch { /* best-effort — evidence is an input, not a requirement */ }
   }
 
   const components: Record<string, number> = {

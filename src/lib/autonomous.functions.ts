@@ -1011,7 +1011,11 @@ async function runAutonomousCycleCore(
         const capNotional = live
           ? Math.min(Number(settings.max_trade_size ?? 500), perOrderCap)
           : Number(settings.max_trade_size ?? 500);
-        execQty = +Math.min(sized.volume, capNotional / entry, qty > 0 ? Math.max(qty, sized.volume) : sized.volume).toFixed(8);
+        // Round DOWN to 8dp: rounding to nearest could nudge the notional a
+        // hair above max_trade_size and the risk gate then rejected a trade
+        // that was sized exactly at the cap ("$10.00 exceeds $10").
+        const capped = Math.min(sized.volume, capNotional / entry, qty > 0 ? Math.max(qty, sized.volume) : sized.volume);
+        execQty = Math.floor(capped * 1e8) / 1e8;
       }
       errors.push(`sizing:${sig.symbol}:${(riskPct * 100).toFixed(2)}%:${notes[0] ?? ""}`);
       await supabase.from("signals").update({
@@ -1069,12 +1073,20 @@ async function runAutonomousCycleCore(
     stage = "portfolio_manager";
     if (pmCtx && settings.pm_enabled !== false) {
       try {
+        const regimeNow = entryEval
+          ? {
+              regime: entryEval.regime.regime,
+              tradable: entryEval.regime.tradable,
+              confidence: entryEval.regime.confidenceMultiplier,
+            }
+          : null;
         const verdict = await evaluateOpportunity(supabase, userId, pmCtx, {
           signalId: sig.id,
           strategyId: liveGate?.strategyId ?? null,
           symbol: sig.symbol, side, entry,
           stopLoss: execStop, takeProfit: execTp,
           confidence: entryEval?.confidence ?? Number(sig.confidence),
+          regimeNow,
         });
         await recordDecision(supabase, userId, {
           signalId: sig.id, strategyId: liveGate?.strategyId ?? null,
