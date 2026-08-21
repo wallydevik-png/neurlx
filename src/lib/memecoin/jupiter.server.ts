@@ -242,9 +242,45 @@ export async function swap(opts: {
     encoded, { encoding: "base64", maxRetries: 3, preflightCommitment: "confirmed" },
   ]);
 
+  // A signature only means the transaction was ACCEPTED for propagation. Under
+  // memecoin congestion a large share of swaps are dropped or land with an
+  // on-chain error, and recording those as filled positions is how the desk
+  // ends up tracking trades that never happened. Confirm before returning.
+  await confirmSignature(signature);
+
   return {
     signature,
     outAmount: Number(quote.outAmount),
     priceImpactPct: Number(quote.priceImpactPct ?? 0) * 100,
   };
+}
+
+type SigStatus = {
+  value: Array<{ confirmationStatus?: string; err?: unknown } | null>;
+};
+
+/** Poll until the swap is confirmed on-chain, or throw with the real reason. */
+export async function confirmSignature(signature: string, timeoutMs = 45_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastSeen: string | null = null;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 2_000));
+    let status: SigStatus | null = null;
+    try {
+      status = await rpc<SigStatus>("getSignatureStatuses", [[signature], { searchTransactionHistory: true }]);
+    } catch {
+      continue; // transient RPC failure — keep polling until the deadline
+    }
+    const entry = status?.value?.[0];
+    if (!entry) continue;
+    if (entry.err) {
+      throw new Error(`Swap failed on-chain (${signature.slice(0, 12)}…): ${JSON.stringify(entry.err)}`);
+    }
+    lastSeen = entry.confirmationStatus ?? null;
+    if (lastSeen === "confirmed" || lastSeen === "finalized") return;
+  }
+  throw new Error(
+    `Swap was not confirmed within ${Math.round(timeoutMs / 1000)}s (${signature.slice(0, 12)}…, last status: ${lastSeen ?? "unknown"}). ` +
+    `It may still land — check the wallet before retrying.`,
+  );
 }
