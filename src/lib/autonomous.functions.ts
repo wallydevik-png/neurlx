@@ -975,6 +975,7 @@ async function runAutonomousCycleCore(
     if (!entryEval) {
       bump(rejectReasons, "entry_filter:evaluation_unavailable");
       rejected++;
+      gateOut(sig.symbol, "entry_filter", "evaluation_unavailable");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -983,6 +984,7 @@ async function runAutonomousCycleCore(
     if (entryEval && !entryEval.approved) {
       bump(rejectReasons, `entry_filter:${entryEval.rejections[0] ?? "failed"}`);
       rejected++;
+      gateOut(sig.symbol, "entry_filter", entryEval.rejections[0] ?? "failed");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
