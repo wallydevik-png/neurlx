@@ -217,13 +217,18 @@ export const snipeSignal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { signalId: string }) => d)
   .handler(async ({ data, context }) => {
-    const { data: sig } = await context.supabase.from("memecoin_signals")
+    // Wallet secrets are intentionally unreadable through the user's RLS
+    // client. The caller is authenticated above and every engine operation is
+    // explicitly scoped to context.userId, so execute through the server-only
+    // client rather than making a configured vault look empty.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: sig } = await supabaseAdmin.from("memecoin_signals")
       .select("*").eq("id", data.signalId).maybeSingle();
     if (!sig) throw new Error("That signal is no longer available");
 
     const { loadSettings, buyCandidate } = await import("@/lib/memecoin/engine.server");
-    const settings = await loadSettings(context.supabase, context.userId);
-    const r = await buyCandidate(context.supabase, context.userId, {
+    const settings = await loadSettings(supabaseAdmin, context.userId);
+    const r = await buyCandidate(supabaseAdmin, context.userId, {
       mint: sig.mint, symbol: sig.symbol, name: sig.name ?? sig.symbol,
       priceUsd: Number(sig.price_usd ?? 0), liquidityUsd: Number(sig.liquidity_usd ?? 0),
       volume24hUsd: Number(sig.volume_24h_usd ?? 0), volume5mUsd: 0,
@@ -241,7 +246,8 @@ export const exitMemecoinPosition = createServerFn({ method: "POST" })
   .inputValidator((d: { positionId: string }) => d)
   .handler(async ({ data, context }) => {
     const { sellPosition } = await import("@/lib/memecoin/engine.server");
-    return sellPosition(context.supabase, context.userId, data.positionId, "manual_exit");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    return sellPosition(supabaseAdmin, context.userId, data.positionId, "manual_exit");
   });
 
 /** Run one full sniper cycle now. */
@@ -249,5 +255,6 @@ export const runMemecoinCycleNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { runMemecoinCycle } = await import("@/lib/memecoin/engine.server");
-    return runMemecoinCycle(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    return runMemecoinCycle(supabaseAdmin, context.userId);
   });

@@ -28,8 +28,21 @@ export async function loadSettings(db: DB, userId: string): Promise<MemeSettings
   return { ...DEFAULTS, ...data } as MemeSettings;
 }
 
-async function loadWalletSecret(db: DB, userId: string): Promise<{ publicKey: string; secret: string } | null> {
-  const { data } = await db.from("memecoin_wallets").select("public_key,encrypted_secret")
+async function loadWalletSecret(_db: DB, userId: string): Promise<{ publicKey: string; secret: string } | null> {
+  // RLS on memecoin_wallets only grants SELECT to admins reading their own
+  // row ("admins read own wallet row" policy) — the table is deliberately
+  // unreadable by ordinary authenticated users because it holds the
+  // encrypted secret. Every entrypoint here (manual snipe, manual exit,
+  // "run cycle now", and the position manager) is invoked with the
+  // request-scoped, RLS-bound client for non-admin users, so passing that
+  // client straight into this SELECT silently returned zero rows for every
+  // non-admin trader — buyCandidate/sellPosition then failed with "No
+  // trading wallet key is configured" even though a wallet was saved, which
+  // is why entries/exits never fired outside the cron path (which happens
+  // to run as the service role). Always read this one table through the
+  // service-role client, exactly like getMemecoinDesk already does.
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin.from("memecoin_wallets").select("public_key,encrypted_secret")
     .eq("user_id", userId).maybeSingle();
   if (!data?.encrypted_secret) return null;
   const secret = await decryptJSON<string>(data.encrypted_secret);
