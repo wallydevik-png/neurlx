@@ -36,7 +36,7 @@ async function biasFor(
   symbol: string,
   interval: "1d" | "4h" | "1h",
   userId?: string | null,
-  opts?: { signal?: AbortSignal; queueWaitMs?: number },
+  opts?: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number },
 ): Promise<{ state: HtfState; reason?: string }> {
   try {
     // Each timeframe has its OWN bounded request. A slow 1D can never block
@@ -45,6 +45,7 @@ async function biasFor(
     const { candles } = await fetchCandlesWithSource(supabase, symbol, interval, 220, userId, {
       ...(opts?.signal ? { signal: opts.signal } : {}),
       ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
+      ...(opts?.providerTimeoutMs ? { providerTimeoutMs: opts.providerTimeoutMs } : {}),
     });
     if (!candles || candles.length < 30) return { state: "unknown", reason: "too_few_candles" };
     const bias = trendBias(candles.map(c => c.close));
@@ -64,7 +65,7 @@ export async function checkHtfAlignment(
   symbol: string,
   side: "buy" | "sell",
   userId?: string | null,
-  opts?: { signal?: AbortSignal; queueWaitMs?: number },
+  opts?: { signal?: AbortSignal; queueWaitMs?: number; providerTimeoutMs?: number },
 ): Promise<HtfVerdict> {
   const want = side === "buy" ? "bullish" : "bearish";
   // Independent per-timeframe boundaries: one failing timeframe degrades to
@@ -117,6 +118,14 @@ export async function filterHtfAligned<T extends { symbol: string }>(
   // Budget comes from the caller (the cycle owns the clock) instead of a
   // hardcoded 13s that could outlive the remaining cycle budget.
   const deadline = Date.now() + Math.max(3_000, opts?.deadlineMs ?? 13_000);
+  // Enforce the stage deadline on work already in flight as well as work not
+  // yet started. Without this, a request acquiring a slot near the deadline
+  // could retain it for a fresh full provider timeout and starve the next run.
+  const stageController = new AbortController();
+  const abortStage = () => stageController.abort();
+  if (opts?.signal?.aborted) abortStage();
+  else opts?.signal?.addEventListener("abort", abortStage, { once: true });
+  const deadlineTimer = setTimeout(abortStage, Math.max(1, deadline - Date.now()));
   const worker = async () => {
     while (next < slice.length) {
       const i = next++;
@@ -127,9 +136,11 @@ export async function filterHtfAligned<T extends { symbol: string }>(
         continue;
       }
       try {
+        const remainingMs = Math.max(1_000, deadline - Date.now());
         verdicts[i] = await checkHtfAlignment(supabase, c.symbol, sideOf(c), userId, {
-          ...(opts?.signal ? { signal: opts.signal } : {}),
-          queueWaitMs: Math.max(1_000, Math.min(6_000, deadline - Date.now())),
+          signal: stageController.signal,
+          queueWaitMs: Math.max(1_000, Math.min(6_000, remainingMs - 500)),
+          providerTimeoutMs: Math.max(1_000, remainingMs - 500),
         });
       } catch {
         // A slow/unavailable broker symbol must not discard verdicts already
@@ -137,7 +148,12 @@ export async function filterHtfAligned<T extends { symbol: string }>(
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(concurrency, slice.length) }, () => worker()));
+  try {
+    await Promise.all(Array.from({ length: Math.min(concurrency, slice.length) }, () => worker()));
+  } finally {
+    clearTimeout(deadlineTimer);
+    opts?.signal?.removeEventListener("abort", abortStage);
+  }
   const aligned = slice.filter((_, i) => verdicts[i]?.aligned);
   const measured = verdicts.filter((v): v is HtfVerdict => v !== null);
   return {

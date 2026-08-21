@@ -981,16 +981,26 @@ export function createMt5Connector(
       // Exactly ONE provider request per slot. Reconnect + single retry happen
       // after the slot is released, so a reconnect never blocks other symbols.
       const providerBudgetMs = opts?.providerTimeoutMs ?? historyProviderBudget(timeframe);
-      const attempt = () => withHistoryLimit(
+      const queueBudgetMs = opts?.queueWaitMs ?? HISTORY_QUEUE_WAIT_MS;
+      // A reconnect retry shares one logical queue+provider budget with the
+      // first attempt. It must never silently receive a second full window.
+      const logicalDeadline = Date.now() + queueBudgetMs + providerBudgetMs;
+      const attempt = () => {
+        const remainingMs = logicalDeadline - Date.now();
+        if (remainingMs < 1_000) throw new Error(`History request budget exhausted for ${s}:${timeframe}`);
+        const attemptQueueMs = Math.max(250, Math.min(queueBudgetMs, Math.floor(remainingMs / 3)));
+        const attemptProviderMs = Math.max(500, remainingMs - attemptQueueMs);
+        return withHistoryLimit(
         state.accountId,
-        (signal) => marketDataReq<RawCandle[]>(path, signal, providerBudgetMs),
+        (signal) => marketDataReq<RawCandle[]>(path, signal, attemptProviderMs),
         {
           label: `${s}:${timeframe}`,
-          providerTimeoutMs: providerBudgetMs,
+          providerTimeoutMs: attemptProviderMs,
+          queueWaitMs: attemptQueueMs,
           ...(opts?.signal ? { signal: opts.signal } : {}),
-          ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
         },
       );
+      };
 
       let r: RawCandle[];
       try {
