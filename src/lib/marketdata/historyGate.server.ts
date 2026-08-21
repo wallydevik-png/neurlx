@@ -213,17 +213,30 @@ export function historyTimings(): HistoryTiming[] {
 
 /** Aggregate view used in cycle notes: is queueing or the provider the cost? */
 export function historyTimingSummary() {
-  if (!timings.length) return null;
-  const q = timings.map(t => t.queueMs).sort((a, b) => a - b);
-  const p = timings.map(t => t.providerMs).sort((a, b) => a - b);
+  return historyTimingSummarySince(0);
+}
+
+/** Cursor for cycle-scoped telemetry. Timings are process-global because the
+ * semaphore is process-global, but a run must not report every request made by
+ * earlier runs (the UI was showing n=373 for a ten-symbol cycle). */
+export function historyTimingCursor(): number {
+  return timings.length;
+}
+
+/** Aggregate only requests recorded after `cursor`. */
+export function historyTimingSummarySince(cursor: number) {
+  const recent = timings.slice(Math.max(0, cursor));
+  if (!recent.length) return null;
+  const q = recent.map(t => t.queueMs).sort((a, b) => a - b);
+  const p = recent.map(t => t.providerMs).sort((a, b) => a - b);
   const pct = (arr: number[], f: number) => arr[Math.min(arr.length - 1, Math.floor(arr.length * f))] ?? 0;
   return {
-    n: timings.length,
+    n: recent.length,
     queueP50: pct(q, 0.5), queueP95: pct(q, 0.95), queueMax: q[q.length - 1] ?? 0,
     providerP50: pct(p, 0.5), providerP95: pct(p, 0.95), providerMax: p[p.length - 1] ?? 0,
-    failed: timings.filter(t => t.outcome === "failed").length,
-    queuePhaseFailures: timings.filter(t => t.outcome === "failed" && t.phase === "queue").length,
-    providerPhaseFailures: timings.filter(t => t.outcome === "failed" && t.phase === "provider").length,
+    failed: recent.filter(t => t.outcome === "failed").length,
+    queuePhaseFailures: recent.filter(t => t.outcome === "failed" && t.phase === "queue").length,
+    providerPhaseFailures: recent.filter(t => t.outcome === "failed" && t.phase === "provider").length,
   };
 }
 

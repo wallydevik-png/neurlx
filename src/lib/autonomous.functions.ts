@@ -97,6 +97,10 @@ async function runAutonomousCycleCore(
   cycleSignal?: AbortSignal,
 ): Promise<CycleResult> {
   const cycleStartedMs = Date.now();
+  // Snapshot the process-global history telemetry so this run reports only its
+  // own provider work rather than accumulating every earlier cron invocation.
+  const { historyTimingCursor } = await import("@/lib/marketdata/historyGate.server");
+  const historyCursor = historyTimingCursor();
   // Budget ladder (must stay ordered). Measured provider P95 for 1D history is
   // ~12s, so any HTF stage budget below that guarantees `htf:cycle_budget`
   // deferrals no matter how healthy the broker is:
@@ -195,8 +199,8 @@ async function runAutonomousCycleCore(
     // from a slow broker without guessing.
     let timingNote: string | null = null;
     try {
-      const { historyTimingSummary } = await import("@/lib/marketdata/historyGate.server");
-      const s = historyTimingSummary();
+      const { historyTimingSummarySince } = await import("@/lib/marketdata/historyGate.server");
+      const s = historyTimingSummarySince(historyCursor);
       if (s) {
         timingNote =
           `history_timing:n=${s.n}:queue_p50=${s.queueP50}:queue_p95=${s.queueP95}` +
@@ -584,10 +588,13 @@ async function runAutonomousCycleCore(
         v => v.consensusDirection as "buy" | "sell",
         userId,
         Math.min(viable.length, 12),
-        2,
+        // One symbol fans out to exactly three timeframe requests. Keeping one
+        // symbol in flight uses three of four provider slots and eliminates the
+        // guaranteed queueing caused by two symbols (six requests) at once.
+        1,
         {
           ...(cycleSignal ? { signal: cycleSignal } : {}),
-          deadlineMs: Math.max(3_000, Math.min(14_000, budgetLeftMs() - 10_000)),
+          deadlineMs: Math.max(3_000, Math.min(17_000, budgetLeftMs() - 10_000)),
         },
       );
       const picks = htf.aligned.slice(0, candidateLimit);

@@ -538,7 +538,7 @@ const HISTORY_QUEUE_WAIT_MS = 6_000;   // < HTF per-symbol budget
  * independent 6s budget, and the gate ceiling still bounds the slot.
  */
 const HISTORY_PROVIDER_TIMEOUT_MS: Record<string, number> = {
-  "1m": 6_000, "5m": 6_000, "15m": 6_500, "1h": 8_000, "4h": 10_000, "1d": 12_000,
+  "1m": 6_000, "5m": 6_000, "15m": 6_500, "1h": 9_000, "4h": 12_000, "1d": 15_000,
 };
 const HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS = 7_000;
 const READINESS_TIMEOUT_MS = 8_000;       // < signal budget < cycle budget

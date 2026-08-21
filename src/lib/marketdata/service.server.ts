@@ -158,7 +158,10 @@ function join(entry: CacheEntry, signal?: AbortSignal): Promise<CandleFetchResul
  * cycle instead of one. Requests are now normalised onto a canonical bar
  * count and each caller is served the tail it actually asked for.
  */
-const CANONICAL_LIMIT = 260;
+// 220 covers committee + HTF analysis without inflating every request to the
+// execution-intelligence maximum. Requests that genuinely need >220 retain
+// their own larger key rather than making all 15m/1D pulls unnecessarily heavy.
+const CANONICAL_LIMIT = 220;
 function canonicalLimit(limit: number): number {
   return limit <= CANONICAL_LIMIT ? CANONICAL_LIMIT : limit;
 }
