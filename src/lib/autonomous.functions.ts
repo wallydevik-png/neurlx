@@ -1069,12 +1069,20 @@ async function runAutonomousCycleCore(
     stage = "portfolio_manager";
     if (pmCtx && settings.pm_enabled !== false) {
       try {
+        const regimeNow = entryEval
+          ? {
+              regime: entryEval.regime.regime,
+              tradable: entryEval.regime.tradable,
+              confidence: entryEval.regime.confidenceMultiplier,
+            }
+          : null;
         const verdict = await evaluateOpportunity(supabase, userId, pmCtx, {
           signalId: sig.id,
           strategyId: liveGate?.strategyId ?? null,
           symbol: sig.symbol, side, entry,
           stopLoss: execStop, takeProfit: execTp,
           confidence: entryEval?.confidence ?? Number(sig.confidence),
+          regimeNow,
         });
         await recordDecision(supabase, userId, {
           signalId: sig.id, strategyId: liveGate?.strategyId ?? null,
