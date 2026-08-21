@@ -109,11 +109,46 @@ interface CacheEntry {
   ttl: number;
   value?: CandleFetchResult;
   inFlight?: Promise<CandleFetchResult>;
+  /** Cancellation shared by every consumer of one in-flight provider call. */
+  controller?: AbortController;
+  consumers?: number;
+  cancelled?: number;
 }
 const candleCache = new Map<string, CacheEntry>();
 
 /** Test/telemetry hook. */
 export function resetCandleCache() { candleCache.clear(); }
+
+/**
+ * Joins an already in-flight request. Two properties matter:
+ *  - one consumer giving up (cycle budget, stage deadline) must NOT cancel the
+ *    shared provider call while another consumer still needs the data;
+ *  - the shared call must still be cancellable once *every* consumer is gone,
+ *    so an abandoned cycle stops occupying a provider slot.
+ */
+function join(entry: CacheEntry, signal?: AbortSignal): Promise<CandleFetchResult> {
+  const shared = entry.inFlight!;
+  entry.consumers = (entry.consumers ?? 0) + 1;
+  if (!signal) return shared;
+  if (signal.aborted) {
+    entry.cancelled = (entry.cancelled ?? 0) + 1;
+    if (entry.cancelled >= (entry.consumers ?? 1)) entry.controller?.abort();
+    return Promise.reject(new Error("market-data request cancelled"));
+  }
+  return new Promise<CandleFetchResult>((resolve, reject) => {
+    const onAbort = () => {
+      entry.cancelled = (entry.cancelled ?? 0) + 1;
+      // Only the LAST interested consumer may cancel the underlying request.
+      if (entry.cancelled >= (entry.consumers ?? 1)) entry.controller?.abort();
+      reject(new Error("market-data request cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    shared.then(
+      v => { signal.removeEventListener("abort", onAbort); resolve(v); },
+      e => { signal.removeEventListener("abort", onAbort); reject(e); },
+    );
+  });
+}
 
 export async function fetchCandlesWithSource(
   supabase: SupabaseClient | null,
@@ -128,20 +163,27 @@ export async function fetchCandlesWithSource(
   const hit = candleCache.get(key);
   if (hit) {
     if (hit.value && now - hit.at < hit.ttl) return hit.value;
-    if (hit.inFlight) return hit.inFlight;
+    if (hit.inFlight) return join(hit, opts?.signal);
   }
   const ttl = CANDLE_TTL_MS[interval] ?? 60_000;
-  const inFlight = fetchCandlesUncached(supabase, symbol, interval, limit, userId, opts)
+  // The shared call gets its OWN signal, aborted only when every consumer has
+  // walked away — never by whichever consumer happened to time out first.
+  const controller = new AbortController();
+  const entry: CacheEntry = { at: now, ttl, controller, consumers: 0, cancelled: 0 };
+  const sharedOpts: MarketDataRequestOptions = { ...opts, signal: controller.signal };
+  const inFlight = fetchCandlesUncached(supabase, symbol, interval, limit, userId, sharedOpts)
     .then(value => {
-      // Only real broker data is worth reusing.
+      // Only real broker data is worth reusing. Failures are never cached.
       if (!value.isSynthetic) candleCache.set(key, { at: Date.now(), ttl, value });
       else candleCache.delete(key);
       return value;
     })
     .catch(e => { candleCache.delete(key); throw e; });
-  candleCache.set(key, { at: now, ttl, inFlight });
-  return inFlight;
+  entry.inFlight = inFlight;
+  candleCache.set(key, entry);
+  return join(entry, opts?.signal);
 }
+
 
 async function fetchCandlesUncached(
   supabase: SupabaseClient | null,

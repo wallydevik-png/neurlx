@@ -15,21 +15,60 @@ import { wordlist } from "@scure/bip39/wordlists/english.js";
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const JUP = "https://lite-api.jup.ag/swap/v1";
 
+/**
+ * Solana RPC endpoints, tried in order.
+ *
+ * `api.mainnet-beta.solana.com` rejects datacenter/edge egress with HTTP 403
+ * ("Balance unavailable: Solana RPC getBalance failed (403)"), which is why a
+ * funded wallet showed no balance at all. A single hardcoded endpoint is a
+ * single point of failure, so we fail over across public endpoints and only
+ * report an error when every one of them refuses.
+ */
+export function rpcEndpoints(): string[] {
+  const configured = process.env["SOLANA_RPC_URL"];
+  return [
+    ...(configured ? [configured] : []),
+    "https://solana-rpc.publicnode.com",
+    "https://api.mainnet-beta.solana.com",
+    "https://solana.api.onfinality.io/public",
+  ];
+}
+
 export function rpcUrl(): string {
-  return process.env["SOLANA_RPC_URL"] || "https://api.mainnet-beta.solana.com";
+  return rpcEndpoints()[0]!;
 }
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(rpcUrl(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Solana RPC ${method} failed (${res.status})`);
-  const json = await res.json() as { result?: T; error?: { message: string } };
-  if (json.error) throw new Error(`Solana RPC ${method}: ${json.error.message}`);
-  return json.result as T;
+  const errors: string[] = [];
+  for (const url of rpcEndpoints()) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+    } catch (e) {
+      errors.push(`${host(url)}: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+    if (!res.ok) {
+      // 403/429/5xx are endpoint-level refusals — try the next provider.
+      errors.push(`${host(url)}: HTTP ${res.status}`);
+      continue;
+    }
+    const json = await res.json() as { result?: T; error?: { message: string } };
+    // A JSON-RPC error is an answer from the chain, not an endpoint failure.
+    if (json.error) throw new Error(`Solana RPC ${method}: ${json.error.message}`);
+    return json.result as T;
+  }
+  throw new Error(`Solana RPC ${method} failed on all endpoints (${errors.join("; ")})`);
 }
+
+function host(url: string): string {
+  try { return new URL(url).host; } catch { return url; }
+}
+
 
 async function deriveEd25519(seed: BufferSource, path: number[]): Promise<Keypair> {
   const masterKey = await crypto.subtle.importKey(

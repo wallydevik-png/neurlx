@@ -523,9 +523,30 @@ const SYMBOL_TTL_MS = 30 * 60 * 1000;
  * the remaining symbols and produced the queue saturation seen in telemetry.
  */
 const HISTORY_QUEUE_WAIT_MS = 6_000;   // < HTF per-symbol budget
-const HISTORY_PROVIDER_TIMEOUT_MS = 7_000;
-const HISTORY_REQUEST_TIMEOUT_MS = 6_000; // fires before the gate's own ceiling
+/**
+ * Provider budget, measured per timeframe.
+ *
+ * The old design gave EVERY history request a flat 6s application timeout
+ * (`HISTORY_REQUEST_TIMEOUT_MS`) that fired *inside* the gate's own 7s slot
+ * ceiling. Telemetry showed the 6s deadline firing after the slot was already
+ * held, on the heavy pulls only (1D/4H with limit=220): the provider was still
+ * answering, we were simply cutting it off. A daily-bar request is a much
+ * bigger server-side query than a 15m one, so a single flat number is either
+ * too short for 1D or needlessly generous for 1m.
+ *
+ * This is stage budgeting, not "raise every timeout": queue wait keeps its own
+ * independent 6s budget, and the gate ceiling still bounds the slot.
+ */
+const HISTORY_PROVIDER_TIMEOUT_MS: Record<string, number> = {
+  "1m": 6_000, "5m": 6_000, "15m": 6_500, "1h": 8_000, "4h": 10_000, "1d": 12_000,
+};
+const HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS = 7_000;
 const READINESS_TIMEOUT_MS = 8_000;       // < signal budget < cycle budget
+
+function historyProviderBudget(timeframe: string): number {
+  return HISTORY_PROVIDER_TIMEOUT_MS[timeframe] ?? HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS;
+}
+
 
 async function withHistoryLimit<T>(
   accountId: string,
@@ -534,7 +555,7 @@ async function withHistoryLimit<T>(
 ): Promise<T> {
   return withHistorySlot(accountId || "mt5", fn, {
     queueWaitMs: opts.queueWaitMs ?? HISTORY_QUEUE_WAIT_MS,
-    providerTimeoutMs: opts.providerTimeoutMs ?? HISTORY_PROVIDER_TIMEOUT_MS,
+    providerTimeoutMs: opts.providerTimeoutMs ?? HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS,
     ...(opts.label ? { label: opts.label } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
@@ -740,7 +761,7 @@ export function createMt5Connector(
    * is precisely how a 20s provisioning call used to consume a 12s slot budget
    * and starve every other symbol in the cycle.
    */
-  async function marketDataReq<T>(path: string, signal?: AbortSignal): Promise<T> {
+  async function marketDataReq<T>(path: string, signal?: AbortSignal, budgetMs?: number): Promise<T> {
     return doRequest<T>({
       ctx: logCtx,
       method: "GET",
@@ -748,10 +769,15 @@ export function createMt5Connector(
       url: `${marketDataBaseFor(state.region)}${path}`,
       headers: { "auth-token": state.token, "Content-Type": "application/json" },
       signed: true,
-      timeoutMs: HISTORY_REQUEST_TIMEOUT_MS,
+      // ONE authoritative deadline per request: the gate owns it and aborts via
+      // `signal`. The inner deadline sits slightly *after* it purely as a
+      // backstop, so a slot-budget abort is reported as such instead of being
+      // mislabelled a provider timeout by a shorter competing timer.
+      timeoutMs: (budgetMs ?? HISTORY_PROVIDER_TIMEOUT_DEFAULT_MS) + 750,
       ...(signal ? { signal } : {}),
     });
   }
+
 
   /** Readiness with its OWN bounded timeout, independent of the history gate
    *  and of the cycle watchdog. A provider that cannot be made ready fails
@@ -954,16 +980,18 @@ export function createMt5Connector(
         `/users/current/accounts/${state.accountId}/historical-market-data/symbols/${encodeURIComponent(s)}/timeframes/${timeframe}/candles?${qs}`;
       // Exactly ONE provider request per slot. Reconnect + single retry happen
       // after the slot is released, so a reconnect never blocks other symbols.
+      const providerBudgetMs = opts?.providerTimeoutMs ?? historyProviderBudget(timeframe);
       const attempt = () => withHistoryLimit(
         state.accountId,
-        (signal) => marketDataReq<RawCandle[]>(path, signal),
+        (signal) => marketDataReq<RawCandle[]>(path, signal, providerBudgetMs),
         {
           label: `${s}:${timeframe}`,
+          providerTimeoutMs: providerBudgetMs,
           ...(opts?.signal ? { signal: opts.signal } : {}),
           ...(opts?.queueWaitMs ? { queueWaitMs: opts.queueWaitMs } : {}),
-          ...(opts?.providerTimeoutMs ? { providerTimeoutMs: opts.providerTimeoutMs } : {}),
         },
       );
+
       let r: RawCandle[];
       try {
         r = await attempt();
