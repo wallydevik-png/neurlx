@@ -1209,6 +1209,8 @@ async function runAutonomousCycleCore(
     } catch (e) {
       errors.push(`execution_intel: ${e instanceof Error ? e.message : String(e)}`);
     }
+    funnel.execution_intel++;
+ 
  
     // Execute
     stage = "submit_order";
