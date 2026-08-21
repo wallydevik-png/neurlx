@@ -1141,6 +1141,7 @@ async function runAutonomousCycleCore(
     if (!decision.allowed) {
       bump(rejectReasons, `risk_gate:${decision.reason ?? "rejected"}`);
       rejected++;
+      gateOut(sig.symbol, "risk_gate", decision.reason ?? "rejected");
       await supabase.from("signals").update({
         status: "rejected", resolved_at: new Date().toISOString(),
       }).eq("id", sig.id);
@@ -1151,6 +1152,7 @@ async function runAutonomousCycleCore(
       });
       continue;
     }
+    funnel.risk++;
  
     // ---------------------------------------------------------------
     // Stage 5 — Execution Intelligence (final decision maker).
