@@ -216,14 +216,32 @@ export function scoreCandidate(p: DexPair): MemeCandidate | null {
   };
 }
 
-/** Scan the live market and return ranked candidates. */
-export async function scanMemecoins(limit = 20): Promise<MemeCandidate[]> {
+export interface MemeScanResult {
+  candidates: MemeCandidate[];
+  /** How many distinct Solana tokens the discovery feeds returned. */
+  universe: number;
+  /** How many survived basic parsing and were actually scored. */
+  scored: number;
+  /** Distribution of verdicts across everything scored, so the desk can show
+   *  "we looked at 180 tokens, 2 were snipeable" instead of an empty list. */
+  verdicts: { snipe: number; watch: number; avoid: number };
+}
+
+/** Scan the live market and return ranked candidates plus scan telemetry. */
+export async function scanMemecoinsDetailed(limit = 20): Promise<MemeScanResult> {
   const pairs = await fetchSolanaPairs();
   const scored = pairs
     .map(scoreCandidate)
     .filter((c): c is MemeCandidate => c !== null)
     .sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
+  const verdicts = { snipe: 0, watch: 0, avoid: 0 };
+  for (const c of scored) verdicts[c.verdict]++;
+  return { candidates: scored.slice(0, limit), universe: pairs.length, scored: scored.length, verdicts };
+}
+
+/** Scan the live market and return ranked candidates. */
+export async function scanMemecoins(limit = 20): Promise<MemeCandidate[]> {
+  return (await scanMemecoinsDetailed(limit)).candidates;
 }
 
 /** Live price for one mint (used for open-position management). */
