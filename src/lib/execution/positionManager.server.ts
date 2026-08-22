@@ -149,7 +149,42 @@ export async function reducePosition(
   return { ok: true, pnl };
 }
 
+/**
+ * Scale-ins are validated against the dynamic risk budget and the account's
+ * usable funds — not a fixed dollar ceiling.
+ */
+async function assertRiskBudget(
+  supabase: SupabaseClient, userId: string,
+  pos: { symbol: string; qty: number | string; stop_loss?: number | string | null },
+  addQty: number, price: number,
+) {
+  const { loadPolicy } = await import("@/lib/risk/policy.server");
+  const policy = await loadPolicy(supabase, userId);
+  const equity = Number(policy.equity ?? 0);
+  if (!(equity > 0)) return;
+  const projectedQty = Number(pos.qty) + addQty;
+  const projectedNotional = price * projectedQty;
+  if (projectedNotional > equity) {
+    throw new Error(
+      `Adding would need $${projectedNotional.toFixed(2)} of exposure but only ` +
+      `$${equity.toFixed(2)} of equity is available.`,
+    );
+  }
+  const stop = Number(pos.stop_loss ?? 0);
+  if (stop > 0) {
+    const riskAmount = Math.abs(price - stop) * projectedQty;
+    const budget = equity * Math.max(Number(policy.limits.baseRiskPct) || 0.005, 0.01);
+    if (riskAmount > budget * 1.02) {
+      throw new Error(
+        `Adding would risk $${riskAmount.toFixed(2)} at stop, above the ` +
+        `$${budget.toFixed(2)} risk budget.`,
+      );
+    }
+  }
+}
+
 export async function addToPosition(
+
   supabase: SupabaseClient, userId: string, positionId: string, addQty: number,
 ) {
   const { data: pos } = await supabase.from("positions").select("*")
@@ -186,11 +221,9 @@ export async function addToPosition(
     const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
     const markBeforeOrder = await fetchLastPrice(pos.symbol, userId, supabase);
     if (settings) {
-      const projectedNotional = markBeforeOrder * (Number(pos.qty) + addQty);
-      if (projectedNotional > Number(settings.max_trade_size)) {
-        throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
-      }
+      await assertRiskBudget(supabase, userId, pos, addQty, markBeforeOrder);
     }
+
 
     const result = await connector.placeOrder({
       symbol: pos.symbol, side: pos.side === "long" ? "buy" : "sell",
@@ -218,10 +251,10 @@ export async function addToPosition(
     const paper = createPaperConnector();
     const q = await paper.getQuote(pos.symbol);
     entry = pos.side === "long" ? q.ask : q.bid;
-    const newTotalNotional = entry * (Number(pos.qty) + addQty);
-    if (settings && newTotalNotional > Number(settings.max_trade_size)) {
-      throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
+    if (settings) {
+      await assertRiskBudget(supabase, userId, pos, addQty, entry);
     }
+
     fees = entry * addQty * 0.001;
   }
 
