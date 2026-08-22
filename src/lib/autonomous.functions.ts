@@ -943,14 +943,9 @@ async function runAutonomousCycleCore(
     const side = sig.side as "buy" | "sell";
     const notional = qty * entry;
  
-    if (live && notional > perOrderCap) {
-      bump(rejectReasons, "over_live_notional_cap"); rejected++;
-      gateOut(sig.symbol, "precheck", `notional ${notional.toFixed(2)} > cap ${perOrderCap}`);
-      await supabase.from("signals").update({
-        status: "rejected", resolved_at: new Date().toISOString(),
-      }).eq("id", sig.id);
-      continue;
-    }
+    // No fixed per-order dollar ceiling. Oversized carry-over signals are
+    // re-sized dynamically below instead of being rejected outright.
+
     funnel.precheck++;
  
     // Institutional entry gate — multi-timeframe, regime, structure, news.
