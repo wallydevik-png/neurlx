@@ -995,26 +995,29 @@ async function runAutonomousCycleCore(
         regimeTradable: entryEval.regime.tradable,
         trendStrength: entryEval.regime.trendStrength,
       });
-      const sized = computePositionSize({
-        equity: policy.equity > 0 ? policy.equity : notional,
-        freeMargin: policy.equity,
+      const execEquity = policy.equity > 0 ? policy.equity : (live ? liveStableUsd : notional);
+      const isSpotSell = live && side === "sell" && !marginVenue;
+      const baseAsset = sig.symbol.includes("-")
+        ? sig.symbol.split("-")[0].toUpperCase()
+        : sig.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
+      const inventoryQty = liveBaseAvailable.get(baseAsset) ?? 0;
+      const sized = computeDynamicSize({
+        equity: execEquity,
+        availableBalance: isSpotSell
+          ? inventoryQty * entry
+          : (live && liveStableUsd > 0 ? liveStableUsd : execEquity),
+        confidence: entryEval.confidence,
+        minConfidence: Number(settings.min_confidence ?? 0.5),
         riskPct,
-        entryPrice: entry,
+        entry,
         stopLoss: execStop,
-        spec: { volumeMin: 0, volumeMax: Number.MAX_SAFE_INTEGER, volumeStep: 0, contractSize: 1 },
-        marginBufferPct: 0,
+        maxQty: isSpotSell ? inventoryQty : null,
       });
-      if (sized.volume > 0 && Number.isFinite(sized.volume)) {
-        const capNotional = live
-          ? Math.min(Number(settings.max_trade_size ?? 500), perOrderCap)
-          : Number(settings.max_trade_size ?? 500);
-        // Round DOWN to 8dp: rounding to nearest could nudge the notional a
-        // hair above max_trade_size and the risk gate then rejected a trade
-        // that was sized exactly at the cap ("$10.00 exceeds $10").
-        const capped = Math.min(sized.volume, capNotional / entry, qty > 0 ? Math.max(qty, sized.volume) : sized.volume);
-        execQty = Math.floor(capped * 1e8) / 1e8;
-      }
+      if (sized.qty > 0) execQty = sized.qty;
+      else execQty = 0;
       errors.push(`sizing:${sig.symbol}:${(riskPct * 100).toFixed(2)}%:${notes[0] ?? ""}`);
+      errors.push(`sizing_calc:${sig.symbol}:${sized.diagnostics || sized.skipReason || "n/a"}`);
+
       await supabase.from("signals").update({
         stop_loss: execStop, take_profit: execTp, qty: execQty,
         confidence: entryEval.confidence,
