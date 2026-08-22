@@ -216,10 +216,10 @@ export async function addToPosition(
     const paper = createPaperConnector();
     const q = await paper.getQuote(pos.symbol);
     entry = pos.side === "long" ? q.ask : q.bid;
-    const newTotalNotional = entry * (Number(pos.qty) + addQty);
-    if (settings && newTotalNotional > Number(settings.max_trade_size)) {
-      throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
+    if (settings) {
+      await assertRiskBudget(supabase, userId, pos, addQty, entry);
     }
+
     fees = entry * addQty * 0.001;
   }
 
