@@ -41,11 +41,43 @@ export async function evaluateRisk(
   }
 
   const notional = input.qty * input.entry;
-  // Cent-level tolerance so floating-point noise on a size deliberately set
-  // AT the cap cannot read as "exceeds the cap". The limit itself is unchanged.
-  if (notional > Number(settings.max_trade_size) + 0.005) {
-    return { allowed: false, reason: `Position size $${notional.toFixed(2)} exceeds max trade size $${settings.max_trade_size}.` };
+  // Dynamic sizing validation. There is no fixed dollar ceiling: a trade is
+  // valid when the capital it puts at risk fits the risk-per-trade budget and
+  // the notional fits the account's usable balance.
+  const equity = Number(input.equity ?? policy.equity ?? 0);
+  const stopDistance = input.stopLoss ? Math.abs(input.entry - input.stopLoss) : 0;
+  if (equity > 0) {
+    const { computeDynamicSize } = await import("@/lib/trading/dynamicSizing");
+    const ceilingRiskPct = Math.max(Number(policy.limits.baseRiskPct) || 0.005, 0.01);
+    const maxRiskAmount = equity * ceilingRiskPct;
+    const riskAmount = stopDistance * input.qty;
+    if (riskAmount > maxRiskAmount * 1.02 + 0.005) {
+      return {
+        allowed: false,
+        reason:
+          `Trade risks $${riskAmount.toFixed(2)} at stop, above the ` +
+          `${(ceilingRiskPct * 100).toFixed(2)}% risk budget ($${maxRiskAmount.toFixed(2)}).`,
+      };
+    }
+    // Notional must fit usable funds (10% buffer), same rule the sizer uses.
+    const probe = computeDynamicSize({
+      equity,
+      availableBalance: equity,
+      confidence: input.confidence,
+      riskPct: ceilingRiskPct,
+      entry: input.entry,
+      stopLoss: input.stopLoss,
+    });
+    if (probe.maxNotional > 0 && notional > probe.maxNotional * 1.02 + 0.005) {
+      return {
+        allowed: false,
+        reason:
+          `Position notional $${notional.toFixed(2)} exceeds the dynamically ` +
+          `calculated maximum $${probe.maxNotional.toFixed(2)} (${probe.binding}).`,
+      };
+    }
   }
+
   if (settings.allowed_assets && settings.allowed_assets.length > 0 &&
       !settings.allowed_assets.includes(input.symbol)) {
     return { allowed: false, reason: `${input.symbol} is not in your allowed assets list.` };
