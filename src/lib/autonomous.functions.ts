@@ -796,7 +796,7 @@ async function runAutonomousCycleCore(
   // ---------------------------------------------------------------------
   const { evaluateEntry } = await import("@/lib/trading/entryFilters.server");
   const { loadPolicy, dynamicRiskPct } = await import("@/lib/risk/policy.server");
-  const { computePositionSize } = await import("@/lib/execution/sizing");
+  const { computeDynamicSize } = await import("@/lib/trading/dynamicSizing");
   const liveConnectionId = live ? liveConn?.id : undefined;
   const policy = await loadPolicy(
     supabase, userId,
