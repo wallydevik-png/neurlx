@@ -785,7 +785,7 @@ async function runAutonomousCycleCore(
   }
  
   const minConf = Number(settings.autonomous_min_confidence ?? 0.85);
-  const perOrderCap = Number(settings.live_max_notional_per_order ?? 50);
+  
  
   const { evaluateRisk } = await import("@/lib/trading/riskGate.server");
   const { submitOrder } = await import("@/lib/execution/engine.server");
