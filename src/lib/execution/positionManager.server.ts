@@ -186,11 +186,9 @@ export async function addToPosition(
     const { fetchLastPrice } = await import("@/lib/marketdata/service.server");
     const markBeforeOrder = await fetchLastPrice(pos.symbol, userId, supabase);
     if (settings) {
-      const projectedNotional = markBeforeOrder * (Number(pos.qty) + addQty);
-      if (projectedNotional > Number(settings.max_trade_size)) {
-        throw new Error(`Adding would exceed max trade size ($${settings.max_trade_size}).`);
-      }
+      await assertRiskBudget(supabase, userId, pos, addQty, markBeforeOrder);
     }
+
 
     const result = await connector.placeOrder({
       symbol: pos.symbol, side: pos.side === "long" ? "buy" : "sell",
