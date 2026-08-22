@@ -685,37 +685,39 @@ async function runAutonomousCycleCore(
 
  
  
-      // Scale qty so notional fits the user's per-trade cap. The engine
-      // targets a $500 notional by default; without this, a $10 cap user
-      // would see every generated signal rejected at the risk gate as
-      // "position size exceeds max trade size". Take the smaller of the
-      // paper-side cap (max_trade_size) and, when routing live, the
-      // live per-order cap.
-      const capForSize = live
-        ? Math.min(Number(settings.max_trade_size ?? 500), Number(settings.live_max_notional_per_order ?? 500))
-        : Number(settings.max_trade_size ?? 500);
- 
+      // Dynamic sizing at generation time. No fixed dollar ceiling: each
+      // candidate is sized from equity, its own confidence, the risk budget,
+      // its stop distance and the funds actually available on the venue.
+      const { computeDynamicSize } = await import("@/lib/trading/dynamicSizing");
+      const genRiskPct = Number(settings.risk_per_trade_pct ?? 0.005);
+      const genMinConf = Number(settings.min_confidence ?? 0.5);
+      const genEquity = live && liveStableUsd > 0
+        ? liveStableUsd
+        : Number(paperAcct?.equity ?? paperAcct?.balance ?? 0);
+
       const toInsert = picks.flatMap(v => {
-        let scaledQty = 0;
-        if (live && v.consensusDirection === "buy") {
-          const targetNotional = Math.max(1, Math.min(capForSize * 0.95, liveStableUsd * 0.9));
-          scaledQty = +(targetNotional / v.base.entry).toFixed(6);
-        } else if (live && v.consensusDirection === "sell") {
-          if (marginVenue) {
-            // Short on margin: sized off available margin, not a spot holding.
-            const targetNotional = Math.max(1, Math.min(capForSize * 0.95, liveStableUsd * 0.9));
-            scaledQty = +(targetNotional / v.base.entry).toFixed(6);
-          } else {
-            const base = v.symbol.includes("-") ? v.symbol.split("-")[0].toUpperCase() : v.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
-            const byCap = (capForSize * 0.95) / v.base.entry;
-            scaledQty = +Math.min((liveBaseAvailable.get(base) ?? 0) * 0.95, byCap).toFixed(6);
-          }
- 
-        } else {
-          const targetNotional = Math.max(1, capForSize * 0.95); // 5% headroom under cap
-          scaledQty = +(targetNotional / v.base.entry).toFixed(6);
-        }
+        const isSpotSell = live && v.consensusDirection === "sell" && !marginVenue;
+        const base = v.symbol.includes("-")
+          ? v.symbol.split("-")[0].toUpperCase()
+          : v.symbol.replace(/USDT$|USD$|USDC$/, "").toUpperCase();
+        const sized = computeDynamicSize({
+          equity: genEquity,
+          // A spot disposal spends inventory, not cash.
+          availableBalance: isSpotSell
+            ? (liveBaseAvailable.get(base) ?? 0) * v.base.entry
+            : (live ? liveStableUsd : genEquity),
+          confidence: v.consensusConfidence,
+          minConfidence: genMinConf,
+          riskPct: genRiskPct,
+          entry: v.base.entry,
+          stopLoss: v.base.stopLoss,
+          maxQty: isSpotSell ? (liveBaseAvailable.get(base) ?? 0) : null,
+          qtyPrecision: 6,
+        });
+        errors.push(`sizing_calc:${v.symbol}:${v.consensusDirection}:${sized.diagnostics || sized.skipReason || "n/a"}`);
+        const scaledQty = sized.qty;
         if (scaledQty <= 0) return [];
+
         return [{
         user_id: userId,
         symbol: v.symbol, side: v.consensusDirection as "buy" | "sell",
