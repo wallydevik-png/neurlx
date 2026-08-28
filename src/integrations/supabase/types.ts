@@ -3891,6 +3891,114 @@ export type Database = {
           },
         ]
       }
+      vault_transactions: {
+        Row: {
+          amount: number
+          asset: string
+          created_at: string
+          detail: Json
+          id: string
+          kind: string
+          signature: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          asset?: string
+          created_at?: string
+          detail?: Json
+          id?: string
+          kind: string
+          signature?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          asset?: string
+          created_at?: string
+          detail?: Json
+          id?: string
+          kind?: string
+          signature?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vault_wallets: {
+        Row: {
+          created_at: string
+          encrypted_secret: string
+          public_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_secret: string
+          public_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_secret?: string
+          public_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vault_withdrawals: {
+        Row: {
+          amount: number
+          asset: string
+          attempts: number
+          code_hash: string
+          created_at: string
+          destination: string
+          error: string | null
+          expires_at: string
+          id: string
+          signature: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          asset?: string
+          attempts?: number
+          code_hash: string
+          created_at?: string
+          destination: string
+          error?: string | null
+          expires_at: string
+          id?: string
+          signature?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          asset?: string
+          attempts?: number
+          code_hash?: string
+          created_at?: string
+          destination?: string
+          error?: string | null
+          expires_at?: string
+          id?: string
+          signature?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       webauthn_challenges: {
         Row: {
           challenge: string
