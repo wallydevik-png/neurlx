@@ -225,3 +225,22 @@ export async function recordVaultTx(
     console.error("[vault] ledger write failed", e);
   }
 }
+
+export interface ChainTx { signature: string; slot: number; time: string | null; err: boolean }
+
+/** Recent on-chain activity for the vault address (deposits included). */
+export async function recentChainActivity(publicKey: string, limit = 25): Promise<ChainTx[]> {
+  try {
+    const rows = await rpc<Array<{ signature: string; slot: number; blockTime: number | null; err: unknown }>>(
+      "getSignaturesForAddress", [publicKey, { limit }],
+    );
+    return (rows ?? []).map(r => ({
+      signature: r.signature,
+      slot: r.slot,
+      time: r.blockTime ? new Date(r.blockTime * 1000).toISOString() : null,
+      err: Boolean(r.err),
+    }));
+  } catch {
+    return [];
+  }
+}
