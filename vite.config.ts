@@ -7,10 +7,35 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { fileURLToPath } from "node:url";
 
+// @solana/spl-token pulls in the 2.0.0-rc.1 line of @solana/* helper packages.
+// Their export maps only declare "browser" / "node" / "react-native" — there is
+// no "default" entry — so resolving them under the Cloudflare Worker condition
+// set (workerd, worker, import, …) fails the production build outright. These
+// are pure-JS codec/error helpers with no browser-only APIs, so pointing each
+// one at its ESM browser build is safe on the Worker runtime.
+const SOLANA_RC_PKGS = [
+  "@solana/codecs",
+  "@solana/codecs-core",
+  "@solana/codecs-data-structures",
+  "@solana/codecs-numbers",
+  "@solana/codecs-strings",
+  "@solana/errors",
+  "@solana/options",
+];
+
+const solanaAliases = SOLANA_RC_PKGS.map((name) => ({
+  find: new RegExp(`^${name.replace("/", "\\/")}$`),
+  replacement: fileURLToPath(
+    new URL(`./node_modules/${name}/dist/index.browser.mjs`, import.meta.url),
+  ),
+}));
+
 export default defineConfig({
   vite: {
     resolve: {
-      alias: {
+      alias: [
+        ...solanaAliases,
+        ...Object.entries({
         // @solana/web3.js imports rpc-websockets for its subscription API, and
         // that package exposes no export-map entry for the Cloudflare Worker
         // condition set, which breaks the production bundle. We only use
