@@ -44,7 +44,8 @@ export default defineConfig({
         "rpc-websockets/dist/lib/client": fileURLToPath(new URL("./src/lib/memecoin/rpc-websockets-stub.ts", import.meta.url)),
         "rpc-websockets/dist/lib/client/websocket.browser": fileURLToPath(new URL("./src/lib/memecoin/rpc-websockets-stub.ts", import.meta.url)),
         "rpc-websockets": fileURLToPath(new URL("./src/lib/memecoin/rpc-websockets-stub.ts", import.meta.url)),
-      },
+        }).map(([find, replacement]) => ({ find, replacement })),
+      ],
     },
   },
   nitro: {
