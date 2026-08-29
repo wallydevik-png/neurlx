@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AppShell, PageHeader, Metric } from "@/components/AppShell";
 import { getVault, requestWithdrawal, confirmWithdrawal, cancelWithdrawal } from "@/lib/vault.functions";
 import { Button } from "@/components/ui/button";
-import { Wallet, Copy, ArrowDownToLine, ArrowUpFromLine, ShieldCheck, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, ArrowDownToLine, ArrowUpFromLine, ShieldCheck, ExternalLink, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/vault")({
   head: () => ({
