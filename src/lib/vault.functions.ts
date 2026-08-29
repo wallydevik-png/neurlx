@@ -52,9 +52,9 @@ export const requestWithdrawal = createServerFn({ method: "POST" })
     if (!isSolanaAddress(data.destination)) throw new Error("That is not a valid Solana address");
     const wallet = await getVaultWallet(userId);
     if (!wallet) throw new Error("No trading vault wallet yet — open the Vault page first");
-    if (data.destination === wallet.address) throw new Error("Destination is your own vault address");
+    if (data.destination === wallet.publicKey) throw new Error("Destination is your own vault address");
 
-    const balances = await vaultBalances(supabase, userId, wallet.address);
+    const balances = await vaultBalances(supabase, userId, wallet.publicKey);
     if (data.asset === "SOL") {
       if (data.amount > balances.availableSol + 1e-9) {
         throw new Error(
@@ -125,7 +125,7 @@ export const confirmWithdrawal = createServerFn({ method: "POST" })
     // code was outstanding.
     const wallet = await getVaultWallet(userId);
     if (!wallet) throw new Error("No trading vault wallet");
-    const balances = await vaultBalances(supabase, userId, wallet.address);
+    const balances = await vaultBalances(supabase, userId, wallet.publicKey);
     const amount = Number(req.amount);
     if (req.asset === "SOL" ? amount > balances.availableSol + 1e-9 : amount > balances.usdc + 1e-9) {
       await supabaseAdmin.from("vault_withdrawals")

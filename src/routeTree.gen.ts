@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedVaultRouteImport } from './routes/_authenticated/vault'
 import { Route as AuthenticatedValidationRouteImport } from './routes/_authenticated/validation'
 import { Route as AuthenticatedStrategyLifecycleRouteImport } from './routes/_authenticated/strategy-lifecycle'
 import { Route as AuthenticatedStrategiesRouteImport } from './routes/_authenticated/strategies'
@@ -80,6 +81,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedVaultRoute = AuthenticatedVaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedValidationRoute = AuthenticatedValidationRouteImport.update({
   id: '/validation',
@@ -381,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/strategies': typeof AuthenticatedStrategiesRoute
   '/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/validation': typeof AuthenticatedValidationRoute
+  '/vault': typeof AuthenticatedVaultRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
@@ -433,6 +440,7 @@ export interface FileRoutesByTo {
   '/strategies': typeof AuthenticatedStrategiesRoute
   '/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/validation': typeof AuthenticatedValidationRoute
+  '/vault': typeof AuthenticatedVaultRoute
   '/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/backtests/$id': typeof AuthenticatedBacktestsIdRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
@@ -488,6 +496,7 @@ export interface FileRoutesById {
   '/_authenticated/strategies': typeof AuthenticatedStrategiesRoute
   '/_authenticated/strategy-lifecycle': typeof AuthenticatedStrategyLifecycleRoute
   '/_authenticated/validation': typeof AuthenticatedValidationRoute
+  '/_authenticated/vault': typeof AuthenticatedVaultRoute
   '/_authenticated/accounts/new': typeof AuthenticatedAccountsNewRoute
   '/_authenticated/backtests/$id': typeof AuthenticatedBacktestsIdRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
@@ -543,6 +552,7 @@ export interface FileRouteTypes {
     | '/strategies'
     | '/strategy-lifecycle'
     | '/validation'
+    | '/vault'
     | '/accounts/new'
     | '/backtests/$id'
     | '/accounts/'
@@ -595,6 +605,7 @@ export interface FileRouteTypes {
     | '/strategies'
     | '/strategy-lifecycle'
     | '/validation'
+    | '/vault'
     | '/accounts/new'
     | '/backtests/$id'
     | '/accounts'
@@ -649,6 +660,7 @@ export interface FileRouteTypes {
     | '/_authenticated/strategies'
     | '/_authenticated/strategy-lifecycle'
     | '/_authenticated/validation'
+    | '/_authenticated/vault'
     | '/_authenticated/accounts/new'
     | '/_authenticated/backtests/$id'
     | '/_authenticated/accounts/'
@@ -693,6 +705,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/vault': {
+      id: '/_authenticated/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof AuthenticatedVaultRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/validation': {
       id: '/_authenticated/validation'
@@ -1094,6 +1113,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedStrategiesRoute: typeof AuthenticatedStrategiesRoute
   AuthenticatedStrategyLifecycleRoute: typeof AuthenticatedStrategyLifecycleRoute
   AuthenticatedValidationRoute: typeof AuthenticatedValidationRoute
+  AuthenticatedVaultRoute: typeof AuthenticatedVaultRoute
   AuthenticatedBacktestsIdRoute: typeof AuthenticatedBacktestsIdRoute
 }
 
@@ -1141,6 +1161,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedStrategiesRoute: AuthenticatedStrategiesRoute,
   AuthenticatedStrategyLifecycleRoute: AuthenticatedStrategyLifecycleRoute,
   AuthenticatedValidationRoute: AuthenticatedValidationRoute,
+  AuthenticatedVaultRoute: AuthenticatedVaultRoute,
   AuthenticatedBacktestsIdRoute: AuthenticatedBacktestsIdRoute,
 }
 

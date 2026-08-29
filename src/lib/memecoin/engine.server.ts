@@ -44,9 +44,19 @@ async function loadWalletSecret(_db: DB, userId: string): Promise<{ publicKey: s
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin.from("memecoin_wallets").select("public_key,encrypted_secret")
     .eq("user_id", userId).maybeSingle();
-  if (!data?.encrypted_secret) return null;
-  const secret = await decryptJSON<string>(data.encrypted_secret);
-  return { publicKey: data.public_key as string, secret };
+  if (data?.encrypted_secret) {
+    const secret = await decryptJSON<string>(data.encrypted_secret);
+    return { publicKey: data.public_key as string, secret };
+  }
+
+  // No imported wallet — fall back to this user's NeurlX Trading Vault, the
+  // custodial wallet they deposit into. Strictly scoped by user_id, so the
+  // engine can only ever spend the balance belonging to this user.
+  const { data: vault } = await supabaseAdmin.from("vault_wallets")
+    .select("public_key,encrypted_secret").eq("user_id", userId).maybeSingle();
+  if (!vault?.encrypted_secret) return null;
+  const payload = await decryptJSON<{ secret: string }>(vault.encrypted_secret);
+  return { publicKey: vault.public_key as string, secret: payload.secret };
 }
 
 export type ScanTelemetry = {
