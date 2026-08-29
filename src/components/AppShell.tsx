@@ -24,6 +24,7 @@ import { toast } from "sonner";
 // trader actually acts on are linked; the rest remain reachable by URL.
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/vault", label: "Trading Vault", icon: Banknote },
   { to: "/live-desk", label: "Live Trading Desk", icon: Wallet },
   { to: "/memecoin", label: "Memecoin Sniper", icon: Rocket },
   { to: "/autonomous", label: "Autonomous Engine", icon: Bot },
