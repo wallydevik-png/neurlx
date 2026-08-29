@@ -88,7 +88,7 @@ function VaultPage() {
       <PageHeader
         title="Trading Vault"
         subtitle="Your own dedicated on-chain wallet. Fund it, and the autonomous engine trades from that balance — no broker signup required."
-        icon={Wallet}
+
       />
 
       {isLoading || !data ? (
