@@ -3891,6 +3891,36 @@ export type Database = {
           },
         ]
       }
+      vault_destinations: {
+        Row: {
+          address: string
+          created_at: string
+          first_seen_at: string
+          id: string
+          unlocks_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          unlocks_at: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          unlocks_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vault_transactions: {
         Row: {
           amount: number
@@ -3951,12 +3981,54 @@ export type Database = {
         }
         Relationships: []
       }
+      vault_withdrawal_policy: {
+        Row: {
+          created_at: string
+          daily_limit_sol: number
+          daily_limit_usdc: number
+          new_address_cooldown_minutes: number
+          pending_cooldown_minutes: number | null
+          pending_daily_limit_sol: number | null
+          pending_daily_limit_usdc: number | null
+          pending_effective_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_limit_sol?: number
+          daily_limit_usdc?: number
+          new_address_cooldown_minutes?: number
+          pending_cooldown_minutes?: number | null
+          pending_daily_limit_sol?: number | null
+          pending_daily_limit_usdc?: number | null
+          pending_effective_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_limit_sol?: number
+          daily_limit_usdc?: number
+          new_address_cooldown_minutes?: number
+          pending_cooldown_minutes?: number | null
+          pending_daily_limit_sol?: number | null
+          pending_daily_limit_usdc?: number | null
+          pending_effective_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vault_withdrawals: {
         Row: {
           amount: number
           asset: string
           attempts: number
+          code_channel: string
           code_hash: string
+          code_sent_to: string | null
+          confirmed_at: string | null
           created_at: string
           destination: string
           error: string | null
@@ -3971,7 +4043,10 @@ export type Database = {
           amount: number
           asset?: string
           attempts?: number
+          code_channel?: string
           code_hash: string
+          code_sent_to?: string | null
+          confirmed_at?: string | null
           created_at?: string
           destination: string
           error?: string | null
@@ -3986,7 +4061,10 @@ export type Database = {
           amount?: number
           asset?: string
           attempts?: number
+          code_channel?: string
           code_hash?: string
+          code_sent_to?: string | null
+          confirmed_at?: string | null
           created_at?: string
           destination?: string
           error?: string | null
