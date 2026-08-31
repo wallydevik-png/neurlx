@@ -7,10 +7,15 @@
 // All RPC goes over plain HTTP JSON-RPC rather than web3.js's `Connection`,
 // which drags in a websocket subscription client that cannot resolve in the
 // Cloudflare Worker runtime.
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { getAssociatedTokenAddress } from "@solana/spl-token";
 import bs58 from "bs58";
 import { mnemonicToSeedWebcrypto, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
+import {
+  inspectSwapTransaction, assertSimulationDeltas, minOutputFromQuote,
+  type SwapIntent, type BalanceDeltaInput,
+} from "./swapGuard";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const JUP = "https://lite-api.jup.ag/swap/v1";
