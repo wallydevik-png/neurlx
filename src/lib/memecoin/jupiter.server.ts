@@ -213,7 +213,55 @@ export async function getQuote(inputMint: string, outputMint: string, amountRaw:
   return q;
 }
 
-/** Quote -> build -> sign -> send. Returns the transaction signature. */
+/** Raw SPL token amount held in an account, from a base64 account blob. */
+function tokenAmountFromAccount(base64: string | null | undefined): number {
+  if (!base64) return 0;
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  if (bytes.length < 72) return 0;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Number(view.getBigUint64(64, true));
+}
+
+type SimAccount = { lamports: number; data: [string, string] } | null;
+
+/**
+ * Simulate the built transaction and read the resulting balances, so the
+ * guard can compare intended value movement against actual value movement
+ * before any signature exists.
+ */
+async function simulateDeltas(
+  tx: VersionedTransaction, owner: string, outAta: string, inAta: string | null,
+): Promise<BalanceDeltaInput> {
+  const addresses = [owner, outAta, ...(inAta ? [inAta] : [])];
+  const pre = await rpc<{ value: SimAccount[] }>("getMultipleAccounts",
+    [addresses, { encoding: "base64", commitment: "confirmed" }]);
+
+  const encoded = btoa(String.fromCharCode(...tx.serialize()));
+  const sim = await rpc<{
+    value: { err: unknown; logs?: string[]; accounts?: SimAccount[] };
+  }>("simulateTransaction", [encoded, {
+    encoding: "base64", sigVerify: false, replaceRecentBlockhash: true,
+    commitment: "confirmed", accounts: { encoding: "base64", addresses },
+  }]);
+
+  if (sim?.value?.err) {
+    throw new Error(`Swap simulation failed: ${JSON.stringify(sim.value.err)}`);
+  }
+  const post = sim?.value?.accounts ?? [];
+  const out: BalanceDeltaInput = {
+    lamportsBefore: pre?.value?.[0]?.lamports ?? 0,
+    lamportsAfter: post[0]?.lamports ?? 0,
+    outputBefore: tokenAmountFromAccount(pre?.value?.[1]?.data?.[0]),
+    outputAfter: tokenAmountFromAccount(post[1]?.data?.[0]),
+  };
+  if (inAta) {
+    out.inputBefore = tokenAmountFromAccount(pre?.value?.[2]?.data?.[0]);
+    out.inputAfter = tokenAmountFromAccount(post[2]?.data?.[0]);
+  }
+  return out;
+}
+
+/** Quote -> build -> VERIFY -> sign -> send. Returns the transaction signature. */
 export async function swap(opts: {
   secret: string; publicKey?: string | null; inputMint: string; outputMint: string; amountRaw: number; slippageBps: number;
 }): Promise<{ signature: string; outAmount: number; priceImpactPct: number }> {
@@ -235,6 +283,29 @@ export async function swap(opts: {
   const { swapTransaction } = await buildRes.json() as { swapTransaction: string };
 
   const tx = VersionedTransaction.deserialize(Uint8Array.from(atob(swapTransaction), c => c.charCodeAt(0)));
+
+  // ---- Do not sign anything the aggregator sends until it is verified. ----
+  // The transaction is opaque: the only safe assumption is that it is hostile
+  // until its structure AND its simulated effect both match this exact trade.
+  const owner = kp.publicKey.toBase58();
+  const intent: SwapIntent = {
+    owner,
+    inputMint: opts.inputMint,
+    outputMint: opts.outputMint,
+    maxInputRaw: Math.floor(opts.amountRaw),
+    minOutputRaw: minOutputFromQuote(Number(quote.outAmount), opts.slippageBps),
+  };
+  inspectSwapTransaction(tx, intent);
+
+  const ownerKey = new PublicKey(owner);
+  const outAta = opts.outputMint === SOL_MINT
+    ? ownerKey
+    : await getAssociatedTokenAddress(new PublicKey(opts.outputMint), ownerKey);
+  const inAta = opts.inputMint === SOL_MINT
+    ? null
+    : (await getAssociatedTokenAddress(new PublicKey(opts.inputMint), ownerKey)).toBase58();
+  assertSimulationDeltas(intent, await simulateDeltas(tx, owner, outAta.toBase58(), inAta));
+
   tx.sign([kp]);
 
   const encoded = btoa(String.fromCharCode(...tx.serialize()));
@@ -254,6 +325,7 @@ export async function swap(opts: {
     priceImpactPct: Number(quote.priceImpactPct ?? 0) * 100,
   };
 }
+
 
 type SigStatus = {
   value: Array<{ confirmationStatus?: string; err?: unknown } | null>;
