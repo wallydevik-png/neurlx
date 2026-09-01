@@ -60,10 +60,12 @@ function VaultPage() {
       setBusy("request");
       const res = await requestFn({ data: { asset, amount: Number(amount), destination: destination.trim() } });
       setPendingId(res.id);
-      toast.success("Confirmation code sent to your notifications — enter it to release the funds");
+      setSentTo(res.sentTo);
+      toast.success(`Confirmation code emailed to ${res.sentTo} — enter it to release the funds`);
       refresh();
     } catch (e) { fail(e); } finally { setBusy(null); }
   }
+
 
   async function finishWithdrawal() {
     if (!pendingId) return;
