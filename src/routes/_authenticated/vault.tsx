@@ -42,6 +42,8 @@ function VaultPage() {
   const [destination, setDestination] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["vault"] });
