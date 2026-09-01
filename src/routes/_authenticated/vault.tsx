@@ -42,6 +42,8 @@ function VaultPage() {
   const [destination, setDestination] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [sentTo, setSentTo] = useState<string | null>(null);
+
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["vault"] });
@@ -60,10 +62,12 @@ function VaultPage() {
       setBusy("request");
       const res = await requestFn({ data: { asset, amount: Number(amount), destination: destination.trim() } });
       setPendingId(res.id);
-      toast.success("Confirmation code sent to your notifications — enter it to release the funds");
+      setSentTo(res.sentTo);
+      toast.success(`Confirmation code emailed to ${res.sentTo} — enter it to release the funds`);
       refresh();
     } catch (e) { fail(e); } finally { setBusy(null); }
   }
+
 
   async function finishWithdrawal() {
     if (!pendingId) return;
@@ -186,6 +190,19 @@ function VaultPage() {
                     {asset === "SOL" && b && b.reservedSol > 0
                       ? ` — ${b.reservedSol.toFixed(4)} SOL is locked in open positions.` : ""}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Daily limit: {asset === "SOL"
+                      ? `${data.policy.remainingSol24h.toFixed(4)} of ${data.policy.dailyLimitSol} SOL left`
+                      : `${data.policy.remainingUsdc24h.toFixed(2)} of ${data.policy.dailyLimitUsdc} USDC left`}
+                    {" · "}New addresses unlock after {Math.round(data.policy.cooldownMinutes / 60)}h
+                    {" · "}Code goes to {data.confirmation.sendTo ?? "your email"}
+                  </p>
+                  {!data.confirmation.configured && (
+                    <p className="text-xs text-destructive">
+                      Email delivery is not set up yet, so confirmation codes cannot be sent out-of-band
+                      and withdrawals stay blocked. Set up the email domain to enable them.
+                    </p>
+                  )}
                   <Button
                     disabled={busy !== null || !amount || !destination}
                     onClick={startWithdrawal}
@@ -196,9 +213,11 @@ function VaultPage() {
               ) : (
                 <div className="mt-3 space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    A 6-digit confirmation code was sent to your notifications. Enter it within 10 minutes
+                    A 6-digit confirmation code was emailed to {sentTo ?? "your email address"} — it is
+                    deliberately not shown in the app. Enter it within 10 minutes
                     to release {amount} {asset} to {destination ? short(destination) : "the destination"}.
                   </p>
+
                   <input
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm tracking-widest"
                     placeholder="000000"
