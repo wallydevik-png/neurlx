@@ -32,17 +32,15 @@ const intent = {
 
 const BLOCKHASH = "11111111111111111111111111111111";
 
-function build(instructions: Parameters<typeof TransactionMessage.prototype.compileToV0Message>[0] extends never ? never : Parameters<ConstructorParameters<typeof TransactionMessage>[0]["instructions"] extends infer I ? never : never>[] | never): never {
-  throw new Error("unused");
-}
+type Ix = ConstructorParameters<typeof TransactionMessage>[0]["instructions"];
 
-function tx(ixs: Parameters<typeof makeMessage>[0], payer = owner.publicKey) {
+function tx(ixs: Ix, payer = owner.publicKey) {
   const message = new TransactionMessage({
     payerKey: payer, recentBlockhash: BLOCKHASH, instructions: ixs,
   }).compileToV0Message();
   return new VersionedTransaction(message);
 }
-function makeMessage(ixs: Parameters<typeof tx>[0]) { return ixs; }
+
 
 /** A realistic Jupiter route instruction: opaque data, Jupiter program id. */
 function jupiterRoute() {
