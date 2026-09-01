@@ -124,10 +124,21 @@ export async function buyCandidate(db: DB, userId: string, c: MemeCandidate, s: 
   const wallet = await loadWalletSecret(db, userId);
   if (!wallet) throw new Error("No trading wallet key is configured — add one in the Wallet Vault");
 
-  const balance = await solBalance(wallet.publicKey);
-  if (balance < s.buy_amount_sol + 0.01) {
-    throw new Error(`Wallet holds ${balance.toFixed(4)} SOL — need ${(s.buy_amount_sol + 0.01).toFixed(4)} including fees`);
+  // Spend against AVAILABLE balance, not the raw on-chain figure: the raw
+  // number still contains SOL already committed to open positions and the fee
+  // reserve, so two concurrent snipes could both see the same unreserved SOL
+  // and double-spend it.
+  const { vaultBalances } = await import("@/lib/vault/wallet.server");
+  const balances = await vaultBalances(db as unknown as SupabaseClient, userId, wallet.publicKey);
+  if (balances.error) throw new Error(`Balance unavailable: ${balances.error}`);
+  const needed = s.buy_amount_sol + 0.01;
+  if (balances.availableSol < needed) {
+    throw new Error(
+      `Only ${balances.availableSol.toFixed(4)} SOL is available — need ${needed.toFixed(4)} including fees ` +
+      `(${balances.sol.toFixed(4)} on-chain, ${balances.reservedSol.toFixed(4)} reserved by open positions)`,
+    );
   }
+
 
   const result = await swap({
     secret: wallet.secret, publicKey: wallet.publicKey, inputMint: SOL_MINT, outputMint: c.mint,
