@@ -259,4 +259,3 @@ describe("quote bounds", () => {
   });
 });
 
-void build;
