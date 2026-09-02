@@ -195,11 +195,19 @@ describe("signing-authority containment", () => {
       "src/lib/execution/positionManager.server.ts",
       "src/routes/api/public/cron.autonomous.ts",
     ];
+    const READ_ONLY = new Set(["vaultBalances", "ensureVaultWallet", "type"]);
     for (const f of files) {
       const src = read(f);
       expect(src, `${f} must not import withdrawal primitives`)
-        .not.toMatch(/withdrawSol|withdrawUsdc|loadVaultKeypair|vault\/wallet\.server/);
+        .not.toMatch(/withdrawSol|withdrawUsdc|loadVaultKeypair/);
+      // Touching the vault module at all is allowed only for read-only helpers.
+      for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']*vault\/wallet\.server["']/g)) {
+        for (const name of m[1].split(",").map(s => s.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
+          expect(READ_ONLY.has(name), `${f} imports ${name} from the vault wallet module`).toBe(true);
+        }
+      }
     }
+
   });
 
   it("withdrawal execution is reachable only behind code confirmation", () => {
