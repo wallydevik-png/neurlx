@@ -179,9 +179,14 @@ describe("static inspection — malicious transactions are rejected", () => {
   });
 
   it("rejects a transaction whose fee payer is not this vault", () => {
-    const t = tx([jupiterRoute()], attacker.publicKey);
+    const t = tx([{
+      programId: new PublicKey(JUPITER_V6),
+      keys: [{ pubkey: attacker.publicKey, isSigner: true, isWritable: true }],
+      data: Buffer.from([0xe5, 0x17]),
+    }], attacker.publicKey);
     expect(() => inspectSwapTransaction(t, intent)).toThrow(/fee payer \/ signer is not this wallet/);
   });
+
 
   it("rejects a transaction that demands a second signer", () => {
     const t = tx([
