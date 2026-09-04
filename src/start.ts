@@ -26,9 +26,24 @@ const ensureFreshSupabaseSession = createMiddleware({ type: "function" }).client
     } catch {
       /* offline or no session — the server decides what to do about it */
     }
-    return next();
+    try {
+      return await next();
+    } catch (error) {
+      // A hard 401 means the stored session is gone or unusable. Send the user
+      // to sign-in instead of leaving a broken page behind.
+      const status = error instanceof Response ? error.status : undefined;
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      if (status === 401 || /unauthorized/i.test(message)) {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session && typeof window !== "undefined" && !window.location.pathname.startsWith("/auth")) {
+          window.location.assign("/auth");
+        }
+      }
+      throw error;
+    }
   },
 );
+
 
 function isUnauthorized(error: unknown): boolean {
   return error instanceof Error && /unauthor/i.test(error.message);
