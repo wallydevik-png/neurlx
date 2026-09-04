@@ -117,3 +117,4 @@ export const startInstance = createStart(() => ({
   functionMiddleware: [serverFnErrorBoundary, ensureFreshSupabaseSession, attachSupabaseAuth],
   requestMiddleware: [errorMiddleware],
 
+}));
