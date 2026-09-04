@@ -79,7 +79,41 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
+/**
+ * Server-side wrapper around every server function.
+ *
+ * Errors thrown inside a server function are swallowed by the request layer
+ * before `errorMiddleware` sees them, which turned an expired/missing session
+ * into a full "This page didn't load" HTML page instead of a 401 the client
+ * can act on. Rethrowing a real `Response` keeps the status machine-readable
+ * on preview, published and Cloudflare alike.
+ */
+const serverFnErrorBoundary = createMiddleware({ type: "function" }).server(
+  async ({ next }) => {
+    try {
+      return await next();
+    } catch (error) {
+      if (error instanceof Response) throw error;
+      if (error != null && typeof error === "object" && ("isRedirect" in error || "isNotFound" in error || "statusCode" in error)) {
+        throw error;
+      }
+      const unauthorized = isUnauthorized(error);
+      if (!unauthorized) console.error(error);
+      throw new Response(
+        JSON.stringify({
+          error: unauthorized ? "unauthorized" : "internal_error",
+          message: error instanceof Error ? error.message : String(error),
+        }),
+        {
+          status: unauthorized ? 401 : 500,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+  },
+);
+
 export const startInstance = createStart(() => ({
-  functionMiddleware: [ensureFreshSupabaseSession, attachSupabaseAuth],
+  functionMiddleware: [serverFnErrorBoundary, ensureFreshSupabaseSession, attachSupabaseAuth],
   requestMiddleware: [errorMiddleware],
-}));
+
