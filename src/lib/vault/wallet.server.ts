@@ -118,12 +118,16 @@ export async function loadVaultKeypair(userId: string): Promise<Keypair> {
 export interface VaultBalances {
   sol: number;
   usdc: number;
+  /** SOL committed to open positions. */
   reservedSol: number;
+  /** SOL claimed by trades that are in flight right now. */
+  pendingSol: number;
   availableSol: number;
+  feeReserveSol: number;
   error: string | null;
 }
 
-/** On-chain balances plus the portion already committed to open positions. */
+/** On-chain balances plus the portion already committed to trading. */
 export async function vaultBalances(
   supabase: SupabaseClient, userId: string, publicKey: string,
 ): Promise<VaultBalances> {
@@ -140,10 +144,13 @@ export async function vaultBalances(
   const { data: open } = await supabase.from("memecoin_positions")
     .select("amount_sol").eq("user_id", userId).eq("status", "open");
   const reservedSol = (open ?? []).reduce((a, p) => a + Number(p.amount_sol ?? 0), 0);
+  let pendingSol = 0;
+  try { pendingSol = await activeReservationsSol(userId); } catch { pendingSol = 0; }
 
   return {
-    sol, usdc, reservedSol,
-    availableSol: Math.max(0, sol - reservedSol - SOL_FEE_RESERVE),
+    sol, usdc, reservedSol, pendingSol,
+    availableSol: computeAvailableSol({ sol, positionsSol: reservedSol, reservationsSol: pendingSol }),
+    feeReserveSol: FEE_RESERVE_SOL,
     error,
   };
 }
