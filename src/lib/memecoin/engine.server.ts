@@ -29,35 +29,23 @@ export async function loadSettings(db: DB, userId: string): Promise<MemeSettings
 }
 
 async function loadWalletSecret(_db: DB, userId: string): Promise<{ publicKey: string; secret: string } | null> {
-  // RLS on memecoin_wallets only grants SELECT to admins reading their own
-  // row ("admins read own wallet row" policy) — the table is deliberately
-  // unreadable by ordinary authenticated users because it holds the
-  // encrypted secret. Every entrypoint here (manual snipe, manual exit,
-  // "run cycle now", and the position manager) is invoked with the
-  // request-scoped, RLS-bound client for non-admin users, so passing that
-  // client straight into this SELECT silently returned zero rows for every
-  // non-admin trader — buyCandidate/sellPosition then failed with "No
-  // trading wallet key is configured" even though a wallet was saved, which
-  // is why entries/exits never fired outside the cron path (which happens
-  // to run as the service role). Always read this one table through the
-  // service-role client, exactly like getMemecoinDesk already does.
+  // The NeurlX Trading Vault is the ONLY source of trading capital. The user
+  // deposits SOL/USDC into their own vault address; profits and losses stay
+  // there; a linked/external wallet is a withdrawal destination and identity
+  // marker only, and is never read as a balance or spent from.
+  //
+  // vault_wallets is RLS-enabled with zero policies, so it is unreachable
+  // from any browser session; only the service-role client below can read it,
+  // and every read is scoped by user_id, making cross-user signing
+  // structurally impossible.
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin.from("memecoin_wallets").select("public_key,encrypted_secret")
-    .eq("user_id", userId).maybeSingle();
-  if (data?.encrypted_secret) {
-    const secret = await decryptJSON<string>(data.encrypted_secret);
-    return { publicKey: data.public_key as string, secret };
-  }
-
-  // No imported wallet — fall back to this user's NeurlX Trading Vault, the
-  // custodial wallet they deposit into. Strictly scoped by user_id, so the
-  // engine can only ever spend the balance belonging to this user.
   const { data: vault } = await supabaseAdmin.from("vault_wallets")
     .select("public_key,encrypted_secret").eq("user_id", userId).maybeSingle();
   if (!vault?.encrypted_secret) return null;
   const payload = await decryptJSON<{ secret: string }>(vault.encrypted_secret);
   return { publicKey: vault.public_key as string, secret: payload.secret };
 }
+
 
 export type ScanTelemetry = {
   universe: number; scored: number;
