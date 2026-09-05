@@ -3891,6 +3891,42 @@ export type Database = {
           },
         ]
       }
+      vault_deposits: {
+        Row: {
+          amount: number
+          asset: string
+          block_time: string | null
+          confirmed_at: string
+          created_at: string
+          id: string
+          signature: string
+          slot: number | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          asset?: string
+          block_time?: string | null
+          confirmed_at?: string
+          created_at?: string
+          id?: string
+          signature: string
+          slot?: number | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          asset?: string
+          block_time?: string | null
+          confirmed_at?: string
+          created_at?: string
+          id?: string
+          signature?: string
+          slot?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       vault_destinations: {
         Row: {
           address: string
@@ -3916,6 +3952,45 @@ export type Database = {
           first_seen_at?: string
           id?: string
           unlocks_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vault_reservations: {
+        Row: {
+          amount_sol: number
+          created_at: string
+          expires_at: string
+          id: string
+          purpose: string
+          reference: string | null
+          released_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_sol: number
+          created_at?: string
+          expires_at?: string
+          id?: string
+          purpose?: string
+          reference?: string | null
+          released_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_sol?: number
+          created_at?: string
+          expires_at?: string
+          id?: string
+          purpose?: string
+          reference?: string | null
+          released_at?: string | null
+          status?: string
           updated_at?: string
           user_id?: string
         }
@@ -4154,11 +4229,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_vault_funds: {
+        Args: {
+          _amount: number
+          _purpose?: string
+          _reference?: string
+          _spendable: number
+          _user_id: string
+        }
+        Returns: {
+          available: number
+          granted: boolean
+          id: string
+          reserved: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      release_vault_funds: {
+        Args: { _reservation_id: string; _status?: string; _user_id: string }
         Returns: boolean
       }
     }
