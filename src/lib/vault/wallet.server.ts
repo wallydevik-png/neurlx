@@ -252,3 +252,106 @@ export async function recentChainActivity(publicKey: string, limit = 25): Promis
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Deposit detection.
+//
+// Balances shown to the user, and balances the engine trades against, are read
+// from the chain — never from anything a browser sends. This routine only
+// classifies *confirmed* inbound transfers so they can be listed in the
+// ledger; it never credits a balance by itself.
+
+export interface DetectedDeposit {
+  signature: string;
+  asset: "SOL" | "USDC";
+  amount: number;
+  slot: number;
+  blockTime: string | null;
+}
+
+interface TxMeta {
+  slot: number;
+  blockTime: number | null;
+  meta: {
+    err: unknown;
+    preBalances: number[];
+    postBalances: number[];
+    preTokenBalances?: Array<{ owner?: string; mint: string; uiTokenAmount: { uiAmount: number | null } }>;
+    postTokenBalances?: Array<{ owner?: string; mint: string; uiTokenAmount: { uiAmount: number | null } }>;
+  } | null;
+  transaction: { message: { accountKeys: Array<string | { pubkey: string }> } };
+}
+
+/** Pure: the inbound SOL/USDC this confirmed transaction delivered to `address`. */
+export function depositsFromTransaction(
+  signature: string, address: string, tx: TxMeta,
+): DetectedDeposit[] {
+  if (!tx?.meta || tx.meta.err) return [];
+  const keys = tx.transaction.message.accountKeys.map(k => (typeof k === "string" ? k : k.pubkey));
+  const idx = keys.indexOf(address);
+  const out: DetectedDeposit[] = [];
+  const blockTime = tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null;
+
+  if (idx >= 0) {
+    const delta = ((tx.meta.postBalances[idx] ?? 0) - (tx.meta.preBalances[idx] ?? 0)) / 1e9;
+    if (delta > 0) out.push({ signature, asset: "SOL", amount: delta, slot: tx.slot, blockTime });
+  }
+
+  const before = new Map<string, number>();
+  for (const b of tx.meta.preTokenBalances ?? []) {
+    if (b.owner === address && b.mint === USDC_MINT) before.set(b.mint, b.uiTokenAmount.uiAmount ?? 0);
+  }
+  for (const b of tx.meta.postTokenBalances ?? []) {
+    if (b.owner !== address || b.mint !== USDC_MINT) continue;
+    const delta = (b.uiTokenAmount.uiAmount ?? 0) - (before.get(b.mint) ?? 0);
+    if (delta > 0) out.push({ signature, asset: "USDC", amount: delta, slot: tx.slot, blockTime });
+  }
+  return out;
+}
+
+/**
+ * Scan recent confirmed transactions for this user's vault address and record
+ * any inbound SOL/USDC that has not been recorded yet. Idempotent: the
+ * (user, signature, asset) key is unique, so a re-scan records nothing twice.
+ */
+export async function syncVaultDeposits(
+  userId: string, publicKey: string, limit = 25,
+): Promise<{ detected: number; recorded: number }> {
+  const db = await admin();
+  const recent = await recentChainActivity(publicKey, limit);
+  const confirmed = recent.filter(t => !t.err);
+  if (!confirmed.length) return { detected: 0, recorded: 0 };
+
+  const { data: known } = await db.from("vault_deposits")
+    .select("signature").eq("user_id", userId)
+    .in("signature", confirmed.map(t => t.signature));
+  const seen = new Set((known ?? []).map(r => String(r.signature)));
+  const fresh = confirmed.filter(t => !seen.has(t.signature)).slice(0, 10);
+
+  let detected = 0, recorded = 0;
+  for (const t of fresh) {
+    let tx: TxMeta | null = null;
+    try {
+      tx = await rpc<TxMeta>("getTransaction", [
+        t.signature,
+        { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+      ]);
+    } catch { continue; }
+    if (!tx) continue;
+    for (const d of depositsFromTransaction(t.signature, publicKey, tx)) {
+      detected++;
+      const { error } = await db.from("vault_deposits").insert({
+        user_id: userId, signature: d.signature, asset: d.asset, amount: d.amount,
+        slot: d.slot, block_time: d.blockTime,
+      });
+      if (!error) {
+        recorded++;
+        await recordVaultTx(userId, {
+          kind: "deposit", asset: d.asset, amount: d.amount, signature: d.signature,
+          detail: { slot: d.slot },
+        });
+      }
+    }
+  }
+  return { detected, recorded };
+}
