@@ -92,7 +92,7 @@ export const requestWithdrawal = createServerFn({ method: "POST" })
       if (data.amount > balances.availableSol + 1e-9) {
         throw new Error(
           `Only ${balances.availableSol.toFixed(4)} SOL is available ` +
-          `(${balances.reservedSol.toFixed(4)} is reserved by open positions, plus a small fee reserve).`,
+          `(${(balances.reservedSol + balances.pendingSol).toFixed(4)} is reserved by open positions and trades in flight, plus a small fee reserve).`,
         );
       }
     } else if (data.amount > balances.usdc + 1e-9) {
