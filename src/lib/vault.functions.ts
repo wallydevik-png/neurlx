@@ -12,6 +12,10 @@ export const getVault = createServerFn({ method: "GET" })
     const { emailTransportConfigured, accountEmail, maskEmail } = await import("@/lib/email/send.server");
 
     const wallet = await ensureVaultWallet(userId);
+    // Detect confirmed inbound transfers before reading balances, so a fresh
+    // deposit shows up in the ledger on the same refresh that shows the funds.
+    const { syncVaultDeposits } = await import("@/lib/vault/wallet.server");
+    try { await syncVaultDeposits(userId, wallet.publicKey); } catch { /* chain scan is best-effort */ }
     const [balances, chain, ledger, withdrawals, settings, policy, usedSol, usedUsdc, destinations, email] =
       await Promise.all([
         vaultBalances(supabase, userId, wallet.publicKey),
