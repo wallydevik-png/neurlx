@@ -33,7 +33,8 @@ export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const USDC_DECIMALS = 6;
 
 /** SOL kept back for rent + network fees; never withdrawable or tradeable. */
-export const SOL_FEE_RESERVE = 0.003;
+export { FEE_RESERVE_SOL as SOL_FEE_RESERVE } from "./funding.server";
+import { FEE_RESERVE_SOL, computeAvailableSol, activeReservationsSol } from "./funding.server";
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const errors: string[] = [];
