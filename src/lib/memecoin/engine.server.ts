@@ -29,35 +29,23 @@ export async function loadSettings(db: DB, userId: string): Promise<MemeSettings
 }
 
 async function loadWalletSecret(_db: DB, userId: string): Promise<{ publicKey: string; secret: string } | null> {
-  // RLS on memecoin_wallets only grants SELECT to admins reading their own
-  // row ("admins read own wallet row" policy) — the table is deliberately
-  // unreadable by ordinary authenticated users because it holds the
-  // encrypted secret. Every entrypoint here (manual snipe, manual exit,
-  // "run cycle now", and the position manager) is invoked with the
-  // request-scoped, RLS-bound client for non-admin users, so passing that
-  // client straight into this SELECT silently returned zero rows for every
-  // non-admin trader — buyCandidate/sellPosition then failed with "No
-  // trading wallet key is configured" even though a wallet was saved, which
-  // is why entries/exits never fired outside the cron path (which happens
-  // to run as the service role). Always read this one table through the
-  // service-role client, exactly like getMemecoinDesk already does.
+  // The NeurlX Trading Vault is the ONLY source of trading capital. The user
+  // deposits SOL/USDC into their own vault address; profits and losses stay
+  // there; a linked/external wallet is a withdrawal destination and identity
+  // marker only, and is never read as a balance or spent from.
+  //
+  // vault_wallets is RLS-enabled with zero policies, so it is unreachable
+  // from any browser session; only the service-role client below can read it,
+  // and every read is scoped by user_id, making cross-user signing
+  // structurally impossible.
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin.from("memecoin_wallets").select("public_key,encrypted_secret")
-    .eq("user_id", userId).maybeSingle();
-  if (data?.encrypted_secret) {
-    const secret = await decryptJSON<string>(data.encrypted_secret);
-    return { publicKey: data.public_key as string, secret };
-  }
-
-  // No imported wallet — fall back to this user's NeurlX Trading Vault, the
-  // custodial wallet they deposit into. Strictly scoped by user_id, so the
-  // engine can only ever spend the balance belonging to this user.
   const { data: vault } = await supabaseAdmin.from("vault_wallets")
     .select("public_key,encrypted_secret").eq("user_id", userId).maybeSingle();
   if (!vault?.encrypted_secret) return null;
   const payload = await decryptJSON<{ secret: string }>(vault.encrypted_secret);
   return { publicKey: vault.public_key as string, secret: payload.secret };
 }
+
 
 export type ScanTelemetry = {
   universe: number; scored: number;
@@ -119,31 +107,46 @@ export async function refreshSignals(db: DB): Promise<{ candidates: MemeCandidat
   };
 }
 
-/** Open a snipe on one candidate. */
+/** Open a snipe on one candidate, funded from the user's vault balance. */
 export async function buyCandidate(db: DB, userId: string, c: MemeCandidate, s: MemeSettings) {
   const wallet = await loadWalletSecret(db, userId);
-  if (!wallet) throw new Error("No trading wallet key is configured — add one in the Wallet Vault");
+  if (!wallet) throw new Error("Your NeurlX vault is not ready yet — open the Vault page to create your deposit address");
 
-  // Spend against AVAILABLE balance, not the raw on-chain figure: the raw
-  // number still contains SOL already committed to open positions and the fee
-  // reserve, so two concurrent snipes could both see the same unreserved SOL
-  // and double-spend it.
+  // Spend against AVAILABLE vault balance, not the raw on-chain figure: the
+  // raw number still contains SOL committed to open positions, SOL claimed by
+  // trades already in flight, and the fee reserve.
   const { vaultBalances } = await import("@/lib/vault/wallet.server");
+  const { reserveVaultSol, releaseVaultSol, computeSpendableSol } = await import("@/lib/vault/funding.server");
   const balances = await vaultBalances(db as unknown as SupabaseClient, userId, wallet.publicKey);
-  if (balances.error) throw new Error(`Balance unavailable: ${balances.error}`);
+  if (balances.error) throw new Error(`Vault balance unavailable: ${balances.error}`);
+
   const needed = s.buy_amount_sol + 0.01;
-  if (balances.availableSol < needed) {
+  // Atomic claim: the database serialises this per user, so two concurrent
+  // snipes can never both spend the same SOL.
+  const claim = await reserveVaultSol(
+    userId, needed,
+    computeSpendableSol(balances.sol, balances.reservedSol, balances.feeReserveSol),
+    { purpose: "memecoin_buy", reference: c.mint },
+  );
+  if (!claim.granted || !claim.id) {
     throw new Error(
-      `Only ${balances.availableSol.toFixed(4)} SOL is available — need ${needed.toFixed(4)} including fees ` +
-      `(${balances.sol.toFixed(4)} on-chain, ${balances.reservedSol.toFixed(4)} reserved by open positions)`,
+      `Only ${Math.max(0, claim.available).toFixed(4)} SOL is available in your vault — need ${needed.toFixed(4)} including fees ` +
+      `(${balances.sol.toFixed(4)} on-chain, ${balances.reservedSol.toFixed(4)} in open positions, ${claim.reserved.toFixed(4)} reserved by trades in flight)`,
     );
   }
 
-
-  const result = await swap({
-    secret: wallet.secret, publicKey: wallet.publicKey, inputMint: SOL_MINT, outputMint: c.mint,
-    amountRaw: Math.floor(s.buy_amount_sol * 1e9), slippageBps: s.slippage_bps,
-  });
+  let result: Awaited<ReturnType<typeof swap>>;
+  try {
+    result = await swap({
+      secret: wallet.secret, publicKey: wallet.publicKey, inputMint: SOL_MINT, outputMint: c.mint,
+      amountRaw: Math.floor(s.buy_amount_sol * 1e9), slippageBps: s.slippage_bps,
+    });
+  } catch (e) {
+    // Failed or unconfirmed swap: hand the funds straight back. No position
+    // row is written unless the transaction actually confirmed on-chain.
+    await releaseVaultSol(userId, claim.id, "released");
+    throw e;
+  }
 
   const { data } = await db.from("memecoin_positions").insert({
     user_id: userId, mint: c.mint, symbol: c.symbol, status: "open",
@@ -151,8 +154,12 @@ export async function buyCandidate(db: DB, userId: string, c: MemeCandidate, s: 
     entry_price_usd: c.priceUsd, peak_price_usd: c.priceUsd,
     entry_tx: result.signature, score: c.score,
   }).select().maybeSingle();
+  // The open position now carries the exposure, so the claim is consumed
+  // rather than returned to the available pool.
+  await releaseVaultSol(userId, claim.id, "consumed");
   return { position: data, signature: result.signature, priceImpactPct: result.priceImpactPct };
 }
+
 
 /** Sell an open snipe back to SOL. */
 export async function sellPosition(db: DB, userId: string, positionId: string, reason: string) {

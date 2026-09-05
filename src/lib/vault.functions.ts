@@ -12,6 +12,10 @@ export const getVault = createServerFn({ method: "GET" })
     const { emailTransportConfigured, accountEmail, maskEmail } = await import("@/lib/email/send.server");
 
     const wallet = await ensureVaultWallet(userId);
+    // Detect confirmed inbound transfers before reading balances, so a fresh
+    // deposit shows up in the ledger on the same refresh that shows the funds.
+    const { syncVaultDeposits } = await import("@/lib/vault/wallet.server");
+    try { await syncVaultDeposits(userId, wallet.publicKey); } catch { /* chain scan is best-effort */ }
     const [balances, chain, ledger, withdrawals, settings, policy, usedSol, usedUsdc, destinations, email] =
       await Promise.all([
         vaultBalances(supabase, userId, wallet.publicKey),
@@ -88,7 +92,7 @@ export const requestWithdrawal = createServerFn({ method: "POST" })
       if (data.amount > balances.availableSol + 1e-9) {
         throw new Error(
           `Only ${balances.availableSol.toFixed(4)} SOL is available ` +
-          `(${balances.reservedSol.toFixed(4)} is reserved by open positions, plus a small fee reserve).`,
+          `(${(balances.reservedSol + balances.pendingSol).toFixed(4)} is reserved by open positions and trades in flight, plus a small fee reserve).`,
         );
       }
     } else if (data.amount > balances.usdc + 1e-9) {

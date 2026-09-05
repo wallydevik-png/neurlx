@@ -29,30 +29,24 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
       return true;
     }).slice(0, 15);
 
-    // Live on-chain balances for the linked wallet: SOL plus every token it
-    // actually holds. A failure here is reported, never silently shown as "—".
-    let walletSol: number | null = null;
-    let walletError: string | null = null;
+    // Live on-chain balances for the NeurlX VAULT — the sniper's funding
+    // source. The linked wallet is a withdrawal destination only and its
+    // balance is never used to decide whether a trade can be funded.
+    const { ensureVaultWallet, vaultBalances } = await import("@/lib/vault/wallet.server");
+    const vaultWallet = await ensureVaultWallet(userId);
+    const balances = await vaultBalances(supabase, userId, vaultWallet.publicKey);
+
     let holdings: Array<{ mint: string; symbol: string | null; uiAmount: number }> = [];
-    if (wallet?.public_key) {
-      const { solBalance, listTokenHoldings } = await import("@/lib/memecoin/jupiter.server");
-      const [solRes, tokRes] = await Promise.allSettled([
-        solBalance(wallet.public_key),
-        listTokenHoldings(wallet.public_key),
-      ]);
-      if (solRes.status === "fulfilled") walletSol = solRes.value;
-      else walletError = solRes.reason instanceof Error ? solRes.reason.message : "Solana RPC unavailable";
-      if (tokRes.status === "fulfilled") {
-        // Name what we can from this user's snipes and the scanned feed.
-        const names = new Map<string, string>();
-        for (const p of positions ?? []) if (p.mint && p.symbol) names.set(p.mint, p.symbol);
-        for (const s of signals ?? []) if (s.mint && s.symbol) names.set(s.mint, s.symbol);
-        holdings = tokRes.value.map(t => ({
-          mint: t.mint, symbol: names.get(t.mint) ?? null, uiAmount: t.uiAmount,
-        }));
-      } else if (!walletError) {
-        walletError = tokRes.reason instanceof Error ? tokRes.reason.message : "Token balances unavailable";
-      }
+    let walletError: string | null = balances.error;
+    try {
+      const { listTokenHoldings } = await import("@/lib/memecoin/jupiter.server");
+      const toks = await listTokenHoldings(vaultWallet.publicKey);
+      const names = new Map<string, string>();
+      for (const p of positions ?? []) if (p.mint && p.symbol) names.set(p.mint, p.symbol);
+      for (const s of signals ?? []) if (s.mint && s.symbol) names.set(s.mint, s.symbol);
+      holdings = toks.map(t => ({ mint: t.mint, symbol: names.get(t.mint) ?? null, uiAmount: t.uiAmount }));
+    } catch (e) {
+      if (!walletError) walletError = e instanceof Error ? e.message : "Token balances unavailable";
     }
 
     const open = (positions ?? []).filter(p => p.status === "open");
@@ -62,16 +56,26 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
 
     return {
       settings,
-      wallet: wallet ? {
-        public_key: wallet.public_key,
-        phantom_address: wallet.phantom_address,
-        label: wallet.label,
-        updated_at: wallet.updated_at,
-        hasKey: Boolean(wallet.encrypted_secret),
-        sol: walletSol,
+      vault: {
+        address: vaultWallet.publicKey,
+        sol: balances.sol,
+        usdc: balances.usdc,
+        availableSol: balances.availableSol,
+        reservedSol: balances.reservedSol + balances.pendingSol,
+        error: balances.error,
+        holdings,
+      },
+      wallet: {
+        // Withdrawal destination / identity only — never a funding source.
+        public_key: vaultWallet.publicKey,
+        phantom_address: wallet?.phantom_address ?? null,
+        label: wallet?.label ?? null,
+        updated_at: wallet?.updated_at ?? null,
+        hasKey: true,
+        sol: balances.sol,
         error: walletError,
         holdings,
-      } : null,
+      },
       signals: latestSignals,
       open, closed,
       stats: {
@@ -82,6 +86,7 @@ export const getMemecoinDesk = createServerFn({ method: "GET" })
       isAdmin: (roles ?? []).some(r => r.role === "admin"),
     };
   });
+
 
 /** Update sniper controls. */
 export const updateMemecoinSettings = createServerFn({ method: "POST" })
