@@ -80,18 +80,20 @@ describe("confirmation secret is unreachable from the session", () => {
   });
 
   it("the migration revokes table-wide SELECT and re-grants only safe columns", () => {
-    const sql = readFileSync(
-      "supabase/migrations/" +
-      require("node:fs").readdirSync("supabase/migrations")
-        .filter((f: string) => f.endsWith(".sql")).sort().at(-1)!,
-      "utf8",
-    );
+    // Search every migration: later, unrelated migrations must not make this
+    // guarantee unverifiable.
+    const dir = "supabase/migrations";
+    const sql = require("node:fs").readdirSync(dir)
+      .filter((f: string) => f.endsWith(".sql")).sort()
+      .map((f: string) => readFileSync(`${dir}/${f}`, "utf8"))
+      .join("\n");
     expect(sql).toMatch(/REVOKE SELECT ON public\.vault_withdrawals FROM authenticated/);
     const grant = sql.match(/GRANT SELECT \(([\s\S]*?)\)\s*\n?\s*ON public\.vault_withdrawals/);
     expect(grant).not.toBeNull();
     expect(grant![1]).not.toContain("code_hash");
     expect(grant![1]).not.toContain("attempts");
   });
+
 
   it("the emailed code is never written into the in-app notification", () => {
     const src = readFileSync("src/lib/vault.functions.ts", "utf8");
