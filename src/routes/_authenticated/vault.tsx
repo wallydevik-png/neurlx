@@ -91,8 +91,7 @@ function VaultPage() {
     <AppShell>
       <PageHeader
         title="Trading Vault"
-        subtitle="Your own dedicated on-chain wallet. Fund it, and the autonomous engine trades from that balance — no broker signup required."
-
+        subtitle="Your own dedicated deposit address. Everything the autonomous engine trades comes from this balance — there is no other wallet to fund."
       />
 
       {isLoading || !data ? (
@@ -100,9 +99,9 @@ function VaultPage() {
       ) : (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Metric label="SOL balance" value={b ? b.sol.toFixed(4) : "—"} />
-            <Metric label="Available to trade" value={b ? b.availableSol.toFixed(4) : "—"} />
-            <Metric label="Reserved (open positions)" value={b ? b.reservedSol.toFixed(4) : "—"} />
+            <Metric label="Available" value={b ? `${b.availableSol.toFixed(4)} SOL` : "—"} />
+            <Metric label="Reserved" value={b ? `${(b.reservedSol + b.pendingSol).toFixed(4)} SOL` : "—"} />
+            <Metric label="Total" value={b ? `${b.sol.toFixed(4)} SOL` : "—"} />
             <Metric label="USDC" value={b ? b.usdc.toFixed(2) : "—"} />
           </div>
 
@@ -114,13 +113,14 @@ function VaultPage() {
 
           <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
             <p className="flex items-center gap-2 font-medium text-foreground">
-              <ShieldCheck className="h-4 w-4" /> Real funds — not paper trading
+              <ShieldCheck className="h-4 w-4" /> Autonomous trading
             </p>
             <p className="mt-1">
-              Anything the engine does with this balance settles on-chain. Paper-mode activity on the
-              dashboard is simulated and never touches this wallet. The signing key is generated and
-              encrypted server-side, is never shown in the browser, and is only unlocked to sign a
-              single transaction for your account.
+              Your autonomous engine trades using your available vault balance. Profits and losses stay
+              in the vault until you withdraw. Reserved covers open positions and trades in flight, plus
+              a small amount kept back for network fees. The signing key is created and encrypted on the
+              server, is never shown in the browser, and can only move funds through a withdrawal you
+              confirm by email.
             </p>
             {data.killSwitchActive && (
               <p className="mt-2 text-foreground">
@@ -143,21 +143,30 @@ function VaultPage() {
 
           {tab === "deposit" ? (
             <section className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Your deposit address (Solana)</h2>
+              <h2 className="text-sm font-semibold">Send SOL or USDC to your NeurlX Vault address</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Send <strong>SOL</strong> or <strong>USDC</strong> on the Solana network from any exchange or
-                wallet. Nothing else is supported — other chains or assets sent here may be lost.
+                wallet. Nothing else is supported — other chains or assets sent here may be lost. Funds
+                become available for trading as soon as the network confirms them.
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <code className="break-all rounded bg-muted px-2 py-1 text-xs">{address}</code>
-                <Button size="sm" variant="outline" onClick={copyAddress}>
-                  <Copy className="mr-2 h-3.5 w-3.5" /> Copy
-                </Button>
+              <div className="mt-3 flex flex-wrap items-start gap-4">
+                {address && (
+                  <div className="rounded-md bg-white p-2">
+                    <QRCodeSVG value={address} size={132} />
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="break-all rounded bg-muted px-2 py-1 text-xs">{address}</code>
+                  <Button size="sm" variant="outline" onClick={copyAddress}>
+                    <Copy className="mr-2 h-3.5 w-3.5" /> Copy
+                  </Button>
+                </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Keep a little SOL in the wallet for network fees — around 0.003 SOL is held back automatically.
+                Keep a little SOL here for network fees — around 0.003 SOL is held back automatically.
               </p>
             </section>
+
           ) : (
             <section className="rounded-lg border border-border bg-card p-4">
               <h2 className="text-sm font-semibold">Withdraw to any wallet</h2>
