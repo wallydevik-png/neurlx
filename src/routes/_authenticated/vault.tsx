@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AppShell, PageHeader, Metric } from "@/components/AppShell";
 import { getVault, requestWithdrawal, confirmWithdrawal, cancelWithdrawal } from "@/lib/vault.functions";
 import { Button } from "@/components/ui/button";
+import { QRCodeSVG } from "qrcode.react";
 import { Copy, ArrowDownToLine, ArrowUpFromLine, ShieldCheck, ExternalLink, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/vault")({
@@ -196,8 +197,8 @@ function VaultPage() {
                     Withdrawable now: {asset === "SOL"
                       ? `${(b?.availableSol ?? 0).toFixed(4)} SOL`
                       : `${(b?.usdc ?? 0).toFixed(2)} USDC`}
-                    {asset === "SOL" && b && b.reservedSol > 0
-                      ? ` — ${b.reservedSol.toFixed(4)} SOL is locked in open positions.` : ""}
+                    {asset === "SOL" && b && b.reservedSol + b.pendingSol > 0
+                      ? ` — ${(b.reservedSol + b.pendingSol).toFixed(4)} SOL is reserved by open positions and trades in flight.` : ""}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Daily limit: {asset === "SOL"
